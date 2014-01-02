@@ -1,0 +1,6 @@
+Sibt should be configurable so that:
+* it suits exactly my needs for backup tools
+* it is easy (as much complexity kept away from the conf files as possible)
+* and leaves little space for errors (important data)
+
+It should also integrate with the os (prevent computer from shutting down).
