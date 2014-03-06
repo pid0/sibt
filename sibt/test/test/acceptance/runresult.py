@@ -1,4 +1,4 @@
 class RunResult(object):
-  def __init__(self, output, executionLogger):
-    self.output = output
+  def __init__(self, stdout, executionLogger):
+    self.stdout = stdout
     self.executionLogger = executionLogger

@@ -1,21 +1,28 @@
 import argparse
 
 class CmdLineArgs(object):
-  pass
+  def __init__(self, action, options):
+    self.action = action
+    self.options = options
 
 class CmdLineArgsParser(object):
   def parseArgs(self, args):
     parser = argparse.ArgumentParser(description="Simple Backup Tool")
-    parser.add_argument("--list-config", action="store_true")
-    parser.add_argument("--config-dir", action="store")
-    parser.add_argument("--var-dir", action="store")
+    subs = parser.add_subparsers(title="actions", dest="action", 
+      metavar="list|sync")
+
+    listAction = subs.add_parser("list")
+    #listAction.add_argument("--list-config", action="store_true")
+
+    sync = subs.add_parser("sync")
+    sync.add_argument("rule-name", action="store")
+
+    syncUncontrolled = subs.add_parser("sync-uncontrolled")
+    syncUncontrolled.add_argument("rule-name", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
-    cmdLineArgs = dict(item for item in parsedArgs.items() if 
-      item[1] is not None)
+    cmdLineArgs = dict((key.replace("_", '-'), value) for 
+        (key, value) in parsedArgs.items() if value is not None)
     
-    ret = CmdLineArgs()
-    ret.configDir = cmdLineArgs.get("config_dir", "/etc/sibt.d/")
-    ret.varDir = cmdLineArgs.get("var_dir", "/var/local/sibt.d")
-    ret.listConfig = cmdLineArgs["list_config"]
+    ret = CmdLineArgs(parsedArgs["action"], cmdLineArgs)
     return ret
