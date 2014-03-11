@@ -29,5 +29,5 @@ class InterceptingOutput(object):
     self.readFile.close()
 
   def println(self, x):
-    print(x)
+    print(x, file=self.newFile)
 

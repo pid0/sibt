@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 class CmdLineArgs(object):
   def __init__(self, action, options):
@@ -7,12 +8,17 @@ class CmdLineArgs(object):
 
 class CmdLineArgsParser(object):
   def parseArgs(self, args):
+    if len(args) == 0:
+      args = ["list"]
+
     parser = argparse.ArgumentParser(description="Simple Backup Tool")
     subs = parser.add_subparsers(title="actions", dest="action", 
       metavar="list|sync")
 
-    listAction = subs.add_parser("list")
-    #listAction.add_argument("--list-config", action="store_true")
+    listAction = subs.add_parser("list", aliases=["li"])
+    listAction.add_argument("list-type", nargs="?",
+        choices=["interpreters", "schedulers", "rules", "all"],
+        default="all")
 
     sync = subs.add_parser("sync")
     sync.add_argument("rule-name", action="store")
@@ -25,4 +31,5 @@ class CmdLineArgsParser(object):
         (key, value) in parsedArgs.items() if value is not None)
     
     ret = CmdLineArgs(parsedArgs["action"], cmdLineArgs)
+
     return ret

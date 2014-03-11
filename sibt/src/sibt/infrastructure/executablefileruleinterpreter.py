@@ -1,4 +1,5 @@
 import os
+from sibt.configuration.exceptions import ConfigConsistencyException
 
 class ExecutableFileRuleInterpreter(object):
   def __init__(self, path, fileName, processRunner):
@@ -6,13 +7,23 @@ class ExecutableFileRuleInterpreter(object):
     self.executable = path
     self.processRunner = processRunner
 
-  def sync(self, rule):
-    self.processRunner.execute(self.executable, rule.name)
+  def sync(self, options):
+    self.processRunner.execute(self.executable, "sync",
+        *self.keyValueEncode(options))
+
+  def keyValueEncode(self, dictionary):
+    return ["{0}={1}".format(key, value) for (key, value) in 
+        dictionary.items()]
+
+  def availableOptions(self):
+    output = self.processRunner.getOutput(self.executable, "available-options")
+    return [line for line in output.split("\n") if line != ""]
+  availableOptions = property(availableOptions)
 
   @classmethod
   def createWithFile(clazz, path, fileName, processRunner):
     if not clazz.isExecutable(path):
-      raise Exception("interpreter file not executable")
+      raise ConfigConsistencyException("interpreter file not executable")
 
     return clazz(path, fileName, processRunner)
   @classmethod

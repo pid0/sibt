@@ -1,48 +1,126 @@
 from sibt.configuration.dirbasedrulesreader import DirBasedRulesReader
+from test.common.assertutil import iterableContainsInAnyOrder
+from sibt.configuration.exceptions import ConfigSyntaxException
+from sibt.configuration.exceptions import ConfigConsistencyException
 from sibt.domain.syncrule import SyncRule
 from test.common.rulebuilder import anyRule
 import pytest
 from datetime import timedelta, time
-from sibt.configuration.configparseexception import ConfigParseException
+from test.common import mock
   
 class Fixture(object):
   def __init__(self, tmpdir):
-    self.tmpdir = tmpdir
+    self.rulesDir = tmpdir.mkdir("rules")
+    self.enabledDir = tmpdir.mkdir("enabled")
+    self.factory = mock.mock()
     
+  def writeAnyRule(self, name):
+    self.writeRuleFile(name, "[Interpreter]\nName=a\n[Scheduler]\nName=b")
   def writeRuleFile(self, name, contents):
-    self.tmpdir.join(name).write(contents)
+    self.rulesDir.join(name).write(contents)
+  def linkToAs(self, ruleName, linkName):
+    self.enabledDir.join(linkName).mksymlinkto(self.rulesDir.join(ruleName))
     
   def _createReader(self):
-    return DirBasedRulesReader(str(self.tmpdir))  
+    return DirBasedRulesReader(str(self.rulesDir), str(self.enabledDir), 
+        self.factory)
   def read(self):
     return self._createReader().read()
-  def resultShouldBe(self, expectedConfiguration):
-    reader = self._createReader()
-    assert reader.read() == expectedConfiguration
     
+def buildCallReturning(matcher, returnValue):
+  return mock.callMatchingTuple("build", matcher, ret=returnValue)
+def buildCall(matcher):
+  return buildCallReturning(matcher, None)
+
 @pytest.fixture
 def fixture(tmpdir):
   return Fixture(tmpdir)
   
-def test_shouldReadEachFileAsRule(fixture):
-  fixture.writeRuleFile("rule-1", "a\nb")
-  fixture.writeRuleFile("rule-2", "a\nb")
+def test_shouldReadEachFileAsRuleAndConstructRulesWithFactory(fixture):
+  fixture.writeAnyRule("rule-1")
+  fixture.writeAnyRule("rule-2")
 
-  result = fixture.read()
-  assert len(result) == 2
-  assert containsExactlyOneRuleNamed(result, "rule-1")
-  assert containsExactlyOneRuleNamed(result, "rule-2")
+  firstConstructedRule = object()
+  secondConstructedRule = object()
 
-def test_shouldParseFirstLineAsInterpreterAndSecondAsScheduler(fixture):
-  fixture.writeRuleFile("some-rule", "foo\nbar")
+  fixture.factory.expectCallsInAnyOrder(
+      buildCallReturning(lambda args: args[0] == "rule-1", 
+        firstConstructedRule),
+      buildCallReturning(lambda args: args[0] == "rule-2",
+        secondConstructedRule))
 
-  fixture.resultShouldBe({anyRule().
-      withName("some-rule").
-      withInterpreter("foo").
-      withScheduler("bar").
-      build()
-  })
+  assert iterableContainsInAnyOrder(fixture.read(), 
+      lambda x: x == firstConstructedRule,
+      lambda x: x == secondConstructedRule)
+  fixture.factory.checkExpectedCalls()
 
+def test_shouldParseInterpreterAndSchedulerOptionsAsValuesInRespectiveSections(
+    fixture):
+  fixture.writeRuleFile("some-rule", 
+      """  [Interpreter]
+      
+Name=foo
+Option1=quux
+Option2 = some-value
+[Scheduler]
+  Name = bar 
+  
+  Option3 = yes""")
+
+  fixture.factory.expectCallsInAnyOrder(
+      buildCall(lambda args: args[0] == "some-rule" and
+        args[1] == {"Name": "bar", "Option3": "yes"} and
+        args[2] == {"Name": "foo", "Option1": "quux", "Option2": "some-value"}))
+  fixture.read()
+  fixture.factory.checkExpectedCalls()
+
+def test_shouldThrowExceptionIfItEncountersASyntaxError(fixture):
+  fixture.writeRuleFile("invalid", "blah")
+  with pytest.raises(ConfigSyntaxException):
+    fixture.read()
+
+def test_shouldThrowExceptionIfConstructionOfRuleFailsBecauseOfConsistency(
+    fixture):
+  fixture.writeAnyRule("rule")
+
+  causeEx = ConfigConsistencyException("foo")
+  def fail(_):
+    raise causeEx
+
+  fixture.factory.expectCallsInAnyOrder(buildCall(fail))
+  try:
+    fixture.read()
+    assert False, "should have thrown"
+  except ConfigSyntaxException as ex:
+    assert ex.__cause__ == causeEx
+
+  otherEx = Exception("not consistency")
+  def totallyFail(_):
+    raise otherEx
+  fixture.factory.expectCallsInAnyOrder(buildCall(totallyFail))
+  try:
+    fixture.read()
+    assert False
+  except Exception as ex:
+    assert ex == otherEx
+
+
+def test_shouldConsiderSymlinkedToRulesEnabled(fixture):
+  on = "enabled-rule"
+  off = "disabled-rule"
+  fixture.writeAnyRule(on)
+  fixture.writeAnyRule(off)
+  fixture.linkToAs(on, on)
+  fixture.linkToAs("/other-file", off)
+
+  fixture.factory.expectCallsInAnyOrder(
+      buildCall(lambda args: args[0] == on and args[3] == True),
+      buildCall(lambda args: args[0] == off and args[3] == False))
+  fixture.read()
+  fixture.factory.checkExpectedCalls()
+
+
+#TODO remove
 #def test_shouldParseThreeRuleAttributesFromEachFileInConfigDirectory(fixture):
 #  fixture.writeRuleFile("configFile1", """some-tool
 #  /from/here

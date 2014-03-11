@@ -8,6 +8,8 @@ class Paths(object):
     return self.basePaths.configDir + "/interpreters"
   def schedulersDir(self):
     return self.basePaths.configDir + "/schedulers"
+  def enabledDir(self):
+    return self.basePaths.configDir + "/enabled"
 
   def varDir(self):
     return self.basePaths.varDir
@@ -19,3 +21,5 @@ class Paths(object):
   schedulersDir = property(schedulersDir)
   varDir = property(varDir)
   configDir = property(configDir)
+  enabledDir = property(enabledDir)
+

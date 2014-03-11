@@ -37,3 +37,12 @@ def test_collectFunctionShouldLeaveOutNoneValues(fixture):
   assert collectFilesInDirs([str(fixture.folder1)], lambda _, name: 
       "ab" if name == fixture.name1 else None) == {"ab"}
 
+def test_collectFunctionShouldIgnoreDirsThatDontExist(fixture):
+  fixture.writeFiles()
+  assert len(collectFilesInDirs([str(fixture.folder2), "/does-not-exist"],
+    lambda x, y: (x, y))) == 1
+
+def test_collectFunctionShouldIgnoreDirsWithinTheSpecifiedDirs(fixture):
+  fixture.writeFiles()
+  fixture.folder2.join("a-dir").mkdir()
+  assert len(collectFilesInDirs([str(fixture.folder2)], lambda *x: x)) == 1
