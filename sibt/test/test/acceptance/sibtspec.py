@@ -20,6 +20,12 @@ from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from test.common import mock
 from test.common.mockedschedulerloader import MockedSchedulerLoader
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
+from test.common.assertutil import iterableContainsInAnyOrder
+
+TestSchedulerPreamble = """
+availableOptions = ["Interval", "Syslog"]
+def init(*args): pass
+"""
 
 class SibtSpecFixture(object):
   def __init__(self, tmpdir):
@@ -54,16 +60,12 @@ class SibtSpecFixture(object):
     ruleFile = LocalPath(self.paths.rulesDir).join(ruleName)
     LocalPath(self.paths.enabledDir).join(linkName).mksymlinkto(ruleFile)
 
-  def doNothing(*args): 
-    pass
-
   def writeScheduler(self, name, contents):
     self._writeScheduler(self.paths, name, contents)
   def _writeScheduler(self, paths, name, contents):
     LocalPath(paths.schedulersDir).join(name).write(contents)
   def _writeAnyScheduler(self, paths, name):
-    self._writeScheduler(paths, name, 
-        "def init(*args): pass\navailableOptions = []")
+    self._writeScheduler(paths, name, TestSchedulerPreamble)
   def writeAnyScheduler(self, name):
     self._writeAnyScheduler(self.paths, name)
   def writeAnySysScheduler(self, name):
@@ -73,7 +75,6 @@ class SibtSpecFixture(object):
     scheduler = mock.mock()
     scheduler.availableOptions = ["Interval", "Syslog"]
     scheduler.name = name
-    scheduler.init = self.doNothing
     self.schedulerLoader = MockedSchedulerLoader({name: scheduler})
     return scheduler
 
@@ -115,10 +116,7 @@ class SibtSpecFixture(object):
     return str(path)
 
   def writeTestScheduler(self, name):
-    self.writeScheduler(name, """
-availableOptions = ["Interval", "Syslog"]
-def init(*args): pass
-    """)
+    self.writeScheduler(name, TestSchedulerPreamble)
   def writeTestInterpreter(self, name):
     self.writeShellInterpreter(name, """
       echo KeepCopies
@@ -258,17 +256,17 @@ Option=1
 
 [Scheduler]
 Name = scheduler1""")
+
   fixture.writeRule("bar-rule", """[Scheduler]
   Name = scheduler1
 [Interpreter]
 Name = interpreter2
 """)
-  fixture.writeScheduler("scheduler1", """
-availableOptions =[]
-def init(*args): pass
-def run(*args):
-  print("scheduled rule '" + args[0] + "'")
+
+  fixture.writeScheduler("scheduler1", TestSchedulerPreamble +
+"""def run(args): print("scheduled rule '" + args[0].ruleName + "'")
   """)
+
   fixture.writeInterpreter("interpreter1", """#!/usr/bin/env bash
 if [ $1 = "available-options" ]; then
   echo Option
@@ -276,6 +274,7 @@ else
   echo one "$2"
 fi
   """)
+
   fixture.writeInterpreter("interpreter2", """#!/usr/bin/env bash
   echo two "$2"
   """)
@@ -375,8 +374,10 @@ def test_shouldPassOptionsAsIsToCorrectSchedulersAndInterpreters(fixture):
 
   sched = fixture.mockTestScheduler("sched")
   sched.availableOptions = ["Interval"]
-  sched.expectCallsInOrder(mock.callMatching("run", lambda ruleName, options:
-      ruleName == calledRuleName and options == { "Interval": "2w" }))
+  sched.expectCallsInOrder(mock.callMatching("run", lambda schedulings:
+      len(schedulings) == 1 and
+      schedulings[0].ruleName == calledRuleName and 
+      schedulings[0].options == { "Interval": "2w" }))
   
   interPath = fixture.writeAnyInterpreter("inter")
 
@@ -436,12 +437,39 @@ sibtInvocation, paths.configDir, sysPaths.configDir))""")
   fixture.stdoutShouldContain(sys.argv[0] + fixture.paths.configDir + 
       fixture.sysPaths.configDir + "\n")
 
-def test_shouldBeAbleToMatchRuleNameArgumentsAgainstListOfEnabledRules(fixture):
-#TODO show that 
-# sync action takes n positional args
-# that args that are exactly equal to names match disabled rules anyway
-# that scheduler is called with list of collected rules
-  pass
+def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
+    fixture):
+  schedulerName = "scheduler"
+  sched = fixture.mockTestScheduler(schedulerName)
+
+  enabledRules = ["rule-a1", "rule-a2", "rule-b"]
+
+  for ruleName in enabledRules + ["disabled-1", "disabled-2"]:
+    interpreterName = ruleName + "inter"
+    fixture.writeAnyInterpreter(interpreterName)
+    fixture.writeAnyRule(ruleName, schedulerName, interpreterName)
+  for ruleName in enabledRules:
+    fixture.enableRule(ruleName)
+
+  expectedSchedulings = []
+  for expectedRuleName in enabledRules[0:2] + ["disabled-2"]:
+    expectedSchedulings.append((lambda expected: lambda scheduling:
+      scheduling.ruleName == expected)(expectedRuleName))
+
+  sched.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
+      iterableContainsInAnyOrder(schedulings, *expectedSchedulings)))
+
+  fixture.runSibt("sync", "*a[0-9]", "disabled-2")
+  sched.checkExpectedCalls()
+
+def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
+  sched = fixture.mockTestScheduler("scheduler")
+  fixture.writeAnyInterpreter("inter")
+  fixture.writeAnyRule("rule", "scheduler", "inter")
+
+  fixture.runSibt("sync", "foo")
+  fixture.stderrShouldContain("no such", "rule")
+  fixture.shouldHaveExitedWithStatus(1)
 
 
 #def test_shouldBeAbleToReadAndOutputMultipleBackupRulesFromConfFiles(fixture):

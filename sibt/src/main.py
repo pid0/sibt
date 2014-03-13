@@ -23,6 +23,8 @@ from sibt.infrastructure.intervalbasedrulesfilter import \
 from sibt.infrastructure.executiontimefilerepo import ExecutionTimeFileRepo
 from sibt.domain.rulefactory import RuleFactory
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
+from fnmatch import fnmatchcase
+from sibt.domain.queuingscheduler import QueuingScheduler
 
 externalProgramConfs = {
   "rsync": 
@@ -58,13 +60,21 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
     stderr.println("reason:\n{0}".format(ex.__cause__))
     return 1
 
+  if args.action in ["sync", "sync-uncontrolled"]:
+    matchingRules = findRulesByPatterns(args.options["rule-patterns"], rules)
+    if len(matchingRules) == 0:
+      stderr.println("no such rule name")
+      return 1
+
   if args.action == "sync":
-    #TODO error handling
-    rule = findName(rules, args.options["rule-name"])
-    rule.run()
+    for rule in matchingRules:
+      rule.schedule()
+
+    for scheduler in schedulers:
+      scheduler.executeSchedulings()
   elif args.action == "sync-uncontrolled":
-    rule = findName(rules, args.options["rule-name"])
-    rule.sync()
+    for rule in matchingRules:
+      rule.sync()
   elif args.action == "list":
     listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
         args.options["list-type"], rules, sysRules, interpreters, schedulers)
@@ -113,10 +123,19 @@ def listConfiguration(printer, output, listType, rules, sysRules, interpreters,
 def createNotExistingDirs(paths):
   DirTreeNormalizer(paths).createNotExistingDirs()
 
-def findName(objects, expectedName):
-  matching = [obj for obj in objects if obj.name == expectedName]
-#TODO error handling
-  return matching[0]
+def findRulesByPatterns(patterns, rules):
+  enabledRules = [rule for rule in rules if rule.enabled]
+  disabledRules = [rule for rule in rules if not rule.enabled]
+  ruleLists = [findRulePattern(pattern, enabledRules, 
+          disabledRules) for pattern in patterns]
+  return [rule for ruleList in ruleLists for rule in ruleList]
+
+def findRulePattern(pattern, enabledRules, disabledRules):
+  matchingDisabled = [rule for rule in disabledRules if rule.name == pattern]
+  if len(matchingDisabled) == 1:
+    return matchingDisabled
+
+  return [rule for rule in enabledRules if fnmatchcase(rule.name, pattern)]
 
 def readRules(rulesDir, enabledDir, factory):
   reader = DirBasedRulesReader(rulesDir, enabledDir, factory)
@@ -130,8 +149,7 @@ def readInterpreters(dirs, processRunner):
 def readSchedulers(dirs, loader, initArgs):
   def load(path, fileName):
     try:
-      return loader.loadFromFile(path, fileName, initArgs)
-#TODO fix syntax:
+      return QueuingScheduler(loader.loadFromFile(path, fileName, initArgs))
     except ConfigConsistencyException:
       return None
 

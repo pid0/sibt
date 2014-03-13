@@ -31,7 +31,7 @@ class Mock(object):
 
   def checkExpectedCalls(self):
     expectedCalls = self.__expectedCalls
-    assert len(expectedCalls) == 0
+    assert len(expectedCalls) == 0, "expected calls remain"
 
   def __getattr__(self, name):
     def callHandler(*args):
@@ -43,8 +43,8 @@ class Mock(object):
         nextCall = matchingCalls[0]
       else:
         nextCall = self.__expectedCalls[0]
-        assert nextCall.matches(args), message
         assert name == nextCall.funcName, message
+        assert nextCall.matches(args), message
 
       self.__expectedCalls.remove(nextCall)
       return nextCall.returnValue

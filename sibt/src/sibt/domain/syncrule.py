@@ -1,3 +1,4 @@
+from sibt.domain.scheduling import Scheduling
 from sibt.infrastructure.caseclassequalityhashcode \
   import CaseClassEqualityHashCode
 
@@ -12,8 +13,8 @@ class SyncRule(object):
     self.scheduler = scheduler
     self.interpreter = interpreter
 
-  def run(self):
-    self.scheduler.run(self.name, self.schedulerOptions)
+  def schedule(self):
+    self.scheduler.run([Scheduling(self.name, self.schedulerOptions)])
   def sync(self):
     self.interpreter.sync(self.interpreterOptions)
 

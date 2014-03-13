@@ -21,10 +21,10 @@ class CmdLineArgsParser(object):
         default="all")
 
     sync = subs.add_parser("sync")
-    sync.add_argument("rule-name", action="store")
+    sync.add_argument("rule-patterns", nargs="+", action="store")
 
     syncUncontrolled = subs.add_parser("sync-uncontrolled")
-    syncUncontrolled.add_argument("rule-name", action="store")
+    syncUncontrolled.add_argument("rule-patterns", nargs="+", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 
