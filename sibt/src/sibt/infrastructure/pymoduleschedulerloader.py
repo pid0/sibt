@@ -8,7 +8,7 @@ class PyModuleSchedulerLoader(object):
     moduleName = self.containingPackage + "." + fileName
     loader = importlib.machinery.SourceFileLoader(moduleName, path)
     ret = loader.load_module(moduleName)
-    ret.name = fileName
+    ret.name = fileName[0:-3] if fileName.endswith(".py") else fileName
     ret.init(*initArgs)
     return ret
 

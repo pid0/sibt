@@ -34,3 +34,7 @@ from test.sibt.infrastructure import pymoduleschedulerloader_test
 def init(x, y): pymoduleschedulerloader_test.Result = x + y""",
       1, 2)
   assert Result == 3
+
+def test_shouldRemovePyExtensionFromNameIfPresent(fixture):
+  module = fixture.loadModule("a-mod.py", EmptyInitFunc)
+  assert module.name == "a-mod"

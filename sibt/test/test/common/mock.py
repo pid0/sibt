@@ -7,12 +7,29 @@ class CallMatcher(object):
   def matches(self, args):
     return self.matcher(args)
 
-def callMatching(funcName, matcher, **kwargs):
-  returnValue = kwargs.get("ret", None)
-  return CallMatcher(funcName, lambda args: matcher(*args), returnValue)
-def callMatchingTuple(funcName, matcher, **kwargs):
-  returnValue = kwargs.get("ret", None)
-  return CallMatcher(funcName, matcher, returnValue)
+  def __repr__(self):
+    return "CallMatcher{0}".format((self.funcName, self.matcher, 
+        self.returnValue))
+
+class ExactCall(object):
+  def __init__(self, funcName, args, returnValue):
+    self.funcName = funcName
+    self.expectedArgs = args
+    self.returnValue = returnValue
+
+  def matches(self, args):
+    return args == self.expectedArgs
+
+  def __repr__(self):
+    return "ExactCall{0}".format((self.funcName, self.expectedArgs, 
+        self.returnValue))
+
+def call(funcName, args, ret=None):
+  return ExactCall(funcName, args, ret)
+def callMatching(funcName, matcher, ret=None):
+  return CallMatcher(funcName, lambda args: matcher(*args), ret)
+def callMatchingTuple(funcName, matcher, ret=None):
+  return CallMatcher(funcName, matcher, ret)
 
 def mock():
   return Mock()

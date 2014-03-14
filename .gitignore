@@ -2,5 +2,10 @@ __pycache__/
 *.swp
 *~
 /Session.vim
+/setup.py
+/paver-minilib.zip
+/sibt.egg-info
+/build
+/dist
 
 /TODO

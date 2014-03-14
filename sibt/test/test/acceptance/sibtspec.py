@@ -32,11 +32,12 @@ class SibtSpecFixture(object):
     self.tmpdir = tmpdir
     userDir = tmpdir.join("user")
     sysDir = tmpdir.join("system")
+    readonlyDir = tmpdir.mkdir("usr-share")
 
     self.paths = Paths(MockedBasePaths(str(userDir.join("var")),
-      str(userDir.join("config"))))
+      str(userDir.join("config")), str(readonlyDir)))
     self.sysPaths = Paths(MockedBasePaths(str(sysDir.join("var")),
-      str(sysDir.join("config"))))
+      str(sysDir.join("config")), ""))
     DirTreeNormalizer(self.paths).createNotExistingDirs()
 
     self.initialTime = datetime.now(timezone.utc)
@@ -79,14 +80,15 @@ class SibtSpecFixture(object):
     return scheduler
 
   def testInterpreterOptionsCall(self, path):
-    return (path, ("available-options",), "AddFlags\nKeepCopies\n")
+    return (path, lambda args: args[0] == "available-options", 
+        "AddFlags\nKeepCopies\n")
 
   def _writeRule(self, paths, name, contents):
     LocalPath(paths.rulesDir).join(name).write(contents)
   def writeRule(self, name, contents):
     self._writeRule(self.paths, name, contents)
   def _writeAnyRule(self, paths, name, schedulerName, interpreterName):
-    self._writeRule(paths, name, ("[Interpreter]\nName = {0}\n" +
+    self._writeRule(paths, name, ("[Interpreter]\nName = {0}\nLoc1=\nLoc2=\n" +
         "[Scheduler]\nName={1}").format(interpreterName, schedulerName))
   def writeAnyRuleWithSchedAndInter(self, name):
     schedulerName = name + "-sched"
@@ -253,6 +255,8 @@ def test_shouldInvokeTheCorrectConfiguredSchedulersAndInterpreters(fixture):
 [Interpreter]
 Name = interpreter1
 Option=1
+Loc1=
+Loc2=
 
 [Scheduler]
 Name = scheduler1""")
@@ -261,6 +265,8 @@ Name = scheduler1""")
   Name = scheduler1
 [Interpreter]
 Name = interpreter2
+Loc1=
+Loc2=
 """)
 
   fixture.writeScheduler("scheduler1", TestSchedulerPreamble +
@@ -271,19 +277,19 @@ Name = interpreter2
 if [ $1 = "available-options" ]; then
   echo Option
 else
-  echo one "$2"
+  echo one 
 fi
   """)
 
   fixture.writeInterpreter("interpreter2", """#!/usr/bin/env bash
-  echo two "$2"
+  echo two
   """)
 
   fixture.runSibtWithRealStreamsAndExec("sync", "foo-rule")
   fixture.stdoutShouldBe("scheduled rule 'foo-rule'\n")
       
   fixture.runSibtWithRealStreamsAndExec("sync-uncontrolled", "foo-rule")
-  fixture.stdoutShouldBe("one Option=1\n")
+  fixture.stdoutShouldBe("one\n")
 
 def test_shouldBeAbleToListOnlyRootUsersConfigurationOptionsToStdout(fixture):
   fixture.createSysConfigFolders()
@@ -385,20 +391,25 @@ def test_shouldPassOptionsAsIsToCorrectSchedulersAndInterpreters(fixture):
   [Interpreter]
   Name = inter
   AddFlags = -X -A
+  Loc1 = a
+  Loc2 = b
   [Scheduler]
   Name = sched
   Interval = 2w
   """)
 
-  fixture.execs.expectCalls(fixture.testInterpreterOptionsCall(interPath))
+  fixture.execs.expectMatchingCalls(
+      fixture.testInterpreterOptionsCall(interPath))
   fixture.runSibtCheckingExecs("sync", calledRuleName)
   sched.checkExpectedCalls()
 
-  fixture.execs.expectCalls(fixture.testInterpreterOptionsCall(interPath),
-      (interPath, ("sync", "AddFlags=-X -A"), ""))
+  fixture.execs.expectMatchingCalls(
+      fixture.testInterpreterOptionsCall(interPath),
+      (interPath, lambda args: args[0] == "sync" and 
+          set(args[1:]) == {"AddFlags=-X -A", "Loc1=a", "Loc2=b"}, ""))
   fixture.runSibtCheckingExecs("sync-uncontrolled", calledRuleName)
 
-def test_shouldFailIfOptionsAreUsedThatAreNotExplicitlySupportedByConfiguration(
+def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
     fixture):
   fixture.writeTestScheduler("sched")
   fixture.writeTestInterpreter("inter")
@@ -407,6 +418,8 @@ def test_shouldFailIfOptionsAreUsedThatAreNotExplicitlySupportedByConfiguration(
   Name = inter
   AddFlags = foo
   DoesNotExist = abc
+  Loc1=
+  Loc2=
   [Scheduler]
   Name = sched
   Interval = bar""")
@@ -471,307 +484,66 @@ def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
   fixture.stderrShouldContain("no such", "rule")
   fixture.shouldHaveExitedWithStatus(1)
 
+def test_shouldAddtionallyReadInterpretersAndSchedulersFromReadonlyDir(fixture):
+  schedulersDir = LocalPath(fixture.paths.readonlySchedulersDir)
+  schedulersDir.mkdir()
+  schedulersDir.join("included-scheduler").write(TestSchedulerPreamble)
 
-#def test_shouldBeAbleToReadAndOutputMultipleBackupRulesFromConfFiles(fixture):
-#  rule1Src, rule1Dest, rule2Src, rule2Dest = fixture.makeNumberOfTestDirs(4)
-#  
-#  fixture.writeRuleFile("rule1", """
-#  rsync
-#  
-#    {0}
-#  {1}
-#  every 7w
-#  """.format(rule1Src, rule1Dest))
-#  fixture.writeRuleFile("rule2", """
-#  rdiff
-#  {0}
-#  {1}
-#  15d
-#  """.format(rule2Src, rule2Dest))
-#  fixture.writeRuleFile("rule3", """
-#  rsync
-#  {0}
-#  {1}
-#  """.format(rule1Src, rule1Dest))
-#  
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContainInOrder("rule1", "Using rsync", 
-#    'from "{0}"'.format(rule1Src),
-#    'to "{0}"'.format(rule1Dest),
-#    "run every 7 weeks")
-#  
-#  fixture.stdoutShouldContainInOrder("rule2", "Using rdiff", 
-#    'from "{0}"'.format(rule2Src), 'to "{0}"'.format(rule2Dest),
-#    "run every 15 days")
-#  
-#  fixture.stdoutShouldContainInOrder("rule3", "run every time")
-#  fixture.sibtShouldNotExecuteAnyPrograms()
-#    
-#def test_shouldIgnoreRuleFilesWithNamesPrefixedWithACapitalN(fixture):
-#  activeRuleRun = fixture.writeSomeRsyncRule("active-rule")
-#  
-#  fixture.writeRuleFile("N-inactive-rule", """
-#  rdiff-backup
-#  /one
-#  /two
-#  """)
-#  
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContain("active-rule", "Using rsync")
-#  fixture.stdoutShouldNotContain("inactive-rule", 'from "/one"',
-#    "rdiff-backup")
-#  fixture.sibtShouldNotExecuteAnyPrograms()
-#  
-#  fixture.runSibt()
-#  fixture.sibtShouldExecute([activeRuleRun])
-#  
-#def test_shouldRunRsyncWithCorrectOptionsAndSourceEndingWithSlash(fixture):
-#  rule1Src = fixture.newTestDir("folder1")
-#  rule1Dest = fixture.newTestDir("folder2/")
-#  rule2Src = fixture.newTestDir("folder3/")
-#  rule2Dest = fixture.newTestDir("folder3/")
-#  
-#  fixture.writeRuleFile("rsync-rule-1", """
-#  rsync
-#  {0}
-#  {1}
-#  """.format(rule1Src, rule1Dest))
-#  fixture.writeRuleFile("rsync-rule-2", """
-#  rsync
-#  {0}
-#  {1}
-#  """.format(rule2Src, rule2Dest))
-#  
-#  expectedRule1Src = rule1Src + "/"
-#  
-#  fixture.runSibt()
-#  fixture.stdoutShouldBeEmpty()
-#  fixture.sibtShouldExecuteInAnyOrder([
-#    ("rsync", ("-a", "--partial", "--delete", expectedRule1Src, rule1Dest)),
-#    ("rsync", ("-a", "--partial", "--delete", rule2Src, rule2Dest))])
-#  
-#def test_shouldRunRdiffBackupWithCorrectOptionOnceForEachRdiffRule(fixture):
-#  rule1Src = fixture.newTestDir("folder")
-#  rule1Dest = fixture.newTestDir("folder/")
-#  rule2Src = fixture.newTestDir("source/")
-#  rule2Dest = fixture.newTestDir("dest")
-#  
-#  fixture.writeRuleFile("rdiff-rule1", """
-#  rdiff
-#  {0}
-#  {1}
-#  """.format(rule1Src, rule1Dest))
-#  fixture.writeRuleFile("rdiff-rule2", """
-#  rdiff
-#  {0}
-#  {1}""".format(rule2Src, rule2Dest))
-#  
-#  fixture.runSibt()
-#  fixture.sibtShouldExecuteInAnyOrder(
-#    [("rdiff-backup", ("--remove-older-than", "2W",
-#    rule1Src, rule1Dest)),
-#    ("rdiff-backup", ("--remove-older-than", "2W",
-#    rule2Src, rule2Dest))])
-#  
-#def test_ifAFrequencyIsDefinedShouldRunRuleOnlyIfSufficientTimeHasPassed(
-#  fixture):
-#  firstRuleRun = fixture.writeSomeRsyncRule("unrestrained-rule")
-#  secondRuleRun = fixture.writeSomeRsyncRule("every-two-days", "every 2d")
-#  thirdRuleRun = fixture.writeSomeRsyncRule("every-three-weeks", "every 3w")
-#  
-#  def sibtShouldExecuteAtTimeAfterInitialTime(time, programs):
-#    fixture.setClockToTimeAfterInitialTime(time)
-#    fixture.runSibt()
-#    fixture.sibtShouldExecuteInAnyOrder(programs)
-#  
-#  fixture.runSibt()
-#  fixture.sibtShouldExecuteInAnyOrder(
-#    [firstRuleRun, secondRuleRun, thirdRuleRun])
-#  
-#  fixture.runSibt()
-#  fixture.sibtShouldExecute([firstRuleRun])
-#  
-#  sibtShouldExecuteAtTimeAfterInitialTime(timedelta(days=1), [firstRuleRun])
-#  sibtShouldExecuteAtTimeAfterInitialTime(timedelta(days=2), 
-#    [firstRuleRun, secondRuleRun])
-#  sibtShouldExecuteAtTimeAfterInitialTime(timedelta(days=5), 
-#    [firstRuleRun, secondRuleRun])
-#  sibtShouldExecuteAtTimeAfterInitialTime(timedelta(weeks=3), 
-#    [firstRuleRun, secondRuleRun, thirdRuleRun])
-#  
-#def test_shouldNotRunAnyRulesDuringConfiguredTimeOfDayToAvoid(fixture):
-#  ruleRun = fixture.writeSomeRsyncRule("some-rule")
-#  
-#  def shouldExecuteAt(timeOfDay, shouldExecute):
-#    fixture.setTimeOfDay(timeOfDay)
-#    fixture.runSibt()
-#    if shouldExecute:
-#      fixture.sibtShouldExecute([ruleRun])
-#    else:
-#      fixture.sibtShouldNotExecuteAnyPrograms()
-#  
-#  fixture.writeGlobalConf("""
-#  avoid time of day from 23:00 to 2:00
-#  """)
-#  
-#  shouldExecuteAt(time(22, 58), True)
-#  shouldExecuteAt(time(22, 59), True)
-#  
-#  shouldExecuteAt(time(23, 0), False)
-#  shouldExecuteAt(time(23, 5), False)
-#  shouldExecuteAt(time(0, 5), False)
-#  shouldExecuteAt(time(1, 0), False)
-#  shouldExecuteAt(time(2, 0), False)
-#  
-#  shouldExecuteAt(time(2, 1), True)
-#  shouldExecuteAt(time(3, 1), True)
-#  shouldExecuteAt(time(16, 0), True)
-#  
-#  fixture.removeGlobalConf()
-#  shouldExecuteAt(time(1, 0), True)
-#  
-#def test_shouldPrintSyntaxConfErrorsIfTheyExistNDoNothingElseForAnyGivenOptions(
-#  fixture):
-#  def expectErrorWithConfFile(title, contents, *errors):
-#    def checkOutput():
-#      fixture.sibtShouldNotExecuteAnyPrograms()
-#      fixture.stdoutShouldContain("errors", *errors)
-#    fixture.writeRuleFile(title, contents)
-#    
-#    fixture.runSibt()
-#    checkOutput()
-#    
-#    fixture.runSibt("--list-config")
-#    checkOutput()
-#    fixture.stdoutShouldNotContain("rsync")
-#    
-#    fixture.removeConfFile(title)
-#    
-#  fixture.writeSomeRsyncRule("valid-rule")
-#  expectErrorWithConfFile("interval-unit", """
-#  rsync
-#  /some/place
-#  /another/one
-#  every 2y
-#  """, "invalid interval unit", 'in file "interval-unit"')
-#  
-#  expectErrorWithConfFile("interval-format", """
-#  rsync
-#  /some/place
-#  /another/one
-#  every two days
-#  """, "parsing interval", 'in file "interval-format"')
-#  
-#  expectErrorWithConfFile("global.conf", """
-#  avoid time of day from 10:00 to
-#  """, "parsing time of day restriction", 'in file "global.conf"')
-#  
-#  expectErrorWithConfFile("too-many-lines", """
-#  rsync
-#  /1
-#  /2
-#  every 5d
-#  invalid
-#  """, "superfluous lines", 'in file "too-many-lines"')
-#  
-#def test_shouldOutputGlobalConfInformationWhenListingConfig(fixture):
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContainInOrder("global.conf", 
-#    "no time of day restriction")
-#  
-#  fixture.writeGlobalConf("avoid time of day from 10:00 to  14:02")
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContainInOrder("global.conf", 
-#    "won't run", "from 10:00 to 14:02")
-#  
-#def test_shouldSimplyOutputSemanticErrorsButNeverRunAnyRulesIfTheyArePresent(
-#  fixture):
-#  def shouldPrintErrorsAndRunNothing(errors, listConfigOutput):
-#    fixture.runSibt()
-#    fixture.sibtShouldNotExecuteAnyPrograms()
-#    fixture.stdoutShouldContainInOrder(*errors)
-#    
-#    fixture.runSibt("--list-config")
-#    fixture.stdoutShouldContainInOrder(*errors + listConfigOutput)
-#  
-#  srcDir, destDir, srcDir2, destDir2 = fixture.makeNumberOfTestDirs(4)
-#  
-#  fixture.writeSomeRsyncRule("valid-rule")
-#  destinationSubDir = os.path.join(destDir, "some-subdirectory")
-#  fixture.writeRuleFile("parent-of-dest-exists", """
-#  rsync
-#  {0}
-#  {1}
-#  """.format(srcDir2, destinationSubDir))
-#  fixture.runSibt()
-#  fixture.sibtShouldAmongOthersExecute(rsyncRun(srcDir2 + "/", 
-#    destinationSubDir))
-#  
-#  fixture.writeRuleFile("unknown-tool", """
-#  supersync3000
-#  {0}
-#  {1}""".format(srcDir, destDir))
-#  
-#  shouldPrintErrorsAndRunNothing(("errors", "unknown backup program",
-#    '"supersync3000"'), ("using supersync3000", 'from "{0}"'.format(srcDir)))
-#  
-#  fixture.writeRuleFile("source-doesnt-exist", """
-#  rsync
-#  /some/source
-#  {0}""".format(destDir2))
-#  
-#  shouldPrintErrorsAndRunNothing(("unknown backup program", 
-#    "source of", "does not exist", "source-doesnt-exist"), 
-#    ('from "/some/source"',))
-#  
-#  fixture.writeRuleFile("path-exists-but-is-relative", """
-#  rsync
-#  {0}
-#  {1}""".format(srcDir, os.path.relpath(destDir)))
-#  shouldPrintErrorsAndRunNothing(("destination of",
-#    "relative"), tuple())
-#  
-#def test_shouldOutputInformationAboutIntervalOfRulesWhenListingConfig(fixture):
-#  def dateStringWithDay(day):
-#    return "2000-01-{0} 12:00:00.000000 +0000".format(day)
-#  
-#  fixture.writeSomeRsyncRule("every-week-rule", "every 1w")
-#  fixture.writeSomeRsyncRule("unrestricted-rule")
-#  fixture.setClockInitialTime(datetime(2000, 1, 1, 12, tzinfo=timezone.utc))
-#  
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContainInOrder("every-week-rule", 
-#    "last time run: n/a",
-#    "next time (at the earliest): Due")
-#  fixture.stdoutShouldContainInOrder("unrestricted-rule:",
-#    "next time (at the earliest): Due")
-#  
-#  fixture.runSibt()
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContainInOrder("every-week-rule", 
-#    "last time run: " + dateStringWithDay("01"),
-#    "next time (at the earliest): " + dateStringWithDay("08"))
-#  fixture.stdoutShouldContainInOrder("unrestricted-rule:",
-#    "next time (at the earliest): Due")
-#    
-#  fixture.setClockToTimeAfterInitialTime(timedelta(days=4))
-#  fixture.runSibt()
-#  fixture.runSibt("--list-config")
-#  fixture.stdoutShouldContainInOrder("unrestricted-rule:",
-#    "last time run: " + dateStringWithDay("05"))
-#  fixture.stdoutShouldContainInOrder("every-week-rule",
-#    "next time (at the earliest): " + dateStringWithDay("08"))
-#  
-#  fixture.writeGlobalConf("""
-#    avoid time of day from 11:00 to 14:54
-#  """)
-#  fixture.runSibt("--list-config")
-#  
-#  fixture.stdoutShouldContainInOrder("unrestricted-rule",
-#    "next time (at the earliest): 2000-01-05 14:55:00.000000 +0000")
-#  fixture.stdoutShouldContainInOrder("every-week-rule",
-#    "next time (at the earliest): 2000-01-08 14:55:00.000000 +0000")
-  
-  
-def rsyncRun(src, dest):
-  return ("rsync", ("-a", "--partial", "--delete", src, dest))
+  interpretersDir = LocalPath(fixture.paths.readonlyInterpretersDir)
+  interpretersDir.mkdir()
+  interpreterPath = interpretersDir.join("included-interpreter")
+  interpreterPath.write("")
+  interpreterPath.chmod(0o700)
+
+  fixture.runSibt()
+  fixture.stdoutShouldContainLinePatterns(
+      "*included-interpreter*", "*included-scheduler*")
+
+def test_shouldBeAbleToOverrideDefaultPathsWithCommandLineOptions(fixture):
+  newConfigDir = fixture.tmpdir.mkdir("foo")
+  newSchedulersDir = newConfigDir.mkdir("schedulers")
+  newSchedulersDir.join("jct-scheduler").write(TestSchedulerPreamble)
+
+  fixture.runSibt("--config-dir=" + str(newConfigDir), "list", "schedulers")
+  fixture.stdoutShouldContain("jct-scheduler")
+
+def test_shouldConsiderNameLoc1AndLoc2AsMinimumAndAlreadyAvailableOptions(
+    fixture):
+  fixture.writeTestScheduler("test-scheduler")
+  fixture.writeAnyInterpreter("inter")
+
+  fixture.writeRule("invalid-rule", 
+      "[Interpreter]\nName=inter\n[Scheduler]\nName=test-scheduler")
+
+  fixture.runSibt()
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderrShouldContain("invalid-rule", "minimum", "Loc1")
+
+def test_shouldProvideAWayToImportRuleConfigsAndANamingSchemeForIncludeFiles(
+    fixture):
+  scheduler = fixture.mockTestScheduler("sched")
+  fixture.writeTestInterpreter("inter")
+
+  fixture.writeRule("header.inc", """
+[Scheduler]
+Name = sched
+Interval = 3w
+[Interpreter]
+Name = inter
+""")
+
+  fixture.writeRule("rule", """
+#import header
+[Interpreter]
+Loc1=
+Loc2=
+[Scheduler]
+Syslog = yes""")
+
+  scheduler.expectCallsInOrder(mock.callMatching("run", lambda schedulings:
+      schedulings[0].ruleName == "rule" and schedulings[0].options == {
+          "Interval": "3w", "Syslog": "yes"}))
+
+  fixture.runSibt("sync", "rule")
+  scheduler.checkExpectedCalls()
+

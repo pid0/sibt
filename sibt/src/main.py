@@ -12,42 +12,39 @@ import os.path
 from sibt.application.paths import Paths
 from sibt.infrastructure.userbasepaths import UserBasePaths
 from sibt.application.eachownlineconfigprinter import EachOwnLineConfigPrinter
-from sibt.formatstringrulesinterpreter import FormatStringRulesInterpreter
 from sibt.utccurrenttimeclock import UTCCurrentTimeClock
 from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException
-from sibt.configvalidator import ConfigValidator
 from sibt.application.rulesetrunner import RuleSetRunner
-from sibt.infrastructure.intervalbasedrulesfilter import \
-    IntervalBasedRulesFilter
-from sibt.infrastructure.executiontimefilerepo import ExecutionTimeFileRepo
 from sibt.domain.rulefactory import RuleFactory
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from fnmatch import fnmatchcase
 from sibt.domain.queuingscheduler import QueuingScheduler
 
-externalProgramConfs = {
-  "rsync": 
-    FormatStringRulesInterpreter(
-      "rsync -a --partial --delete {src} {dest}",
-      lambda src: src if src.endswith('/') else src + '/'),
-  "rdiff":
-    FormatStringRulesInterpreter(
-      "rdiff-backup --remove-older-than 2W {src} {dest}", lambda x: x)
-  }
+#externalProgramConfs = {
+#  "rsync": 
+#    FormatStringRulesInterpreter(
+#      "rsync -a --partial --delete {src} {dest}",
+#      lambda src: src if src.endswith('/') else src + '/'),
+#  "rdiff":
+#    FormatStringRulesInterpreter(
+#      "rdiff-backup --remove-older-than 2W {src} {dest}", lambda x: x)
+#  }
 
 def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths, 
     userId, schedulerLoader):
   argParser = CmdLineArgsParser()
   args = argParser.parseArgs(cmdLineArgs)
 
+  overridePaths(paths, args)
   createNotExistingDirs(paths)
   
-  interpreters = readInterpreters([paths.interpretersDir] + 
-      ([sysPaths.interpretersDir] if userId != 0 else []), processRunner)
-  schedulers = readSchedulers([paths.schedulersDir] +
-      ([sysPaths.schedulersDir] if userId != 0 else []), schedulerLoader,
-      (sys.argv[0], paths, sysPaths))
+  interpreters = readInterpreters([paths.interpretersDir, 
+    paths.readonlyInterpretersDir] + ([sysPaths.interpretersDir] if 
+      userId != 0 else []), processRunner)
+  schedulers = readSchedulers([paths.schedulersDir, 
+    paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
+      userId != 0 else []), schedulerLoader, (sys.argv[0], paths, sysPaths))
 
   factory = RuleFactory(schedulers, interpreters)
   try:
@@ -120,6 +117,18 @@ def listConfiguration(printer, output, listType, rules, sysRules, interpreters,
     printer.printSysRules(sysRules)
     printer.printRules(rules)
 
+def overridePaths(paths, cmdLineArgs):
+  newConfigDir = cmdLineArgs.options.get("config-dir", None)
+  newVarDir = cmdLineArgs.options.get("var-dir", None)
+  newReadonlyDir = cmdLineArgs.options.get("readonly-dir", None)
+
+  if newConfigDir:
+    paths.configDir = newConfigDir
+  if newVarDir:
+    paths.varDir = newVarDir
+  if newReadonlyDir:
+    paths.readonlyDir = newReadonlyDir
+
 def createNotExistingDirs(paths):
   DirTreeNormalizer(paths).createNotExistingDirs()
 
@@ -142,18 +151,18 @@ def readRules(rulesDir, enabledDir, factory):
   return reader.read()
 
 def readInterpreters(dirs, processRunner):
-  return collectFilesInDirs(dirs, lambda path, fileName:
-      ExecutableFileRuleInterpreter.createWithFile(path, fileName, 
-        processRunner))
-
-def readSchedulers(dirs, loader, initArgs):
   def load(path, fileName):
     try:
-      return QueuingScheduler(loader.loadFromFile(path, fileName, initArgs))
+      return ExecutableFileRuleInterpreter.createWithFile(path, fileName, 
+        processRunner)
     except ConfigConsistencyException:
       return None
 
   return collectFilesInDirs(dirs, load)
+
+def readSchedulers(dirs, loader, initArgs):
+  return collectFilesInDirs(dirs, lambda path, fileName:
+      QueuingScheduler(loader.loadFromFile(path, fileName, initArgs)))
 
   
 def readConfig(configDir, output):

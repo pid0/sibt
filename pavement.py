@@ -1,22 +1,30 @@
 from paver.easy import *
 import paver.doctools
-from paver.setuputils import setup
+from paver.setuputils import install_distutils_tasks
+import sys
 
 import pytest
 import sys
 
-setup(name="sibt",
-  packages=["sibt"],
-  version="0.1",
-  author="Patrick Plagwitz",
-  author_email="patrick_plagwitz@web.de")
+ReadonlyConfigDir = "share/sibt/"
+options(setup=dict(
+    name="sibt",
+    version="0.1",
+    author="Patrick Plagwitz",
+    author_email="patrick_plagwitz@web.de",
+    packages=["sibt"],
+    package_dir={"sibt": "sibt/src/sibt"}
+#    data_files=[
+#        (readonlyConfigDir + "schedulers", [
+    ))
+install_distutils_tasks()
 
 def runPyTest(testFiles):
   pytest.main(["--color=yes"] + testFiles)
 
 @task
 def setup_pythonpath():
-  sys.path += ["sibt/src"]
+  sys.path += ["sibt/src", "sibt/schedulers"]
   
 @task
 @needs(["setup_pythonpath"])
@@ -38,3 +46,13 @@ def test_only(args):
 def test(args):
   pass
     
+
+@task
+@needs("generate_setup", "minilib", "setuptools.command.sdist")
+def sdist():
+  pass
+
+@task
+@needs("setuptools.command.install")
+def install(options):
+  print(options["install"].get("root", sys.prefix))

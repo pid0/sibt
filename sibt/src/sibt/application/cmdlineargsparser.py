@@ -12,6 +12,9 @@ class CmdLineArgsParser(object):
       args = ["list"]
 
     parser = argparse.ArgumentParser(description="Simple Backup Tool")
+    parser.add_argument("--config-dir")
+    parser.add_argument("--var-dir")
+    parser.add_argument("--readonly-dir")
     subs = parser.add_subparsers(title="actions", dest="action", 
       metavar="list|sync")
 

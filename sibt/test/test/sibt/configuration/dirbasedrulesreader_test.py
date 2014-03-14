@@ -3,7 +3,6 @@ from test.common.assertutil import iterableContainsInAnyOrder
 from sibt.configuration.exceptions import ConfigSyntaxException
 from sibt.configuration.exceptions import ConfigConsistencyException
 from sibt.domain.syncrule import SyncRule
-from test.common.rulebuilder import anyRule
 import pytest
 from datetime import timedelta, time
 from test.common import mock
@@ -25,7 +24,9 @@ class Fixture(object):
     return DirBasedRulesReader(str(self.rulesDir), str(self.enabledDir), 
         self.factory)
   def read(self):
-    return self._createReader().read()
+    ret = self._createReader().read()
+    self.factory.checkExpectedCalls()
+    return ret
     
 def buildCallReturning(matcher, returnValue):
   return mock.callMatchingTuple("build", matcher, ret=returnValue)
@@ -52,7 +53,6 @@ def test_shouldReadEachFileAsRuleAndConstructRulesWithFactory(fixture):
   assert iterableContainsInAnyOrder(fixture.read(), 
       lambda x: x == firstConstructedRule,
       lambda x: x == secondConstructedRule)
-  fixture.factory.checkExpectedCalls()
 
 def test_shouldParseInterpreterAndSchedulerOptionsAsValuesInRespectiveSections(
     fixture):
@@ -72,7 +72,6 @@ Option2 = some-value
         args[1] == {"Name": "bar", "Option3": "yes"} and
         args[2] == {"Name": "foo", "Option1": "quux", "Option2": "some-value"}))
   fixture.read()
-  fixture.factory.checkExpectedCalls()
 
 def test_shouldThrowExceptionIfItEncountersASyntaxError(fixture):
   fixture.writeRuleFile("invalid", "blah")
@@ -104,6 +103,55 @@ def test_shouldThrowExceptionIfConstructionOfRuleFailsBecauseOfConsistency(
   except Exception as ex:
     assert ex == otherEx
 
+def test_shouldIgnoreRuleFilesEndingWithInc(fixture):
+  fixture.writeAnyRule("header-rule.inc")
+
+  assert len(fixture.read()) == 0
+
+def test_shouldReadImportsB_nWhenReadingRuleAAndMakeAsSettingsOverrideAnyB_is(
+    fixture):
+  fixture.writeRuleFile("base.inc", """
+  [Interpreter]
+  Base = 3
+  Bar = base
+  """)
+  fixture.writeRuleFile("which-includes-more.inc", "#import base")
+  fixture.writeRuleFile("include.inc", """
+  [Scheduler]
+  Foo = f1
+  [Interpreter]
+  Bar = b1""")
+  fixture.writeRuleFile("rule", """
+  #import which-includes-more
+  #import include
+  [Scheduler]
+  Quux = q2
+  Foo = f2""")
+
+  fixture.factory.expectCallsInOrder(mock.callMatchingTuple("build",
+      lambda args: args[0] == "rule" and 
+      args[1] == {"Foo": "f2", "Quux": "q2"} and
+      args[2] == {"Bar": "b1", "Base": "3"}))
+  fixture.read()
+
+def test_shouldThrowExceptionIfAnUnknownSectionIsPresent(fixture):
+  fixture.writeRuleFile("invalid", """
+  [FooSection]
+  Lala = 2
+  [Scheduler]
+  [Interpreter]
+  """)
+  with pytest.raises(ConfigSyntaxException):
+    fixture.read()
+
+def test_shouldThrowExceptionIfTheTwoKnownSectionsArentThere(fixture):
+  fixture.writeRuleFile("invalid", """
+  [Fake1]
+  [Fake2]
+  Lala = 2
+  """)
+  with pytest.raises(ConfigSyntaxException):
+    fixture.read()
 
 def test_shouldConsiderSymlinkedToRulesEnabled(fixture):
   on = "enabled-rule"
@@ -117,151 +165,6 @@ def test_shouldConsiderSymlinkedToRulesEnabled(fixture):
       buildCall(lambda args: args[0] == on and args[3] == True),
       buildCall(lambda args: args[0] == off and args[3] == False))
   fixture.read()
-  fixture.factory.checkExpectedCalls()
-
-
-#TODO remove
-#def test_shouldParseThreeRuleAttributesFromEachFileInConfigDirectory(fixture):
-#  fixture.writeRuleFile("configFile1", """some-tool
-#  /from/here
-#  
-#  /to/there
-#  
-#  """)
-#  fixture.writeRuleFile("configFile2", """
-#     other-tool
-#  /from/one
-#  
-#  /to/another-place
-#  
-#  """)
-#  
-#  fixture.resultShouldBe(anyConfig().withRules({anyRule().
-#    withTitle("configFile1"). 
-#    withProgram("some-tool").
-#    withSource("/from/here").
-#    withDest("/to/there"),
-#    anyRule().
-#    withTitle("configFile2").
-#    withProgram("other-tool").
-#    withSource("/from/one").
-#    withDest("/to/another-place")}).build())
-#  
-#def test_shouldIgnoreFilesWhoseNamesArePrefixedWithACapitalN(fixture):
-#  fixture.writeRuleFile("n-active", """a-tool
-#  /one
-#  /two
-#  """)
-#  fixture.writeRuleFile("Nignore-this", """
-#  second-tool
-#  /three
-#  /four
-#  """)
-#  
-#  fixture.resultShouldBe(anyConfig().withRules({anyRule().
-#    withTitle("n-active").
-#    withProgram("a-tool").
-#    withSource("/one").
-#    withDest("/two")}).build())
-#  
-#def test_shouldParseGlobalConfTimeOfDayRestrictionContentIfExisting(fixture):
-#  fixture.writeRuleFile("global.conf", """
-#  
-#  avoid time of day from 5:00   to  13:15 """)
-#  
-#  fixture.resultShouldBe(emptyConfig().withTimeOfDayRestriction(
-#    TimeRange(time(5, 0), time(13, 15))).build())
-#  
-#  
-#  fixture.writeRuleFile("global.conf", """
-#  avoid time of day from 4:12 to 8:2 """)
-#  
-#  fixture.resultShouldBe(emptyConfig().withTimeOfDayRestriction(
-#    TimeRange(time(4, 12), time(8, 2))).build())
-#  
-#def test_shouldInterpretLastLineAsIntervalOfRule(fixture):
-#  fixture.writeRuleFile("every-10-days", """program
-#  /src
-#  /dest
-#  every 10d
-#  """)
-#  fixture.writeRuleFile("every-4-weeks", """program2
-#  /src
-#  /dest
-#   every   4w
-#  """)
-#
-#  fixture.resultShouldBe(anyConfig().withRules(
-#    {anyRule().
-#      withTitle("every-10-days").
-#      withProgram("program").
-#      withSource("/src").
-#      withDest("/dest").
-#      withInterval(timedelta(days=10)),
-#     anyRule().
-#      withTitle("every-4-weeks").
-#      withProgram("program2").
-#      withSource("/src").
-#      withDest("/dest").
-#      withInterval(timedelta(weeks=4))}).build())
-#  
-#def test_shouldRaiseExceptionWhenReadingInvalidIntervalTimeUnit(fixture):
-#  fixture.writeRuleFile("invalid", """
-#  tool
-#  /something
-#  /2
-#  every 2f
-#  """)
-#  
-#  with pytest.raises(ConfigParseException):
-#    fixture.read()
-#    
-#def test_shouldRaiseExceptionWhenRecognizingFormatErrorInIntervalSpecification(
-#  fixture):
-#  fixture.writeRuleFile("invalid", """
-#  tool
-#  /1
-#  /2
-#  every ad
-#  """)
-#  
-#  with pytest.raises(ConfigParseException):
-#    fixture.read()
-#    
-#def test_shouldRaiseExceptionWhenReadingNegativeInterval(fixture):
-#  fixture.writeRuleFile("negative-interval", """
-#  tool
-#  /1
-#  /2
-#  every -2w
-#  """)
-#  
-#  with pytest.raises(ConfigParseException):
-#    fixture.read()
-#    
-#def test_shouldRaiseExceptionWhenEncounteringInvalidGlobalConfFormat(fixture):
-#  fixture.writeRuleFile("global.conf", "avoid time of day from 4:00 to")
-#  
-#  with pytest.raises(ConfigParseException):
-#    fixture.read()
-#    
-#  fixture.writeRuleFile("global.conf", "avoid time of day from 4:00")
-#  
-#  with pytest.raises(ConfigParseException):
-#    fixture.read()
-#    
-#def test_shouldRaiseExceptionIfRuleFileHasMoreThanFourNonEmptyLines(fixture):
-#  fixture.writeRuleFile("invalid", """
-#  some-tool
-#  /1
-#  /2
-#  every 2d
-#  
-#    more on this line
-#  """)
-#  
-#  with pytest.raises(ConfigParseException):
-#    fixture.read()
 
 def containsExactlyOneRuleNamed(rules, name):
   return len([rule for rule in rules if rule.name == name]) == 1

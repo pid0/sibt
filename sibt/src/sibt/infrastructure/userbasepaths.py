@@ -5,6 +5,7 @@ import os
 class UserBasePaths(object):
   def __init__(self, uid):
     self._uid = uid
+    self.readonlyDir = "/usr/share"
   @classmethod
   def forCurrentUser(clazz):
     return clazz(os.getuid())

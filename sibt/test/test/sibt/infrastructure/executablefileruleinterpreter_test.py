@@ -45,7 +45,7 @@ def test_shouldCallExecutableWithOptionsInKeyValueFormatIfToldToSync(fixture):
   options = {"First": "foo", "Second": "/tmp/quux"}
 
   interpreter, execs = fixture.createWithExecutable("bar")
-  execs.expectCalls(fixture.lastInterpreterCall(
+  execs.expectMatchingCalls(fixture.lastInterpreterCall(
     lambda args: args[0] == "sync" and set(args[1:3]) == 
         set(["First=foo", "Second=/tmp/quux"]) and len(args) == 3, ""))
 
