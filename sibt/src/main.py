@@ -1,4 +1,5 @@
 from sibt.infrastructure import collectFilesInDirs
+from sibt.domain.finegrainedrulesvalidator import FineGrainedRulesValidator
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from sibt.infrastructure.executablefileruleinterpreter import \
@@ -44,7 +45,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
       userId != 0 else []), processRunner)
   schedulers = readSchedulers([paths.schedulersDir, 
     paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
-      userId != 0 else []), schedulerLoader, (sys.argv[0], paths, sysPaths))
+      userId != 0 else []), schedulerLoader, (sys.argv[0], paths))
 
   factory = RuleFactory(schedulers, interpreters)
   try:
@@ -64,6 +65,14 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
       return 1
 
   if args.action == "sync":
+    validator = FineGrainedRulesValidator()
+    errors = validator.validate(matchingRules)
+    if len(errors) > 0:
+      stderr.println("errors in rules:")
+      for error in errors:
+        stderr.println(error)
+      return 1
+
     for rule in matchingRules:
       rule.schedule()
 

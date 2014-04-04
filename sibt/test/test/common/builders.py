@@ -12,9 +12,17 @@ class SchedulingBuilder(object):
   def __init__(self):
     self.ruleName = withRandstring("any-rule")
     self.options = dict()
+
+  def withRuleName(self, name):
+    self.ruleName = name
+    return self
+
+  def withOption(self, key, value):
+    self.options[key] = value
+    return self
     
   def build(self):
     return Scheduling(self.ruleName, self.options)
 
 def anyScheduling(): return SchedulingBuilder().build()
-
+def scheduling(): return SchedulingBuilder()

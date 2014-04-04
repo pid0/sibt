@@ -2,12 +2,10 @@ from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
 import shutil
 from fnmatch import fnmatchcase
-from test.common.mockedbasepaths import MockedBasePaths
 from test.acceptance.runresult import RunResult
 from test.acceptance.bufferingoutput import BufferingOutput
 from test.acceptance.interceptingoutput import InterceptingOutput
 from test.common.execmock import ExecMock
-from sibt.application.paths import Paths
 from py._path.local import LocalPath
 import main
 import pytest
@@ -16,15 +14,16 @@ import os.path
 import sys
 from datetime import datetime, timezone, timedelta, time
 from test.common.constantclock import ConstantClock
-from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from test.common import mock
 from test.common.mockedschedulerloader import MockedSchedulerLoader
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from test.common.assertutil import iterableContainsInAnyOrder
+from test.common.pathsbuilder import existingPaths, pathsIn
 
 TestSchedulerPreamble = """
 availableOptions = ["Interval", "Syslog"]
 def init(*args): pass
+def check(*args): return []
 """
 
 class SibtSpecFixture(object):
@@ -34,22 +33,19 @@ class SibtSpecFixture(object):
     sysDir = tmpdir.join("system")
     readonlyDir = tmpdir.mkdir("usr-share")
 
-    self.paths = Paths(MockedBasePaths(str(userDir.join("var")),
-      str(userDir.join("config")), str(readonlyDir)))
-    self.sysPaths = Paths(MockedBasePaths(str(sysDir.join("var")),
-      str(sysDir.join("config")), ""))
-    DirTreeNormalizer(self.paths).createNotExistingDirs()
+    self.paths = existingPaths(pathsIn(userDir, readonlyDir))
+    self.sysPaths = pathsIn(sysDir, "")
 
     self.initialTime = datetime.now(timezone.utc)
     self.time = self.initialTime
     self.timeOfDay = time()
     self.testDirNumber = 0
     self.setRootUserId()
-    self.schedulerLoader = PyModuleSchedulerLoader("foo")
+    self.mockedSchedulers = dict()
     self.execs = ExecMock()
   
   def createSysConfigFolders(self):
-    DirTreeNormalizer(self.sysPaths).createNotExistingDirs()
+    self.sysPaths = existingPaths(self.sysPaths)
 
   def deleteConfigAndVarFolders(self):
     for directory in os.listdir(str(self.tmpdir)):
@@ -71,12 +67,13 @@ class SibtSpecFixture(object):
     self._writeAnyScheduler(self.paths, name)
   def writeAnySysScheduler(self, name):
     self._writeAnyScheduler(self.sysPaths, name)
-  def mockTestScheduler(self, name):
+  def mockTestScheduler(self, name, errorMessages=[]):
     self.writeAnyScheduler(name)
     scheduler = mock.mock()
     scheduler.availableOptions = ["Interval", "Syslog"]
     scheduler.name = name
-    self.schedulerLoader = MockedSchedulerLoader({name: scheduler})
+    scheduler.check = lambda *args: errorMessages
+    self.mockedSchedulers[name] = scheduler
     return scheduler
 
   def testInterpreterOptionsCall(self, path):
@@ -240,9 +237,12 @@ class SibtSpecFixture(object):
     return ret
 
   def _runSibt(self, stdout, stderr, processRunner, arguments):
+    schedulerLoader = PyModuleSchedulerLoader("foo") if \
+        len(self.mockedSchedulers) == 0 else \
+        MockedSchedulerLoader(self.mockedSchedulers)
     exitStatus = main.run(arguments, stdout, stderr, processRunner,
       ConstantClock(self.time, self.timeOfDay), self.paths, self.sysPaths, 
-      self.userId, self.schedulerLoader)
+      self.userId, schedulerLoader)
     
     self.result = RunResult(stdout, stderr, exitStatus)
     
@@ -368,7 +368,8 @@ def test_shouldDistinguishBetweenDisabledAndSymlinkedToEnabledRules(fixture):
 
 def test_shouldFailIfConfiguredSchedulerOrInterpreterDoesNotExist(fixture):
   fixture.writeAnyScheduler("is-there")
-  fixture.writeAnyRule("rule", "is-there", "is-not-there")
+  fixture.writeAnyRule("invalid-rule", "is-there", "is-not-there")
+  fixture.writeAnyRuleWithSchedAndInter("valid-rule")
 
   fixture.runSibt()
   fixture.stdoutShouldBeEmpty()
@@ -440,15 +441,19 @@ def test_shoulIssureErrorMessageIfRuleNameContainsAnAt(fixture):
 
   fixture.runSibt()
   fixture.stderrShouldContain("invalid character")
+def test_shoulIssureErrorMessageIfRuleNameContainsASpace(fixture):
+  fixture.writeAnyRuleWithSchedAndInter("no space")
+
+  fixture.runSibt()
+  fixture.stderrShouldContain("invalid character", "no space")
 
 def test_shouldInitSchedulersCorrectly(fixture):
   fixture.writeScheduler("sched", """availableOptions = []
-def init(sibtInvocation, paths, sysPaths): print("{0}{1}{2}".format(
-sibtInvocation, paths.configDir, sysPaths.configDir))""")
+def init(sibtInvocation, paths): print("{0}{1}".format(
+sibtInvocation, paths.configDir))""")
 
   fixture.runSibtWithRealStreamsAndExec("list", "schedulers")
-  fixture.stdoutShouldContain(sys.argv[0] + fixture.paths.configDir + 
-      fixture.sysPaths.configDir + "\n")
+  fixture.stdoutShouldContain(sys.argv[0] + fixture.paths.configDir + "\n")
 
 def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
     fixture):
@@ -524,6 +529,9 @@ def test_shouldProvideAWayToImportRuleConfigsAndANamingSchemeForIncludeFiles(
   scheduler = fixture.mockTestScheduler("sched")
   fixture.writeTestInterpreter("inter")
 
+  fixture.enableRule("header.inc")
+  fixture.enableRule("rule")
+
   fixture.writeRule("header.inc", """
 [Scheduler]
 Name = sched
@@ -544,6 +552,26 @@ Syslog = yes""")
       schedulings[0].ruleName == "rule" and schedulings[0].options == {
           "Interval": "3w", "Syslog": "yes"}))
 
-  fixture.runSibt("sync", "rule")
+  fixture.runSibt("sync", "*")
   scheduler.checkExpectedCalls()
+
+def test_shouldCheckOptionsBeforeSchedulingRulesAndAbortIfAnErrorOccurs(
+    fixture):
+  sched = fixture.mockTestScheduler("uncontent-scheduler", 
+      errorMessages=["this problem cannot be solved"])
+  sched2 = fixture.mockTestScheduler("content-scheduler")
+  fixture.writeAnyInterpreter("foo-inter")
+
+  fixture.writeAnyRule("badly-configured-rule", "uncontent-scheduler", 
+      "foo-inter")
+  fixture.writeAnyRule("correctly-configured-rule", "content-scheduler", 
+      "foo-inter")
+
+  fixture.enableRule("badly-configured-rule")
+  fixture.enableRule("correctly-configured-rule")
+
+  fixture.runSibt("sync", "*")
+  fixture.stderrShouldContain("in badly-configured-rule", 
+    "this problem cannot be solved")
+
 

@@ -7,7 +7,7 @@ class Fixture(object):
     self.tmpdir = tmpdir
 
   def loadModule(self, name, code, *initArgs):
-    path = self.tmpdir.join(name)
+    path = self.tmpdir.join(name + "foo")
     path.write(code)
     return self.loader.loadFromFile(str(path), name, initArgs)
 
@@ -35,6 +35,3 @@ def init(x, y): pymoduleschedulerloader_test.Result = x + y""",
       1, 2)
   assert Result == 3
 
-def test_shouldRemovePyExtensionFromNameIfPresent(fixture):
-  module = fixture.loadModule("a-mod.py", EmptyInitFunc)
-  assert module.name == "a-mod"

@@ -63,7 +63,7 @@ class DirBasedRulesReader(object):
         [parser])
 
   def _readRuleFile(self, path, fileName):
-    if "," in fileName or "@" in fileName:
+    if "," in fileName or "@" in fileName or " " in fileName:
       raise ConfigSyntaxException(path, 
           "invalid character (, and @) in rule name")
     if fileName.endswith(".inc"):
