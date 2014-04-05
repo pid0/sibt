@@ -68,7 +68,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
       return 1
 
   if args.action == "sync":
-    validator = FineGrainedRulesValidator()
+    validator = FineGrainedRulesValidator(schedulers)
     errors = validator.validate(matchingRules)
     if len(errors) > 0:
       stderr.println("errors in rules:")

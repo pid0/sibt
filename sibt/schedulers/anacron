@@ -3,7 +3,7 @@ from sibt.infrastructure.synchronousprocessrunner import \
 from sibt.infrastructure.intervalparser import IntervalParser
 import os
 
-availableOptions = ["Interval"]
+availableOptions = ["Interval", "LogFile", "ExecOnFailure", "AllowedHours"]
 
 class Anacron(object):
   def init(self, initSibtCall, paths):
@@ -20,40 +20,83 @@ class Anacron(object):
         "Interval", "3")))
 
   def run(self, schedulings):
-    tabPath = self.findTabName()
+    tabPath = self.findFileName("tab")
+    scriptPath = self.findFileName("script")
+    self.writeScript(scriptPath)
 
     with open(tabPath, "w") as tabFile:
       for scheduling in schedulings:
-        self.writeTabEntry(tabFile, scheduling)
+        if "AllowedHours" in scheduling.options:
+          tabFile.write("START_HOURS_RANGE={0}".format(
+              scheduling.options["AllowedHours"]) + "\n")
+          break
+
+      for scheduling in schedulings:
+        self.writeTabEntry(scriptPath, tabFile, scheduling)
 
     self.processRunner.execute("/usr/bin/anacron", "-t", tabPath,
-        "-S", self.spoolDir)
+        "-S", self.spoolDir, "-d")
 
     os.remove(tabPath)
+    os.remove(scriptPath)
 
-  def check(self, scheduling):
-    try:
-      self.getInterval(scheduling)
-    except Exception as ex:
-      return [str(ex)]
+  def check(self, schedulings):
+    for scheduling in schedulings:
+      try:
+        self.getInterval(scheduling)
+      except Exception as ex:
+        return [str(ex)]
+
+    allowedHours = None
+    allowedHoursSettings = [scheduling.options["AllowedHours"] for 
+        scheduling in schedulings if "AllowedHours" in scheduling.options]
+    if len(allowedHoursSettings) != 0 and not all(setting == 
+        allowedHoursSettings[0] for setting in allowedHoursSettings):
+      return ["contradictory AllowedHours setting"]
 
     return []
 
-  def writeTabEntry(self, tabFile, scheduling):
+  def writeScript(self, path):
+    with open(path, "w") as scriptFile:
+      scriptFile.write("""#!/usr/bin/env bash
+sibtProgram="$1"
+ruleName="$2"
+logFile="$3"
+execOnFailure="$4"
+execOnFailure=${execOnFailure/'%r'/"$ruleName"}
+
+declare -a sibtCall=("$sibtProgram" sync-uncontrolled "$ruleName")
+if [ -z "$logFile" ]; then
+  "${sibtCall[@]}"
+else
+  "${sibtCall[@]}" >>"$logFile" 2>&1
+fi
+
+if [ $? != 0 ]; then
+  $execOnFailure
+fi
+      """)
+    os.chmod(path, 0o700)
+
+  def writeTabEntry(self, scriptPath, tabFile, scheduling):
     for field in [self.getInterval(scheduling),
         "0", 
         scheduling.ruleName,
-        "{0} sync-uncontrolled {1}".format(self.sibtCall, scheduling.ruleName)]:
+        scriptPath,
+        self.sibtCall,
+        scheduling.ruleName,
+        scheduling.options.get("LogFile", '""'),
+        '"{0}"'.format(scheduling.options.get("ExecOnFailure", ""))]:
       tabFile.write(field)
       tabFile.write(" ")
 
     tabFile.write("\n")
 
-  def findTabName(self):
+  def findFileName(self, prefix):
     counter = 1
     ret = None
     while ret is None or os.path.isfile(ret):
-      ret = os.path.join(self.varDir, "tab-" + str(counter))
+      ret = os.path.join(self.varDir, prefix + "-" + str(counter))
       counter += 1
     return ret
 

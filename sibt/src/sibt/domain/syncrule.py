@@ -21,8 +21,7 @@ class SyncRule(object):
     self.interpreter.sync(self.interpreterOptions)
 
   def checkScheduler(self):
-    return ["in {0}: {1}".format(self.name, error) for error in
-        self.scheduler.check(self._scheduling())]
+    return self.scheduler.check([self._scheduling()])
 
   def __repr__(self):
     return "SyncRule{0}".format((self.name, self.schedulerOptions, 

@@ -1,6 +1,18 @@
 import os
+import sys
 
 class InterceptingOutput(object):
+  @classmethod
+  def stderr(clazz):
+    def setStderr(newFile):
+      sys.stderr = newFile
+    return clazz(sys.stderr, setStderr, 2)
+  @classmethod
+  def stdout(clazz):
+    def setStdout(newFile):
+      sys.stdout = newFile
+    return clazz(sys.stdout, setStdout, 1)
+
   def __init__(self, fileObject, setter, fd):
     self.fileObject = fileObject
     self.originalFd = -1

@@ -4,7 +4,7 @@ import shutil
 from fnmatch import fnmatchcase
 from test.acceptance.runresult import RunResult
 from test.acceptance.bufferingoutput import BufferingOutput
-from test.acceptance.interceptingoutput import InterceptingOutput
+from test.common.interceptingoutput import InterceptingOutput
 from test.common.execmock import ExecMock
 from py._path.local import LocalPath
 import main
@@ -67,7 +67,7 @@ class SibtSpecFixture(object):
     self._writeAnyScheduler(self.paths, name)
   def writeAnySysScheduler(self, name):
     self._writeAnyScheduler(self.sysPaths, name)
-  def mockTestScheduler(self, name, errorMessages=[], isSysConfig=False):
+  def mockTestScheduler(self, name, isSysConfig=False):
     if isSysConfig:
       self.writeAnySysScheduler(name)
     else:
@@ -76,7 +76,7 @@ class SibtSpecFixture(object):
     scheduler = mock.mock()
     scheduler.availableOptions = ["Interval", "Syslog"]
     scheduler.name = name
-    scheduler.check = lambda *args: errorMessages
+    scheduler.check = lambda *args: []
     self.mockedSchedulers[name] = scheduler
     return scheduler
 
@@ -177,12 +177,8 @@ class SibtSpecFixture(object):
     self.userId = 0
   
   def runSibtWithRealStreamsAndExec(self, *arguments):
-    def setStdout(newFile):
-      sys.stdout = newFile
-    def setStderr(newFile):
-      sys.stderr = newFile
-    with InterceptingOutput(sys.stdout, setStdout, 1) as stdout, \
-        InterceptingOutput(sys.stderr, setStderr, 2) as stderr:
+    with InterceptingOutput.stdout() as stdout, \
+        InterceptingOutput.stderr() as stderr:
       ret = self._runSibt(stdout, stderr, SynchronousProcessRunner(), 
           arguments)
     return ret
@@ -550,21 +546,25 @@ Syslog = yes""")
 
 def test_shouldCheckOptionsBeforeSchedulingRulesAndAbortIfAnErrorOccurs(
     fixture):
-  sched = fixture.mockTestScheduler("uncontent-scheduler", 
-      errorMessages=["this problem cannot be solved"])
+  sched = fixture.mockTestScheduler("uncontent-scheduler")
+  sched.check = lambda schedulings: ["this problem cannot be solved"] if \
+      len(schedulings) == 2 else []
   sched2 = fixture.mockTestScheduler("content-scheduler")
   fixture.writeAnyInterpreter("foo-inter")
 
   fixture.writeAnyRule("badly-configured-rule", "uncontent-scheduler", 
       "foo-inter")
+  fixture.writeAnyRule("second-bad", "uncontent-scheduler", 
+      "foo-inter")
   fixture.writeAnyRule("correctly-configured-rule", "content-scheduler", 
       "foo-inter")
 
   fixture.enableRule("badly-configured-rule")
+  fixture.enableRule("second-bad")
   fixture.enableRule("correctly-configured-rule")
 
   fixture.runSibt("sync", "*")
-  fixture.stderrShouldContain("in badly-configured-rule", 
+  fixture.stderrShouldContain(" in ", "badly-configured-rule", "second-bad",
       "this problem cannot be solved")
 
 def test_shouldFailAndPrintErrorIfInterpreterReturnsNonZero(fixture):
