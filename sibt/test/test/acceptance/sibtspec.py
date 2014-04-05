@@ -67,8 +67,12 @@ class SibtSpecFixture(object):
     self._writeAnyScheduler(self.paths, name)
   def writeAnySysScheduler(self, name):
     self._writeAnyScheduler(self.sysPaths, name)
-  def mockTestScheduler(self, name, errorMessages=[]):
-    self.writeAnyScheduler(name)
+  def mockTestScheduler(self, name, errorMessages=[], isSysConfig=False):
+    if isSysConfig:
+      self.writeAnySysScheduler(name)
+    else:
+      self.writeAnyScheduler(name)
+
     scheduler = mock.mock()
     scheduler.availableOptions = ["Interval", "Syslog"]
     scheduler.name = name
@@ -131,36 +135,6 @@ class SibtSpecFixture(object):
     self._writeConfigFile("global.conf", contents)
   def writeRuleFile(self, name, contents):
     self._writeConfigFile(name, contents)
-  def writeSomeRsyncRule(self, title, interval=""): 
-    srcDir = self.newTestDir()
-    destDir = self.newTestDir()
-    self.writeRuleFile(title, """
-    rsync
-    {0}
-    {1}
-    {2}
-    """.format(srcDir, destDir, interval))
-    return rsyncRun(srcDir + "/", destDir)
-  
-  def makeNumberOfTestDirs(self, number):
-    return tuple((self.newTestDir() for _ in range(number)))
-  def newTestDir(self, name=None):
-    self.testDirNumber = self.testDirNumber + 1
-    tmpDir = str(self.tmpdir)
-    parentName = os.path.join(tmpDir, "testdir-" + str(self.testDirNumber))
-    fullName = parentName if name is None else os.path.join(parentName, name)
-    
-    os.makedirs(fullName)
-    return fullName
-    
-  def sibtShouldNotExecuteAnyPrograms(self):
-    assert self.result.executionLogger.programsList == []
-  def sibtShouldAmongOthersExecute(self, expected):
-    assert expected in self.result.executionLogger.programsList
-  def sibtShouldExecute(self, expected):
-    assert self.result.executionLogger.programsList == expected
-  def sibtShouldExecuteInAnyOrder(self, expected):
-    assert set(self.result.executionLogger.programsList) == set(expected)
   
   def stderrShouldContain(self, *phrases):
     for phrase in phrases:
@@ -190,19 +164,12 @@ class SibtSpecFixture(object):
   def stdoutShouldContain(self, *expectedPhrases):
     for phrase in expectedPhrases:
       assert phrase.lower() in self.result.stdout.stringBuffer.lower()
-  def stdoutShouldNotContain(self, *expectedPhrases):
-    for phrase in expectedPhrases:
+  def stdoutShouldNotContain(self, *notExpectedPhrases):
+    for phrase in notExpectedPhrases:
       assert phrase.lower() not in self.result.stdout.stringBuffer.lower()
 
   def shouldHaveExitedWithStatus(self, expectedStatus):
     assert self.result.exitStatus == expectedStatus
-    
-  def setTimeOfDay(self, timeOfDay):
-    self.timeOfDay = timeOfDay
-  def setClockToTimeAfterInitialTime(self, delta):
-    self.time = self.initialTime + delta
-  def setClockInitialTime(self, utcTime):
-    self.initialTime = self.time = utcTime
     
   def setNormalUserId(self):
     self.userId = 25
@@ -486,8 +453,34 @@ def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
   fixture.writeAnyRule("rule", "scheduler", "inter")
 
   fixture.runSibt("sync", "foo")
-  fixture.stderrShouldContain("no such", "rule")
+  fixture.stderrShouldContain("no matching rule", "foo")
   fixture.shouldHaveExitedWithStatus(1)
+
+def test_shouldIgnoreSysRulesWhenSyncing(fixture):
+  fixture.createSysConfigFolders()
+
+  sched = fixture.mockTestScheduler("sys-sched", isSysConfig=True)
+  fixture.writeAnySysInterpreter("sys-inter")
+  fixture.writeAnySysRule("sys-rule", "sys-sched", "sys-inter")
+
+  fixture.setNormalUserId()
+
+  fixture.runSibt("sync", "sys-rule")
+  fixture.stderrShouldContain("no matching", "sys-rule")
+
+def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
+  fixture.createSysConfigFolders()
+
+  fixture.writeAnyScheduler("own-sched")
+  fixture.writeAnySysScheduler("systemd")
+  fixture.writeAnySysInterpreter("tar")
+  fixture.writeAnySysRule("os-backup", "systemd", "tar")
+
+  fixture.setNormalUserId()
+
+  fixture.runSibt("--no-sys-config", "list")
+  fixture.stdoutShouldContain("own-sched")
+  fixture.stdoutShouldNotContain("systemd", "tar", "os-backup")
 
 def test_shouldAddtionallyReadInterpretersAndSchedulersFromReadonlyDir(fixture):
   schedulersDir = LocalPath(fixture.paths.readonlySchedulersDir)
@@ -572,6 +565,18 @@ def test_shouldCheckOptionsBeforeSchedulingRulesAndAbortIfAnErrorOccurs(
 
   fixture.runSibt("sync", "*")
   fixture.stderrShouldContain("in badly-configured-rule", 
-    "this problem cannot be solved")
+      "this problem cannot be solved")
+
+def test_shouldFailAndPrintErrorIfInterpreterReturnsNonZero(fixture):
+  fixture.writeAnyScheduler("sched")
+  fixture.writeInterpreter("failing-inter", """#!/usr/bin/env bash
+echo foo >&2
+exit 1""")
+  fixture.writeAnyRule("rule", "sched", "failing-inter")
+
+  fixture.runSibtWithRealStreamsAndExec()
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stdoutShouldBeEmpty()
+  fixture.stderrShouldContain("failing-inter", "failed")
 
 

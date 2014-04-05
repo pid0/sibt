@@ -21,15 +21,26 @@ class Fixture(object):
   def run(self, schedulings):
     self.mod.run(schedulings)
     self.execs.check()
+  def check(self, scheduling):
+    return self.mod.check(scheduling)
 
-  def tabPath(self, tabName):
-    return str(self.anaVarDir.join(tabName))
-  def tabWithNameShouldContain(self, tabName, expectedLines):
-    lines = [line.strip() for line in self.anaVarDir.join(tabName).readlines()]
-    for line in expectedLines:
-      assert line.format(SibtCall=self.SibtCall) in lines
-  def tabShouldBeDeleted(self, tabName):
-    assert not os.path.isfile(str(self.anaVarDir.join(tabName)))
+  def mockIntervalParser(self):
+    ret = lambda x:x
+    self.mod.impl.intervalParser = ret
+    return ret
+
+  def checkOption(self, optionName, schedulings, matcher):
+    self.execs.expectMatchingCalls(anacronCallMatching(
+      lambda args: matcher(args[args.index(optionName) + 1])))
+    self.run(schedulings)
+
+  def tabShouldContainLinesStartingWith(self, tabPath, *expectedPrefixes):
+    lines = [line.strip() for line in LocalPath(tabPath).readlines()]
+    for prefix in expectedPrefixes:
+      assert any(line.startswith(prefix.format(SibtCall=self.SibtCall)) 
+          for line in lines)
+  def shouldBeDeleted(self, path):
+    assert not os.path.isfile(path)
 
 
 @pytest.fixture
@@ -43,48 +54,67 @@ def anacronCallMatching(matcher):
 #next test: check some option (interval)
 #next test: use -d option
 def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
-  expectedTabName = "tab-1"
-
-  def checkCall(args):
-    assert args[args.index("-t") + 1] == fixture.tabPath(expectedTabName)
-    fixture.tabWithNameShouldContain(expectedTabName, [
-      "3 0 first-rule {SibtCall} sync-uncontrolled first-rule", 
-      "3 0 second-rule {SibtCall} sync-uncontrolled second-rule"
-    ])
+  usedTabPath = []
+  def checkTab(tabPath):
+    usedTabPath.append(tabPath)
+    fixture.tabShouldContainLinesStartingWith(tabPath,
+        "3 0 first-rule {SibtCall} sync-uncontrolled first-rule", 
+        "3 0 second-rule {SibtCall} sync-uncontrolled second-rule"
+    )
     return True
 
-  fixture.execs.expectMatchingCalls(anacronCallMatching(checkCall))
-  fixture.run([
+  fixture.checkOption("-t", [
       scheduling().withRuleName("first-rule"),
-      scheduling().withRuleName("second-rule")])
+      scheduling().withRuleName("second-rule")], checkTab)
 
-  fixture.tabShouldBeDeleted(expectedTabName)
+  fixture.shouldBeDeleted(usedTabPath[0])
 
 def test_shouldUseConstantExistingSpoolDirForAnacron(fixture):
-  def checkCall(args):
-    spoolDir = args[args.index("-S") + 1]
-    assert os.path.isdir(spoolDir)
-    return True
-
-  fixture.execs.expectMatchingCalls(anacronCallMatching(checkCall))
-  fixture.run([anyScheduling()])
-
+  fixture.checkOption("-S", [anyScheduling()], 
+      lambda spoolDir: os.path.isdir(spoolDir) and spoolDir.startswith(
+          str(fixture.anaVarDir)))
 
 def test_shouldCountUpTabNamesIfOtherAnacronInstancesAreRunning(fixture):
   fixture.anaVarDir.join("tab-1").write("")
   fixture.anaVarDir.join("tab-2").write("")
   
-  def checkCall(args):
-    tab = args[args.index("-t") + 1]
+  def checkTab(tab):
     assert os.path.basename(tab) == "tab-3"
     assert os.path.isfile(tab)
     return True
 
-  fixture.execs.expectMatchingCalls(anacronCallMatching(checkCall))
-  fixture.run([anyScheduling()])
+  fixture.checkOption("-t", [anyScheduling()], checkTab)
 
-#def test_shouldPassIntervalOptionInDaysToAnacron(fixture):
-## TODO first call check
-#  parser = lambda x:x
-#  parser.parseNumberOfDays = lambda string: \
-#      1 if string == "a" else 2
+def test_shouldPassIntervalOptionInDaysToAnacron(fixture):
+  assert "Interval" in fixture.mod.availableOptions
+
+  schedulings = [scheduling().
+      withRuleName("one-day").
+      withOption("Interval", "a").build(),
+      scheduling().withRuleName("two-days").
+      withOption("Interval", "b").build()]
+
+  parser = fixture.mockIntervalParser()
+  parser.parseNumberOfDays = lambda string: \
+      1 if string == "a" else 2
+
+  assert fixture.check(schedulings[0]) == []
+  assert fixture.check(schedulings[1]) == []
+  
+  def checkTab(tabPath):
+    fixture.tabShouldContainLinesStartingWith(tabPath,
+        "1 0 one-day",
+        "2 0 two-days")
+    return True
+
+  fixture.checkOption("-t", schedulings, checkTab)
+def test_shouldCheckIfIntervalSyntaxIsCorrectByCatchingExceptionsOfTheParser(
+    fixture):
+  errorMessage = "the lazy dog"
+  def fail(*args):
+    raise Exception(errorMessage)
+  failingParser = fixture.mockIntervalParser()
+  failingParser.parseNumberOfDays = fail
+
+  assert errorMessage in fixture.check(anyScheduling())[0]
+

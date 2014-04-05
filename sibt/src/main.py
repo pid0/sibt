@@ -16,6 +16,8 @@ from sibt.application.eachownlineconfigprinter import EachOwnLineConfigPrinter
 from sibt.utccurrenttimeclock import UTCCurrentTimeClock
 from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException
+from sibt.infrastructure.externalfailureexception import \
+    ExternalFailureException
 from sibt.application.rulesetrunner import RuleSetRunner
 from sibt.domain.rulefactory import RuleFactory
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
@@ -39,29 +41,30 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
 
   overridePaths(paths, args)
   createNotExistingDirs(paths)
+
+  readSysConf = userId != 0 and not args.options["no-sys-config"]
   
   interpreters = readInterpreters([paths.interpretersDir, 
     paths.readonlyInterpretersDir] + ([sysPaths.interpretersDir] if 
-      userId != 0 else []), processRunner)
+      readSysConf else []), processRunner)
   schedulers = readSchedulers([paths.schedulersDir, 
     paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
-      userId != 0 else []), schedulerLoader, (sys.argv[0], paths))
+      readSysConf else []), schedulerLoader, (sys.argv[0], paths))
 
   factory = RuleFactory(schedulers, interpreters)
   try:
     rules = readRules(paths.rulesDir, paths.enabledDir, factory)
-    sysRules = set() if userId == 0 else readRules(sysPaths.rulesDir, 
+    sysRules = set() if not readSysConf else readRules(sysPaths.rulesDir, 
         sysPaths.enabledDir, factory)
-  except ConfigSyntaxException as ex:
-    stderr.println("invalid syntax in file {0}: {1}".format(
-        ex.file, ex.message))
-    stderr.println("reason:\n{0}".format(ex.__cause__))
+  except (ConfigSyntaxException, ExternalFailureException) as ex:
+    printException(ex, stderr)
     return 1
 
   if args.action in ["sync", "sync-uncontrolled"]:
     matchingRules = findRulesByPatterns(args.options["rule-patterns"], rules)
     if len(matchingRules) == 0:
-      stderr.println("no such rule name")
+      stderr.println("no matching rule {0}".format(
+          args.options["rule-patterns"]))
       return 1
 
   if args.action == "sync":
@@ -107,6 +110,10 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
     executeRulesWithConfig(configuration, rulesRunner, rulesFilter, 
       executionTimeRepo, clock)
 
+
+def printException(ex, stderr):
+  stderr.println(str(ex))
+  stderr.println("reason:\n{0}".format(ex.__cause__))
 
 def listConfiguration(printer, output, listType, rules, sysRules, interpreters, 
     schedulers):

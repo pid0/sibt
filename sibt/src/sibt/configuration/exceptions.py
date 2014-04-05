@@ -11,5 +11,5 @@ class ConfigSyntaxException(Exception):
     self.message = message
     
   def __str__(self):
-    return 'config syntax error: {0} in file "{1}"'.format(
-      self.message, self.file)
+    return 'invalid syntax in file {0}: {1}'.format(
+      self.file, self.message)

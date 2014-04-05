@@ -24,13 +24,6 @@ class SyncRule(object):
     return ["in {0}: {1}".format(self.name, error) for error in
         self.scheduler.check(self._scheduling())]
 
-  def schedulerName(self):
-    return self.scheduler.name
-  def interpreterName(self):
-    return self.scheduler.name
-  schedulerName = property(schedulerName)
-  interpreterName = property(interpreterName)
-    
   def __repr__(self):
     return "SyncRule{0}".format((self.name, self.schedulerOptions, 
       self.interpreterOptions, self.enabled, self.scheduler, self.interpreter))

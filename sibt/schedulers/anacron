@@ -1,15 +1,23 @@
 from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
+from sibt.infrastructure.intervalparser import IntervalParser
 import os
+
+availableOptions = ["Interval"]
 
 class Anacron(object):
   def init(self, initSibtCall, paths):
     self.processRunner = SynchronousProcessRunner()
+    self.intervalParser = IntervalParser()
     self.sibtCall = initSibtCall
     self.varDir = os.path.join(paths.varDir, "anacron")
     self.spoolDir = os.path.join(self.varDir, "spool")
     os.mkdir(self.varDir)
     os.mkdir(self.spoolDir)
+
+  def getInterval(self, scheduling):
+    return str(self.intervalParser.parseNumberOfDays(scheduling.options.get(
+        "Interval", "3")))
 
   def run(self, schedulings):
     tabPath = self.findTabName()
@@ -23,8 +31,16 @@ class Anacron(object):
 
     os.remove(tabPath)
 
+  def check(self, scheduling):
+    try:
+      self.getInterval(scheduling)
+    except Exception as ex:
+      return [str(ex)]
+
+    return []
+
   def writeTabEntry(self, tabFile, scheduling):
-    for field in ["3",
+    for field in [self.getInterval(scheduling),
         "0", 
         scheduling.ruleName,
         "{0} sync-uncontrolled {1}".format(self.sibtCall, scheduling.ruleName)]:
@@ -49,4 +65,7 @@ def init(*args):
 def run(*args):
   global impl
   impl.run(*args)
+def check(*args):
+  global impl
+  return impl.check(*args)
 

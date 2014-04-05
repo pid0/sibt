@@ -15,6 +15,7 @@ class CmdLineArgsParser(object):
     parser.add_argument("--config-dir")
     parser.add_argument("--var-dir")
     parser.add_argument("--readonly-dir")
+    parser.add_argument("--no-sys-config", action="store_true")
     subs = parser.add_subparsers(title="actions", dest="action", 
       metavar="list|sync")
 
