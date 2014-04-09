@@ -16,6 +16,7 @@ class CmdLineArgsParser(object):
     parser.add_argument("--var-dir")
     parser.add_argument("--readonly-dir")
     parser.add_argument("--no-sys-config", action="store_true")
+    parser.add_argument("--utc", action="store_true")
     subs = parser.add_subparsers(title="actions", dest="action", 
       metavar="list|sync")
 
@@ -29,6 +30,9 @@ class CmdLineArgsParser(object):
 
     syncUncontrolled = subs.add_parser("sync-uncontrolled")
     syncUncontrolled.add_argument("rule-patterns", nargs="+", action="store")
+
+    versionsOf = subs.add_parser("versions-of")
+    versionsOf.add_argument("file", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 

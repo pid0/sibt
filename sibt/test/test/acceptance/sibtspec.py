@@ -86,6 +86,8 @@ class SibtSpecFixture(object):
 
   def _writeRule(self, paths, name, contents):
     LocalPath(paths.rulesDir).join(name).write(contents)
+  def writeSysRule(self, name, contents):
+    self._writeRule(self.sysPaths, name, contents)
   def writeRule(self, name, contents):
     self._writeRule(self.paths, name, contents)
   def _writeAnyRule(self, paths, name, schedulerName, interpreterName):
@@ -578,5 +580,64 @@ exit 1""")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stdoutShouldBeEmpty()
   fixture.stderrShouldContain("failing-inter", "failed")
+
+def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
+    fixture):
+  fixture.createSysConfigFolders()
+  fixture.setNormalUserId()
+
+  testDir = fixture.tmpdir.mkdir("versions-test")
+
+  fixture.writeInterpreter("has-different-versions-for-locs", 
+"""#!/usr/bin/env bash
+if [[ $1 = versions-of && $2 = folder/some-file ]]; then
+  relativeToLoc=$3
+  if [ $relativeToLoc = 1 ]; then
+    echo '2014-01-03T20:35:00+02:00'
+    echo '0'
+  fi
+  if [ $relativeToLoc = 2 ]; then
+    echo 123
+  fi
+fi""")
+
+  fixture.writeAnyScheduler("sched")
+  fixture.writeSysRule("rule-1", """
+  [Scheduler]
+  Name = sched
+  [Interpreter]
+  Name = has-different-versions-for-locs
+  Loc1 = {0}/home/foo/data
+  Loc2 = {0}/mnt/backup/data""".format(testDir))
+  fixture.writeRule("rule-2", """
+  [Scheduler]
+  Name = sched
+  [Interpreter]
+  Name = has-different-versions-for-locs
+  Loc1 = {0}/mnt/backup/data/
+  Loc2 = {0}/mnt/remote""".format(testDir))
+
+  utcThirdOfMarch = "2014-01-03T18:35:00"
+  utc123 = "1970-01-01T00:02:03"
+  utc0 = "1970-01-01T00:00:00"
+
+  symlink = fixture.tmpdir.join("link")
+  symlink.mksymlinkto(
+      "{0}/home/foo/data/folder/some-file".format(testDir))
+  fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of", 
+      str(symlink))
+  fixture.stdoutShouldExactlyContainLinePatternsInAnyOrder(
+      "*rule-1," + utcThirdOfMarch + "*",
+      "*rule-1," + utc0 + "*")
+
+  with testDir.as_cwd():
+    fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of",
+        "mnt/backup/data/folder/some-file")
+    fixture.stdoutShouldExactlyContainLinePatternsInAnyOrder(
+        "*rule-1," + utc123 + "*",
+        "*rule-2," + utcThirdOfMarch + "*",
+        "*rule-2," + utc0 + "*")
+
+
 
 

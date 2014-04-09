@@ -54,7 +54,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
   factory = RuleFactory(schedulers, interpreters)
   try:
     rules = readRules(paths.rulesDir, paths.enabledDir, factory)
-    sysRules = set() if not readSysConf else readRules(sysPaths.rulesDir, 
+    sysRules = [] if not readSysConf else readRules(sysPaths.rulesDir, 
         sysPaths.enabledDir, factory)
   except (ConfigSyntaxException, ExternalFailureException) as ex:
     printException(ex, stderr)
@@ -87,6 +87,11 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
   elif args.action == "list":
     listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
         args.options["list-type"], rules, sysRules, interpreters, schedulers)
+  elif args.action == "versions-of":
+    for rule in rules + sysRules:
+      for version in rule.versionsOf(args.options["file"]):
+        stdout.println(version.ruleName + "," + (version.timeAsUTCW3C if
+            args.options["utc"] else version.timeAsLocalW3C))
 
   return 0
 
@@ -164,7 +169,7 @@ def findRulePattern(pattern, enabledRules, disabledRules):
 
 def readRules(rulesDir, enabledDir, factory):
   reader = DirBasedRulesReader(rulesDir, enabledDir, factory)
-  return reader.read()
+  return list(reader.read())
 
 def readInterpreters(dirs, processRunner):
   def load(path, fileName):

@@ -4,6 +4,8 @@ from sibt.configuration.exceptions import ConfigConsistencyException
 from test.common.execmock import ExecMock
 from sibt.infrastructure.executablefileruleinterpreter import \
     ExecutableFileRuleInterpreter
+from test.common.assertutil import iterableContainsInAnyOrder
+from datetime import datetime, timezone
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -13,7 +15,7 @@ class Fixture(object):
     execs = ExecMock()
     return (ExecutableFileRuleInterpreter.createWithFile(
         str(filePath), fileName, execs), execs)
-  def createWithExecutable(self, name):
+  def createWithExecutable(self, name="some-inter"):
     path = self.tmpdir.join(name)
     path.write("#!/usr/bin/env bash")
     self.lastPath = str(path)
@@ -40,26 +42,45 @@ def test_shouldThrowExceptionIfCreatedWithNotExecutableFile(fixture):
   with pytest.raises(ConfigConsistencyException):
     interpreter = fixture.createWithRegularFile("wont-work")
 
-def test_shouldCallExecutableWithOptionsInKeyValueFormatIfToldToSync(fixture):
-  ruleName = "some-rule-name"
+def test_shouldCallExecutableWithOptionsInKeyValueFormat(fixture):
   options = {"First": "foo", "Second": "/tmp/quux"}
 
-  interpreter, execs = fixture.createWithExecutable("bar")
+  interpreter, execs = fixture.createWithExecutable()
   execs.expectMatchingCalls(fixture.lastInterpreterCall(
-    lambda args: args[0] == "sync" and set(args[1:3]) == 
-        set(["First=foo", "Second=/tmp/quux"]) and len(args) == 3, ""))
+      lambda args: args[0] == "sync" and set(args[1:3]) == 
+          set(["First=foo", "Second=/tmp/quux"]) and len(args) == 3, ""))
 
   interpreter.sync(options)
 
   execs.check()
 
-def test_shouldReturnEachLineOfOutputAsAnAvailableOption(fixture):
-  interpreter, execs = fixture.createWithExecutable("foo")
+def test_shouldReturnEachNonEmptyLineOfOutputAsAnAvailableOption(fixture):
+  interpreter, execs = fixture.createWithExecutable()
 
   execs.expectCalls(fixture.lastInterpreterCall(
-    ("available-options",), "A\nB\n\nC\n"))
+    ("available-options",), "A \nB\n \nC\n"))
 
   assert interpreter.availableOptions == ["A", "B", "C"]
+  execs.check()
+
+def test_shouldParseUnixTimestampsAndW3CDateTimesAsVersions(fixture):
+  inter, execs = fixture.createWithExecutable()
+  path = "/etc/config"
+
+  execs.expectMatchingCalls(fixture.lastInterpreterCall(
+      lambda args: args[0] == "versions-of" and args[1] == "/etc/config" and 
+      args[2] == "2" and args[3] == "Blah=quux", """
+      250
+      2013-05-10T13:05:20+03:00
+      2014-12-05T05:13:00-02:00
+      """))
+
+  assert iterableContainsInAnyOrder(
+      inter.versionsOf(path, 2, {"Blah": "quux"}),
+      lambda time: time == datetime(1970, 1, 1, 0, 4, 10, 0, timezone.utc),
+      lambda time: time == datetime(2013, 5, 10, 10, 5, 20, 0, timezone.utc),
+      lambda time: time == datetime(2014, 12, 5, 7, 13, 0, 0, timezone.utc))
+
   execs.check()
   
 

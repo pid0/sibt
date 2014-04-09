@@ -21,7 +21,7 @@ def test_shouldForwardAnyCallsToSubScheduler(fixture):
 
   sub.checkExpectedCalls()
 
-def test_shouldstoreArgsToRunOrCheckAndForwardThemWhenExecuteOrCheckAllIsCalled(
+def test_shouldStoreArgsToRunOrCheckAndForwardThemWhenExecuteOrCheckAllIsCalled(
     fixture):
   sub = mock.mock()
   expectedSchedulings = [anyScheduling(), anyScheduling(), anyScheduling()]
