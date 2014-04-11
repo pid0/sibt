@@ -29,10 +29,10 @@ def test_shouldReturnVersionsGotFromInterpreterIfFileIsInALocOption(fixture):
         ret=ret))
     versions = rule.versionsOf(path)
     assert len(versions) == 2
-    assert versions[0].ruleName == rule.name
+    assert versions[0].rule == rule
     assert versions[0].time == ret[0]
     assert versions[1].time == ret[1]
-    assert versions[1].ruleName == rule.name
+    assert versions[1].rule == rule
     inter.checkExpectedCalls()
 
   check("/mnt/data/bar/blah", "blah", 1)

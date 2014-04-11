@@ -48,7 +48,8 @@ class Mock(object):
 
   def checkExpectedCalls(self):
     expectedCalls = self.__expectedCalls
-    assert len(expectedCalls) == 0, "expected calls remain"
+    assert len(expectedCalls) == 0, "{0} expected calls remain".format(
+        len(expectedCalls))
 
   def __getattr__(self, name):
     def callHandler(*args):

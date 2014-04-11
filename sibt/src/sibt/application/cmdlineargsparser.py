@@ -33,6 +33,11 @@ class CmdLineArgsParser(object):
 
     versionsOf = subs.add_parser("versions-of")
     versionsOf.add_argument("file", action="store")
+
+    restore = subs.add_parser("restore")
+    restore.add_argument("file", action="store")
+    restore.add_argument("version-substrings", action="store", nargs="+")
+    restore.add_argument("--to", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 

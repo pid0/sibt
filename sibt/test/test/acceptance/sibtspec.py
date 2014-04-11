@@ -638,6 +638,52 @@ fi""")
         "*rule-2," + utcThirdOfMarch + "*",
         "*rule-2," + utc0 + "*")
 
+def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
+    fixture):
+  interPath = fixture.writeAnyInterpreter("inter")
+  fixture.writeAnyScheduler("sched")
+  ruleConfig = """
+  [Scheduler]
+  Name = sched
+  [Interpreter]
+  Name = inter
+  Loc1 = /mnt/data
+  """
+  fixture.writeRule("total-backup", ruleConfig + 
+      "Loc2 = /mnt/backup")
+  fixture.writeRule("other-rule", ruleConfig + 
+      "Loc2 = /mnt/quux")
+
+  april5th = "2014-04-05T13:35:34+00:00"
+  march3th = "2014-03-30T21:43:12+00:00"
+  april5thTimestamp = "1396704934"
+
+  optionsCall = (interPath, lambda args: args[0] == "available-options", "")
+  def versionsOfCall(loc2):
+    return (interPath, lambda args: args[0] == "versions-of" and 
+      "Loc2=" + loc2 in args and args[1:3] == ("foo", "1"), "\n".join([
+      april5th, march3th]))
+  setupCalls = (optionsCall, optionsCall, versionsOfCall("/mnt/backup"),
+      versionsOfCall("/mnt/quux"))
+
+  fixture.execs.expectMatchingCalls(
+      (interPath, lambda args: args[0] == "restore" and 
+      "Loc2=/mnt/backup" in args and args[1:6] == ("foo", "1", april5th, 
+          april5thTimestamp, "dest.backup"), ""), *setupCalls, anyOrder=True)
+  fixture.runSibtCheckingExecs("--utc", "restore", "/mnt/data/foo",
+      "tota", "04", "--to=dest.backup")
+
+  fixture.execs.expectMatchingCalls(*setupCalls, anyOrder=True)
+  fixture.runSibtCheckingExecs("--utc", "restore", "/mnt/data/foo",
+      "2014", "3:")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderrShouldContain("patterns", "ambiguous")
+
+  fixture.execs.expectMatchingCalls(*setupCalls, anyOrder=True)
+  fixture.runSibtCheckingExecs("--utc", "restore", "/mnt/data/foo",
+      "this-is-not-a-substring")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderrShouldContain("patterns", "no match")
 
 
 

@@ -1,28 +1,19 @@
-from sibt.infrastructure import collectFilesInDirs
 from sibt.domain.finegrainedrulesvalidator import FineGrainedRulesValidator
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
-from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
-from sibt.infrastructure.executablefileruleinterpreter import \
-    ExecutableFileRuleInterpreter
 from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
 from sibt.infrastructure.fileobjoutput import FileObjOutput
-from sibt.configuration.dirbasedrulesreader import DirBasedRulesReader
-import sys
 import os.path
 from sibt.application.paths import Paths
 from sibt.infrastructure.userbasepaths import UserBasePaths
 from sibt.application.eachownlineconfigprinter import EachOwnLineConfigPrinter
-from sibt.utccurrenttimeclock import UTCCurrentTimeClock
 from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException
 from sibt.infrastructure.externalfailureexception import \
     ExternalFailureException
 from sibt.application.rulesetrunner import RuleSetRunner
-from sibt.domain.rulefactory import RuleFactory
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
-from fnmatch import fnmatchcase
-from sibt.domain.queuingscheduler import QueuingScheduler
+from sibt.application.configrepo import ConfigRepo
 
 #externalProgramConfs = {
 #  "rsync": 
@@ -43,32 +34,24 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
   createNotExistingDirs(paths)
 
   readSysConf = userId != 0 and not args.options["no-sys-config"]
-  
-  interpreters = readInterpreters([paths.interpretersDir, 
-    paths.readonlyInterpretersDir] + ([sysPaths.interpretersDir] if 
-      readSysConf else []), processRunner)
-  schedulers = readSchedulers([paths.schedulersDir, 
-    paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
-      readSysConf else []), schedulerLoader, (sys.argv[0], paths))
 
-  factory = RuleFactory(schedulers, interpreters)
   try:
-    rules = readRules(paths.rulesDir, paths.enabledDir, factory)
-    sysRules = [] if not readSysConf else readRules(sysPaths.rulesDir, 
-        sysPaths.enabledDir, factory)
+    configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
+        schedulerLoader)
   except (ConfigSyntaxException, ExternalFailureException) as ex:
     printException(ex, stderr)
     return 1
 
   if args.action in ["sync", "sync-uncontrolled"]:
-    matchingRules = findRulesByPatterns(args.options["rule-patterns"], rules)
+    matchingRules = configRepo.findSyncRulesByPatterns(
+        args.options["rule-patterns"])
     if len(matchingRules) == 0:
       stderr.println("no matching rule {0}".format(
           args.options["rule-patterns"]))
       return 1
 
   if args.action == "sync":
-    validator = FineGrainedRulesValidator(schedulers)
+    validator = FineGrainedRulesValidator(configRepo.schedulers)
     errors = validator.validate(matchingRules)
     if len(errors) > 0:
       stderr.println("errors in rules:")
@@ -79,19 +62,41 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
     for rule in matchingRules:
       rule.schedule()
 
-    for scheduler in schedulers:
+    for scheduler in configRepo.schedulers:
       scheduler.executeSchedulings()
   elif args.action == "sync-uncontrolled":
     for rule in matchingRules:
       rule.sync()
   elif args.action == "list":
     listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
-        args.options["list-type"], rules, sysRules, interpreters, schedulers)
-  elif args.action == "versions-of":
-    for rule in rules + sysRules:
+        args.options["list-type"], configRepo.rules, configRepo.sysRules, 
+        configRepo.interpreters, configRepo.schedulers)
+  elif args.action in ["versions-of", "restore"]:
+    stringsToVersions = dict()
+    for rule in configRepo.allRules:
       for version in rule.versionsOf(args.options["file"]):
-        stdout.println(version.ruleName + "," + (version.timeAsUTCW3C if
-            args.options["utc"] else version.timeAsLocalW3C))
+        string = version.strWithUTCW3C if args.options["utc"] else \
+            version.strWithLocalW3C
+        stringsToVersions[string] = version
+
+    if args.action == "versions-of":
+      for versionString in stringsToVersions.keys():
+        stdout.println(versionString)
+
+    if args.action == "restore":
+      matchingVersions = [versionString for versionString in 
+          stringsToVersions.keys() if all(substring in versionString for 
+              substring in args.options["version-substrings"])]
+      if len(matchingVersions) > 1:
+        stderr.println("error: version patterns are ambiguous")
+        return 1
+      if len(matchingVersions) == 0:
+        stderr.println("error: no matching version for patterns")
+        return 1
+      version = stringsToVersions[matchingVersions[0]]
+      version.rule.restore(args.options["file"], version,
+          args.options.get("to", None))
+
 
   return 0
 
@@ -153,39 +158,6 @@ def overridePaths(paths, cmdLineArgs):
 def createNotExistingDirs(paths):
   DirTreeNormalizer(paths).createNotExistingDirs()
 
-def findRulesByPatterns(patterns, rules):
-  enabledRules = [rule for rule in rules if rule.enabled]
-  disabledRules = [rule for rule in rules if not rule.enabled]
-  ruleLists = [findRulePattern(pattern, enabledRules, 
-          disabledRules) for pattern in patterns]
-  return [rule for ruleList in ruleLists for rule in ruleList]
-
-def findRulePattern(pattern, enabledRules, disabledRules):
-  matchingDisabled = [rule for rule in disabledRules if rule.name == pattern]
-  if len(matchingDisabled) == 1:
-    return matchingDisabled
-
-  return [rule for rule in enabledRules if fnmatchcase(rule.name, pattern)]
-
-def readRules(rulesDir, enabledDir, factory):
-  reader = DirBasedRulesReader(rulesDir, enabledDir, factory)
-  return list(reader.read())
-
-def readInterpreters(dirs, processRunner):
-  def load(path, fileName):
-    try:
-      return ExecutableFileRuleInterpreter.createWithFile(path, fileName, 
-        processRunner)
-    except ConfigConsistencyException:
-      return None
-
-  return collectFilesInDirs(dirs, load)
-
-def readSchedulers(dirs, loader, initArgs):
-  return collectFilesInDirs(dirs, lambda path, fileName:
-      QueuingScheduler(loader.loadFromFile(path, fileName, initArgs)))
-
-  
 def readConfig(configDir, output):
   configReader = ConfigDirReader(configDir)
   

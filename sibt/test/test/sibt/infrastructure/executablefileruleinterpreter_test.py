@@ -83,4 +83,25 @@ def test_shouldParseUnixTimestampsAndW3CDateTimesAsVersions(fixture):
 
   execs.check()
   
+def test_shouldCallRestoreWithAW3CDateAndAUnixTimestamp(fixture):
+  inter, execs = fixture.createWithExecutable()
+
+  path = "path/to/file"
+  expectedArgs = ("restore", path, "1", "1970-01-01T00:01:33+00:00", 
+      "93")
+  optionArg = "Foo=Bar"
+  time = datetime(1970, 1, 1, 0, 1, 33, tzinfo=timezone.utc)
+  options = {"Foo": "Bar"}
+
+  execs.expectMatchingCalls(fixture.lastInterpreterCall(
+      lambda args: args[0:5] == expectedArgs and args[5] == "" and 
+      args[6] == optionArg, ""))
+  inter.restore(path, 1, time, None, options)
+  execs.check()
+
+  execs.expectMatchingCalls(fixture.lastInterpreterCall(
+      lambda args: args[0:5] == expectedArgs and args[5] == "the-dest" and 
+      args[6] == optionArg, ""))
+  inter.restore(path, 1, time, "the-dest", options)
+  execs.check()
 

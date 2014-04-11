@@ -1,9 +1,11 @@
 import os
 from sibt.configuration.exceptions import ConfigConsistencyException
 from datetime import datetime, timezone
+import time
 
 def normalizedLines(string):
   return [line.strip() for line in string.split("\n") if line.strip() != ""]
+TimeFormat = "%Y-%m-%dT%H:%M:%S%z"
 
 class ExecutableFileRuleInterpreter(object):
   def __init__(self, path, fileName, processRunner):
@@ -19,6 +21,13 @@ class ExecutableFileRuleInterpreter(object):
         self.executable, "versions-of", path, str(locNumber), 
         *self._keyValueEncode(options)))
     return [self._parseTime(time) for time in times]
+  def restore(self, path, locNumber, version, dest, options):
+    timestamp = int(time.mktime(version.astimezone(None).timetuple()))
+    w3cString = version.strftime(TimeFormat)
+    w3cString = w3cString[:-2] + ":" + w3cString[-2:]
+    self.processRunner.execute(self.executable, "restore", path, 
+        str(locNumber), w3cString, str(timestamp), dest or "", 
+        *self._keyValueEncode(options))
 
   def _parseTime(self, string):
     if all(c in "0123456789" for c in string):
@@ -26,7 +35,7 @@ class ExecutableFileRuleInterpreter(object):
     w3cString = string
     if "T" in w3cString and (w3cString[-6] == "+" or w3cString[-6] == "-"):
       w3cString = w3cString[:-3] + w3cString[-2:]
-    return datetime.strptime(w3cString, "%Y-%m-%dT%H:%M:%S%z")
+    return datetime.strptime(w3cString, TimeFormat)
 
   def _keyValueEncode(self, dictionary):
     return ["{0}={1}".format(key, value) for (key, value) in 
