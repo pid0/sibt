@@ -15,16 +15,6 @@ from sibt.application.rulesetrunner import RuleSetRunner
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from sibt.application.configrepo import ConfigRepo
 
-#externalProgramConfs = {
-#  "rsync": 
-#    FormatStringRulesInterpreter(
-#      "rsync -a --partial --delete {src} {dest}",
-#      lambda src: src if src.endswith('/') else src + '/'),
-#  "rdiff":
-#    FormatStringRulesInterpreter(
-#      "rdiff-backup --remove-older-than 2W {src} {dest}", lambda x: x)
-#  }
-
 def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths, 
     userId, schedulerLoader):
   argParser = CmdLineArgsParser()
@@ -71,7 +61,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
     listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
         args.options["list-type"], configRepo.rules, configRepo.sysRules, 
         configRepo.interpreters, configRepo.schedulers)
-  elif args.action in ["versions-of", "restore"]:
+  elif args.action in ["versions-of", "restore", "list-files"]:
     stringsToVersions = dict()
     for rule in configRepo.allRules:
       for version in rule.versionsOf(args.options["file"]):
@@ -83,7 +73,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
       for versionString in stringsToVersions.keys():
         stdout.println(versionString)
 
-    if args.action == "restore":
+    if args.action == "restore" or args.action == "list-files":
       matchingVersions = [versionString for versionString in 
           stringsToVersions.keys() if all(substring in versionString for 
               substring in args.options["version-substrings"])]
@@ -94,8 +84,12 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
         stderr.println("error: no matching version for patterns")
         return 1
       version = stringsToVersions[matchingVersions[0]]
-      version.rule.restore(args.options["file"], version,
-          args.options.get("to", None))
+
+      if args.action == "restore":
+        version.rule.restore(args.options["file"], version,
+            args.options.get("to", None))
+      if args.action == "list-files":
+        version.rule.listFiles(args.options["file"], version)
 
 
   return 0

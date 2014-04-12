@@ -9,6 +9,9 @@ import sys
 from sibt.domain.rulefactory import RuleFactory
 from fnmatch import fnmatchcase
 import itertools
+from sibt.application.runner import Runner
+from sibt.application.hashbangawareprocessrunner import \
+    HashbangAwareProcessRunner
 
 def readInterpreters(dirs, processRunner):
   def load(path, fileName):
@@ -45,9 +48,13 @@ class ConfigRepo(object):
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
       schedulerLoader):
+    runners = collectFilesInDirs([paths.runnersDir], 
+        lambda path, fileName: Runner(fileName, path))
+    processRunnerWrapper = HashbangAwareProcessRunner(runners, processRunner)
+
     interpreters = readInterpreters([paths.interpretersDir, 
       paths.readonlyInterpretersDir] + ([sysPaths.interpretersDir] if 
-        readSysConf else []), processRunner)
+        readSysConf else []), processRunnerWrapper)
     schedulers = readSchedulers([paths.schedulersDir, 
       paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
         readSysConf else []), schedulerLoader, (sys.argv[0], paths))

@@ -1,0 +1,7 @@
+from sibt.infrastructure.caseclassequalityhashcode import \
+    CaseClassEqualityHashCode
+
+class Runner(CaseClassEqualityHashCode):
+  def __init__(self, name, path):
+    self.name = name
+    self.path = path

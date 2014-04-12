@@ -104,6 +104,13 @@ class SibtSpecFixture(object):
   def writeAnySysRule(self, name, schedulerName, interpreterName):
     self._writeAnyRule(self.sysPaths, name, schedulerName, interpreterName)
 
+  def writeRunner(self, name):
+    os.makedirs(self.paths.runnersDir)
+    runnerPath = LocalPath(self.paths.runnersDir).join(name)
+    runnerPath.write("#!/usr/bin/env bash\necho $1")
+    runnerPath.chmod(0o700)
+    return str(runnerPath)
+
   def writeAnyInterpreter(self, name):
     return self._writeAnyInterpreter(self.paths, name)
   def writeAnySysInterpreter(self, name):
@@ -113,7 +120,7 @@ class SibtSpecFixture(object):
   def writeShellInterpreter(self, name, contents):
     self._writeInterpreter(self.paths, name, "#!/bin/sh\n" + contents)
   def writeInterpreter(self, name, contents):
-    self._writeInterpreter(self.paths, name, contents)
+    return self._writeInterpreter(self.paths, name, contents)
   def _writeInterpreter(self, paths, name, contents):
     path = LocalPath(paths.interpretersDir).join(name)
     path.write(contents)
@@ -138,6 +145,8 @@ class SibtSpecFixture(object):
   def writeRuleFile(self, name, contents):
     self._writeConfigFile(name, contents)
   
+  def stderrShouldBeEmpty(self):
+    assert self.result.stderr.stringBuffer == ""
   def stderrShouldContain(self, *phrases):
     for phrase in phrases:
       assert phrase in self.result.stderr.stringBuffer
@@ -685,5 +694,41 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderrShouldContain("patterns", "no match")
 
+def test_shouldCallListFilesWithAnInterfaceSimilarToRestore(fixture):
+  fixture.writeInterpreter("inter", """#!/usr/bin/env bash
+  if [ $1 = versions-of ]; then
+    echo '1970-01-01T00:00:50+00:00'
+    echo 100000000
+  fi
+  if [[ $1 = list-files && $2 = container/folder && $3 = 2 && $5 = 50 ]]; then
+    echo "F some-file"
+    echo "D and-a-dir"
+  fi""")
+  fixture.writeAnyScheduler("sched")
+  fixture.writeRule("my-rule", """
+  [Scheduler]
+  Name = sched
+  [Interpreter]
+  Name = inter
+  Loc1 = /etc/config
+  Loc2 = /var/spool""")
+
+  fixture.runSibtWithRealStreamsAndExec("list-files", 
+      "/var/spool/container/folder", "1970")
+  fixture.stderrShouldBeEmpty()
+  fixture.stdoutShouldExactlyContainLinePatternsInAnyOrder("F some-file", 
+      "D and-a-dir")
+
+
+def test_shouldCallRunnerNamedInHashbangLineOfInterpretersIfItExists(fixture):
+  runnerPath = fixture.writeRunner("faith")
+  interPath = fixture.writeInterpreter("custom-inter", """#!faith
+  echo foo""")
+  fixture.writeAnyScheduler("sched")
+  fixture.writeAnyRule("rule", "sched", "custom-inter")
+
+  fixture.execs.expectCalls((runnerPath, (interPath, "available-options"), ""))
+  fixture.runSibtCheckingExecs("list", "interpreters")
+  fixture.shouldHaveExitedWithStatus(0)
 
 

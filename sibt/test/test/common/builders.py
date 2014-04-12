@@ -1,4 +1,5 @@
 from sibt.domain.scheduling import Scheduling
+from sibt.application.runner import Runner
 from random import random
 import os.path
 
@@ -26,4 +27,8 @@ class SchedulingBuilder(object):
 
 def anyScheduling(): return SchedulingBuilder().build()
 def scheduling(): return SchedulingBuilder()
+def existingRunner(tmpdir, name): 
+  path = tmpdir.join(name)
+  path.write("#!/bin/sh")
+  return str(path), Runner(name, str(path))
 

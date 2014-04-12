@@ -39,6 +39,10 @@ class SyncRule(object):
     locNumber = self.getLocNumber(path)
     self.interpreter.restore(removeCommonPrefix(path, self._loc(locNumber)),
         locNumber, version.time, destination, self.interpreterOptions)
+  def listFiles(self, path, version):
+    locNumber = self.getLocNumber(path)
+    self.interpreter.listFiles(removeCommonPrefix(path, self._loc(locNumber)),
+        locNumber, version.time, self.interpreterOptions)
 
   def getLocNumber(self, path):
     return 1 if isPathWithinPath(path, self._loc(1)) else 2 if \

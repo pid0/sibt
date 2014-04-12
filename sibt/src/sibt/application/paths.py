@@ -18,6 +18,8 @@ class Paths(object):
     return os.path.join(self.readonlyDir, "schedulers")
   def readonlyInterpretersDir(self):
     return os.path.join(self.readonlyDir, "interpreters")
+  def runnersDir(self):
+    return os.path.join(self.readonlyDir, "runners")
 
   rulesDir = property(rulesDir)
   interpretersDir = property(interpretersDir)
@@ -25,4 +27,5 @@ class Paths(object):
   enabledDir = property(enabledDir)
   readonlySchedulersDir = property(readonlySchedulersDir)
   readonlyInterpretersDir = property(readonlyInterpretersDir)
+  runnersDir = property(runnersDir)
 

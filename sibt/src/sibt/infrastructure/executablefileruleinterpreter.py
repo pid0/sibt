@@ -22,12 +22,20 @@ class ExecutableFileRuleInterpreter(object):
         *self._keyValueEncode(options)))
     return [self._parseTime(time) for time in times]
   def restore(self, path, locNumber, version, dest, options):
+    w3c, timestamp = self._encodeTime(version)
+    self.processRunner.execute(self.executable, "restore", path, 
+        str(locNumber), w3c, str(timestamp), dest or "", 
+        *self._keyValueEncode(options))
+  def listFiles(self, path, locNumber, version, options):
+    w3c, timestamp = self._encodeTime(version)
+    self.processRunner.execute(self.executable, "list-files", path, 
+        str(locNumber), w3c, str(timestamp), *self._keyValueEncode(options))
+
+  def _encodeTime(self, version):
     timestamp = int(time.mktime(version.astimezone(None).timetuple()))
     w3cString = version.strftime(TimeFormat)
     w3cString = w3cString[:-2] + ":" + w3cString[-2:]
-    self.processRunner.execute(self.executable, "restore", path, 
-        str(locNumber), w3cString, str(timestamp), dest or "", 
-        *self._keyValueEncode(options))
+    return (w3cString, str(timestamp))
 
   def _parseTime(self, string):
     if all(c in "0123456789" for c in string):
