@@ -60,8 +60,8 @@ def test_shouldParseInterpreterAndSchedulerOptionsAsValuesInRespectiveSections(
       """  [Interpreter]
       
 Name=foo
-Option1=quux
-Option2 = some-value
+Option1=%(Name)squux
+Option2 = some-value%%r
 [Scheduler]
   Name = bar 
   
@@ -70,7 +70,21 @@ Option2 = some-value
   fixture.factory.expectCallsInAnyOrder(
       buildCall(lambda args: args[0] == "some-rule" and
         args[1] == {"Name": "bar", "Option3": "yes"} and
-        args[2] == {"Name": "foo", "Option1": "quux", "Option2": "some-value"}))
+        args[2] == {"Name": "foo", "Option1": "fooquux", 
+            "Option2": "some-value%r"}))
+  fixture.read()
+
+def test_shouldSwallowOptionsBeginningWithUnderscore(fixture):
+  fixture.writeRuleFile("rule-with-template-opts",
+      """[Interpreter]
+      _Template = bar
+      Opt1 = %(_Template)s
+        foo
+      [Scheduler]
+      """)
+
+  fixture.factory.expectCallsInOrder(
+      buildCall(lambda args: args[2] == {"Opt1": "bar\nfoo"}))
   fixture.read()
 
 def test_shouldThrowExceptionIfItEncountersASyntaxError(fixture):

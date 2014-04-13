@@ -30,10 +30,17 @@ def setup_pythonpath():
 @needs(["setup_pythonpath"])
 def acceptance_test():
   runPyTest(["sibt/test/test/acceptance/sibtspec.py"])
+
 @task
 @needs(["setup_pythonpath"])
 def unit_test():
   runPyTest(["sibt/test/test/sibt"])
+
+@task
+@needs(["setup_pythonpath"])
+def integration_test():
+  runPyTest(["sibt/test/test/integration"])
+
 @task
 @needs(["setup_pythonpath"])
 @consume_args
@@ -42,7 +49,7 @@ def test_only(args):
 
 @task
 @consume_args
-@needs(["acceptance_test", "unit_test"])
+@needs(["acceptance_test", "unit_test", "integration_test"])
 def test(args):
   pass
     

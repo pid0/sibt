@@ -38,6 +38,12 @@ def findRulePattern(pattern, enabledRules, disabledRules):
 
   return [rule for rule in enabledRules if fnmatchcase(rule.name, pattern)]
 
+def createHashbangAwareProcessRunner(runnersDir, processRunner):
+  runners = collectFilesInDirs([runnersDir], 
+      lambda path, fileName: Runner(fileName, path))
+  return HashbangAwareProcessRunner(runners, processRunner)
+  
+
 class ConfigRepo(object):
   def __init__(self, schedulers, interpreters, rules, sysRules):
     self.schedulers = schedulers
@@ -48,9 +54,8 @@ class ConfigRepo(object):
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
       schedulerLoader):
-    runners = collectFilesInDirs([paths.runnersDir], 
-        lambda path, fileName: Runner(fileName, path))
-    processRunnerWrapper = HashbangAwareProcessRunner(runners, processRunner)
+    processRunnerWrapper = createHashbangAwareProcessRunner(paths.runnersDir,
+        processRunner)
 
     interpreters = readInterpreters([paths.interpretersDir, 
       paths.readonlyInterpretersDir] + ([sysPaths.interpretersDir] if 

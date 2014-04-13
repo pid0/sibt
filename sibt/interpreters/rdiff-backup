@@ -1,1 +1,85 @@
 #!bash-runner
+
+AdditionalSyncOpts=
+
+available-options() {
+  echo RemoveOlderThan
+  echo AdditionalSyncOpts
+}
+
+sync() {
+  rdiff-backup $AdditionalSyncOpts "$Loc1" "$Loc2"
+  if [ -n "$RemoveOlderThan" ]; then
+    rdiff-backup $AdditionalSyncOpts --remove-older-than "$RemoveOlderThan" \
+        "$Loc2"
+  fi
+}
+
+versions-of() {
+  path="$1"
+  locNumber=$2
+  if [ $locNumber = 2 ]; then
+    return
+  fi
+  rdiff-backup --parsable-output --list-increments "$Loc2"/"$path" | \
+      grep -v missing | cut -d ' ' -f 1
+}
+
+restore() {
+  path="$1"
+  locNumber=$2
+  timestamp=$4
+  dest="$5"
+
+  if [ $locNumber = 2 ]; then
+    return
+  fi
+
+  declare -a restoreCall=(rdiff-backup --force --restore-as-of $timestamp 
+      "$Loc2"/"$path")
+  if [ "$dest" = "" ]; then
+    "${restoreCall[@]}" "$Loc1"/"$path"
+  else
+    "${restoreCall[@]}" "$dest"
+  fi
+}
+
+get-file-type() {
+  rdiff-backup --parsable-output --list-increments \
+      "$Loc2"/"$1" | sed -n -e "/^${2}/p" | cut -d ' ' -f 2
+}
+
+prepend-file-types() {
+  declare -a words
+  while read -a words; do
+    fileType=$(get-file-type "${words[*]}" $1)
+    if [ $fileType = directory ]; then
+      echo -n 'D '
+    else
+      echo -n 'F '
+    fi
+
+    echo "${words[*]}"
+  done
+}
+
+list-files() {
+  path="$1"
+  locNumber=$2
+  timestamp=$4
+
+  if [ $locNumber = 2 ]; then
+    return
+  fi
+
+  getBasename='s,^([A-Z] ).*/([^/]+)$,\1\2,'
+
+  typeOfFile=$(get-file-type "$path" $timestamp)
+
+  declare -a listCall=(rdiff-backup --list-at-time $timestamp "$Loc2"/"$path")
+  if [ $typeOfFile = directory ]; then
+    "${listCall[@]}" | sed -n -e '1!p'
+  else
+    "${listCall[@]}"
+  fi | prepend-file-types $timestamp | sed -r -e "$getBasename"
+}

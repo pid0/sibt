@@ -46,3 +46,9 @@ def test_collectFunctionShouldIgnoreDirsWithinTheSpecifiedDirs(fixture):
   fixture.writeFiles()
   fixture.folder2.join("a-dir").mkdir()
   assert len(collectFilesInDirs([str(fixture.folder2)], lambda *x: x)) == 1
+
+def test_shouldCallFunctionWithAbsolutePaths(fixture):
+  fixture.writeFiles()
+  with fixture.tmpdir.as_cwd():
+    assert collectFilesInDirs([str("folder2")], lambda path, _: path) == {
+        str(fixture.folder2.join(fixture.name3))}

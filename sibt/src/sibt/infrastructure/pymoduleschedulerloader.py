@@ -1,13 +1,12 @@
 import importlib.machinery
+from sibt.infrastructure.pymoduleloader import PyModuleLoader
 
 class PyModuleSchedulerLoader(object):
   def __init__(self, containingPackage):
-    self.containingPackage = containingPackage
+    self.loader = PyModuleLoader(containingPackage)
 
   def loadFromFile(self, path, moduleName, initArgs):
-    fullName = self.containingPackage + "." + moduleName
-    loader = importlib.machinery.SourceFileLoader(fullName, path)
-    ret = loader.load_module(fullName)
+    ret = self.loader.loadFromFile(path, moduleName)
     ret.name = moduleName
     ret.init(*initArgs)
     return ret

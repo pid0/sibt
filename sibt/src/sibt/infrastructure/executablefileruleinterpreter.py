@@ -13,23 +13,33 @@ class ExecutableFileRuleInterpreter(object):
     self.executable = path
     self.processRunner = processRunner
 
+
   def sync(self, options):
     self.processRunner.execute(self.executable, "sync",
         *self._keyValueEncode(options))
+
   def versionsOf(self, path, locNumber, options):
     times = normalizedLines(self.processRunner.getOutput(
         self.executable, "versions-of", path, str(locNumber), 
         *self._keyValueEncode(options)))
     return [self._parseTime(time) for time in times]
+
   def restore(self, path, locNumber, version, dest, options):
     w3c, timestamp = self._encodeTime(version)
     self.processRunner.execute(self.executable, "restore", path, 
         str(locNumber), w3c, str(timestamp), dest or "", 
         *self._keyValueEncode(options))
+
   def listFiles(self, path, locNumber, version, options):
     w3c, timestamp = self._encodeTime(version)
     self.processRunner.execute(self.executable, "list-files", path, 
         str(locNumber), w3c, str(timestamp), *self._keyValueEncode(options))
+
+  def availableOptions(self):
+    return normalizedLines(self.processRunner.getOutput(
+        self.executable, "available-options"))
+  availableOptions = property(availableOptions)
+
 
   def _encodeTime(self, version):
     timestamp = int(time.mktime(version.astimezone(None).timetuple()))
@@ -48,11 +58,6 @@ class ExecutableFileRuleInterpreter(object):
   def _keyValueEncode(self, dictionary):
     return ["{0}={1}".format(key, value) for (key, value) in 
         dictionary.items()]
-
-  def availableOptions(self):
-    return normalizedLines(self.processRunner.getOutput(
-        self.executable, "available-options"))
-  availableOptions = property(availableOptions)
 
   @classmethod
   def createWithFile(clazz, path, fileName, processRunner):

@@ -4,9 +4,10 @@ import os.path
 def collectFilesInDirs(dirs, visitor):
   ret = set()
   for directory in dirs:
-    if os.path.isdir(directory):
-      for fileName in os.listdir(directory):
-        path = os.path.join(directory, fileName)
+    absDir = os.path.abspath(directory)
+    if os.path.isdir(absDir):
+      for fileName in os.listdir(absDir):
+        path = os.path.join(absDir, fileName)
         if not os.path.isfile(path):
           continue
         result = visitor(path, fileName)

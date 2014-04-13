@@ -5,7 +5,7 @@ from datetime import timedelta, datetime
 from sibt.configuration.exceptions import ConfigSyntaxException
 from sibt.configuration.exceptions import ConfigConsistencyException
 from sibt.infrastructure import collectFilesInDirs
-from configparser import ConfigParser
+from configparser import ConfigParser, BasicInterpolation
 import itertools
 
 InterSec = "Interpreter"
@@ -19,6 +19,13 @@ class DirBasedRulesReader(object):
     
   def read(self):
     return collectFilesInDirs([self.rulesDir], self._readRuleFile)
+
+  def _removeUnderscoreOptions(self, sections):
+    for name, section in sections.items():
+      optNames = [optName for optName in section.keys() if 
+          optName.startswith("_")]
+      for optName in optNames:
+        del section[optName]
 
   def _isEnabled(self, ruleName):
     linkPath = os.path.join(self.enabledDir, ruleName)
@@ -43,7 +50,8 @@ class DirBasedRulesReader(object):
 
 
   def _readSectionsDict(self, path):
-    parser = ConfigParser(empty_lines_in_values=False, interpolation=None)
+    parser = ConfigParser(empty_lines_in_values=False, 
+        interpolation=BasicInterpolation())
     parser.optionxform = lambda key: key
 
     with open(path, "r") as ruleFile:
@@ -59,8 +67,10 @@ class DirBasedRulesReader(object):
     presetDicts = [self._readSectionsDict(os.path.join(
         self.rulesDir, name + ".inc")) for name in importedNames]
 
-    return self._overrideSectionDictsLastHighestPrecedence(presetDicts +
+    ret = self._overrideSectionDictsLastHighestPrecedence(presetDicts + 
         [parser])
+    self._removeUnderscoreOptions(ret)
+    return ret
 
   def _readRuleFile(self, path, fileName):
     if "," in fileName or "@" in fileName or " " in fileName:

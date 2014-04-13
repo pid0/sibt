@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+fileToRun="$1"
+shift 1
+action="$1"
+shift 1
+
+source "$fileToRun"
+
+setup-variables() {
+  for varAssignment in "$@"; do
+    local varName="${varAssignment%%=*}"
+    local varValue="${varAssignment#*=}"
+    declare -n variable="$varName"
+    variable="$varValue"
+  done
+}
+
+case $action in
+  available-options) available-options;;
+  sync) setup-variables "${@:1:${#@}}"; sync;;
+  versions-of) setup-variables "${@:3:${#@}}"; versions-of "$@";;
+  restore) setup-variables "${@:6:${#@}}"; restore "$@";;
+  list-files) setup-variables "${@:5:${#@}}"; list-files "$@";;
+esac
+
