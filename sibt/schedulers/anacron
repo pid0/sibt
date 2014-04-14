@@ -12,8 +12,8 @@ class Anacron(object):
     self.sibtCall = initSibtCall
     self.varDir = os.path.join(paths.varDir, "anacron")
     self.spoolDir = os.path.join(self.varDir, "spool")
-    os.mkdir(self.varDir)
-    os.mkdir(self.spoolDir)
+    if not os.path.isdir(self.spoolDir):
+      os.makedirs(self.spoolDir)
 
   def getInterval(self, scheduling):
     return str(self.intervalParser.parseNumberOfDays(scheduling.options.get(
@@ -59,13 +59,13 @@ class Anacron(object):
   def writeScript(self, path):
     with open(path, "w") as scriptFile:
       scriptFile.write("""#!/usr/bin/env bash
-sibtProgram="$1"
-ruleName="$2"
-logFile="$3"
-execOnFailure="$4"
+declare -a sibtProgram=({sibtProg})
+ruleName="$1"
+logFile="$2"
+execOnFailure="$3"
 execOnFailure=${execOnFailure/'%r'/"$ruleName"}
 
-declare -a sibtCall=("$sibtProgram" sync-uncontrolled "$ruleName")
+declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled "$ruleName")
 if [ -z "$logFile" ]; then
   "${sibtCall[@]}"
 else
@@ -75,7 +75,8 @@ fi
 if [ $? != 0 ]; then
   $execOnFailure
 fi
-      """)
+      """.replace("{sibtProg}", " ".join(
+          ("'" + word + "'" for word in self.sibtCall))))
     os.chmod(path, 0o700)
 
   def writeTabEntry(self, scriptPath, tabFile, scheduling):
@@ -83,7 +84,6 @@ fi
         "0", 
         scheduling.ruleName,
         scriptPath,
-        self.sibtCall,
         scheduling.ruleName,
         scheduling.options.get("LogFile", '""'),
         '"{0}"'.format(scheduling.options.get("ExecOnFailure", ""))]:

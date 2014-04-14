@@ -7,7 +7,7 @@ from test.acceptance.bufferingoutput import BufferingOutput
 from test.common.interceptingoutput import InterceptingOutput
 from test.common.execmock import ExecMock
 from py._path.local import LocalPath
-import main
+from sibt import main
 import pytest
 import os
 import os.path
@@ -215,8 +215,7 @@ class SibtSpecFixture(object):
         len(self.mockedSchedulers) == 0 else \
         MockedSchedulerLoader(self.mockedSchedulers)
     exitStatus = main.run(arguments, stdout, stderr, processRunner,
-      ConstantClock(self.time, self.timeOfDay), self.paths, self.sysPaths, 
-      self.userId, schedulerLoader)
+      self.paths, self.sysPaths, self.userId, schedulerLoader)
     
     self.result = RunResult(stdout, stderr, exitStatus)
     
@@ -421,13 +420,19 @@ def test_shoulIssureErrorMessageIfRuleNameContainsASpace(fixture):
   fixture.runSibt()
   fixture.stderrShouldContain("invalid character", "no space")
 
-def test_shouldInitSchedulersCorrectly(fixture):
+def test_shouldInitSchedulersCorrectlyIncludingSibtInvocationWithGlobalOpts(
+    fixture):
   fixture.writeScheduler("sched", """availableOptions = []
-def init(sibtInvocation, paths): print("{0}{1}".format(
-sibtInvocation, paths.configDir))""")
+def init(sibtInvocation, paths): print("{0},{1}".format(
+" ".join(sibtInvocation), paths.configDir))""")
 
-  fixture.runSibtWithRealStreamsAndExec("list", "schedulers")
-  fixture.stdoutShouldContain(sys.argv[0] + fixture.paths.configDir + "\n")
+  newReadonlyDir = str(fixture.tmpdir)
+
+  fixture.runSibtWithRealStreamsAndExec("--readonly-dir", newReadonlyDir, 
+      "list", "schedulers")
+  fixture.stdoutShouldContain("{0} --readonly-dir {1}".format(sys.argv[0],
+      newReadonlyDir) + "," +
+      fixture.paths.configDir + "\n")
 
 def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
     fixture):
@@ -489,7 +494,8 @@ def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
   fixture.stdoutShouldContain("own-sched")
   fixture.stdoutShouldNotContain("systemd", "tar", "os-backup")
 
-def test_shouldAddtionallyReadInterpretersAndSchedulersFromReadonlyDir(fixture):
+def test_shouldAdditionallyReadInterpretersAndSchedulersFromReadonlyDir(
+    fixture):
   schedulersDir = LocalPath(fixture.paths.readonlySchedulersDir)
   schedulersDir.mkdir()
   schedulersDir.join("included-scheduler").write(TestSchedulerPreamble)

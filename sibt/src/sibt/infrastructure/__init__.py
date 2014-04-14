@@ -8,7 +8,7 @@ def collectFilesInDirs(dirs, visitor):
     if os.path.isdir(absDir):
       for fileName in os.listdir(absDir):
         path = os.path.join(absDir, fileName)
-        if not os.path.isfile(path):
+        if not os.path.isfile(path) or fileName.startswith("."):
           continue
         result = visitor(path, fileName)
         if result is not None:

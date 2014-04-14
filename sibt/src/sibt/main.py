@@ -14,8 +14,10 @@ from sibt.infrastructure.externalfailureexception import \
 from sibt.application.rulesetrunner import RuleSetRunner
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from sibt.application.configrepo import ConfigRepo
+import sys
+from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 
-def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths, 
+def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, schedulerLoader):
   argParser = CmdLineArgsParser()
   args = argParser.parseArgs(cmdLineArgs)
@@ -27,7 +29,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, clock, paths, sysPaths,
 
   try:
     configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
-        schedulerLoader)
+        schedulerLoader, [sys.argv[0]] + args.globalOptionsArgs)
   except (ConfigSyntaxException, ExternalFailureException) as ex:
     printException(ex, stderr)
     return 1
@@ -131,8 +133,10 @@ def listConfiguration(printer, output, listType, rules, sysRules, interpreters,
   elif listType == "all":
     output.println("schedulers:")
     printer.printSchedulers(schedulers)
+    output.println("")
     output.println("interpreters:")
     printer.printInterpreters(interpreters)
+    output.println("")
     output.println("rules:")
     printer.printSysRules(sysRules)
     printer.printRules(rules)
@@ -177,11 +181,11 @@ def executeRulesWithConfig(configuration, rulesRunner, rulesFilter,
   for dueRule in rulesFilter.getDueRules(configuration.rules):
     executionTimeRepo.setExecutionTimeFor(dueRule, clock.time())
 
-if __name__ == '__main__':
-    exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 
-        FileObjOutput(sys.stderr),
-        SynchronousProcessRunner(), 
-        UTCCurrentTimeClock(), Paths(UserBasePaths.forCurrentUser()),
-        Paths(UserBasePaths(0)), os.getuid(), 
-        PyModuleSchedulerLoader("schedulers"))
-    sys.exit(exitStatus)
+def main():
+  exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 
+      FileObjOutput(sys.stderr),
+      SynchronousProcessRunner(), 
+      Paths(UserBasePaths.forCurrentUser()),
+      Paths(UserBasePaths(0)), os.getuid(), 
+      PyModuleSchedulerLoader("schedulers"))
+  sys.exit(exitStatus)

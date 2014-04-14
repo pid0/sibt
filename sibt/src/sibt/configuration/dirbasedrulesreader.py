@@ -89,7 +89,7 @@ class DirBasedRulesReader(object):
       ret = self.factory.build(fileName, dict(sections[SchedSec]), 
           dict(sections[InterSec]), self._isEnabled(fileName))
     except ConfigConsistencyException as ex:
-      raise ConfigSyntaxException(path, "rule consistency error") from ex
+      raise ConfigSyntaxException(path, "can't logically create rule") from ex
 
     return ret
 

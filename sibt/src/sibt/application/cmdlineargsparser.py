@@ -1,24 +1,51 @@
 import argparse
 import sys
 
+class Option(object):
+  def __init__(self, name, boolean=False):
+    self.name = name
+    self.boolean = boolean
+    self.cmdLineWord = "--" + name
+
+  def addToParser(self, parser):
+    action = "store_true" if self.boolean else "store"
+    parser.add_argument(self.cmdLineWord, action=action)
+
+  def cmdLineWordsFromParsedArgs(self, options):
+    if self.name not in options or \
+      (self.boolean and options[self.name] == False):
+      return []
+    if self.boolean:
+      return [self.cmdLineWord]
+    return [self.cmdLineWord, options[self.name]]
+
+def opt(*args):
+  return Option(*args)
+
+GlobalOpts = [opt("config-dir"), 
+  opt("var-dir"), 
+  opt("readonly-dir"), 
+  opt("no-sys-config", True),
+  opt("utc", True)]
+
 class CmdLineArgs(object):
   def __init__(self, action, options):
     self.action = action
     self.options = options
+    self.globalOptionsArgs = []
+
+    for globalOpt in GlobalOpts:
+      self.globalOptionsArgs += globalOpt.cmdLineWordsFromParsedArgs(
+          self.options)
 
 class CmdLineArgsParser(object):
   def parseArgs(self, args):
-    if len(args) == 0:
-      args = ["list"]
-
     parser = argparse.ArgumentParser(description="Simple Backup Tool")
-    parser.add_argument("--config-dir")
-    parser.add_argument("--var-dir")
-    parser.add_argument("--readonly-dir")
-    parser.add_argument("--no-sys-config", action="store_true")
-    parser.add_argument("--utc", action="store_true")
+    for option in GlobalOpts:
+      option.addToParser(parser)
+
     subs = parser.add_subparsers(title="actions", dest="action", 
-      metavar="list|sync")
+      metavar="list|sync|versions-of|restore|list-files")
 
     listAction = subs.add_parser("list", aliases=["li"])
     listAction.add_argument("list-type", nargs="?",
@@ -48,7 +75,11 @@ class CmdLineArgsParser(object):
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 
         (key, value) in parsedArgs.items() if value is not None)
+
+    if "action" not in cmdLineArgs:
+      cmdLineArgs["action"] = "list"
+      cmdLineArgs["list-type"] = "all"
     
-    ret = CmdLineArgs(parsedArgs["action"], cmdLineArgs)
+    ret = CmdLineArgs(cmdLineArgs["action"], cmdLineArgs)
 
     return ret

@@ -15,7 +15,7 @@ class Fixture(object):
     self.tmpdir = tmpdir
     self.miscDir = tmpdir.mkdir("misc")
 
-  def init(self, sibtCall="/where/sibt/is"):
+  def init(self, sibtCall=["/where/sibt/is"]):
     loader = PyModuleSchedulerLoader("testpackage")
     paths = existingPaths(pathsIn(self.tmpdir))
     self.mod = loader.loadFromFile("sibt/schedulers/anacron", "anacron", 
@@ -31,9 +31,9 @@ class Fixture(object):
   def check(self, schedulings):
     return self.mod.check(schedulings)
 
-  def runWithMockedSibt(self, sibtProgram, schedulings):
+  def runWithMockedSibt(self, sibtProgram, schedulings, sibtArgs=[]):
     sibt = self.miscDir.join("sibt")
-    self.init(str(sibt))
+    self.init([str(sibt)] + sibtArgs)
     sibt.write(sibtProgram)
     sibt.chmod(0o700)
     self.run(schedulings, mockingExecs=False)
@@ -68,9 +68,11 @@ def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
   assert not os.path.isfile(testFile)
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
-  if [[ $1 == sync-uncontrolled && $2 == some-rule ]]; then
+  if [[ $1 = --some-global-opt && $2 = 'blah foo' && \
+      $3 = sync-uncontrolled && $4 == some-rule ]]; then
     touch {0}
-  fi""".format(testFile), [scheduling().withRuleName("some-rule")])
+  fi""".format(testFile), [scheduling().withRuleName("some-rule")],
+  sibtArgs=["--some-global-opt", "blah foo"])
 
   assert os.path.isfile(testFile)
 
@@ -211,4 +213,8 @@ def test_shouldCheckIfAllowedHoursSettingsAreContradictory(fixture):
   assert fixture.check([
       scheduling().withOption("AllowedHours", "12-20").build(),
       scheduling().withOption("AllowedHours", "12-20").build()]) == []
+
+def test_shouldManageToBeInitializedMultipleTimesWithTheSameFolder(fixture):
+  fixture.init()
+  fixture.init()
 

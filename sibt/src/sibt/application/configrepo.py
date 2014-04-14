@@ -53,7 +53,7 @@ class ConfigRepo(object):
 
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
-      schedulerLoader):
+      schedulerLoader, sibtInvocation):
     processRunnerWrapper = createHashbangAwareProcessRunner(paths.runnersDir,
         processRunner)
 
@@ -62,7 +62,7 @@ class ConfigRepo(object):
         readSysConf else []), processRunnerWrapper)
     schedulers = readSchedulers([paths.schedulersDir, 
       paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
-        readSysConf else []), schedulerLoader, (sys.argv[0], paths))
+        readSysConf else []), schedulerLoader, (sibtInvocation, paths))
 
     factory = RuleFactory(schedulers, interpreters)
     rules = readRules(paths.rulesDir, paths.enabledDir, factory)
