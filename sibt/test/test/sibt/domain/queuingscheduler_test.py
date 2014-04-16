@@ -40,11 +40,7 @@ def test_shouldStoreArgsToRunOrCheckAndForwardThemWhenExecuteOrCheckAllIsCalled(
       lambda schedulings: schedulings == checkedSchedulings, ret=["abc"]))
 
   queuing.executeSchedulings()
-  errors = queuing.checkAll()
-  assert len(errors) == 1
-  assert "abc" in errors[0]
-  assert checkedSchedulings[0].ruleName in errors[0]
-  assert checkedSchedulings[1].ruleName in errors[0]
+  assert queuing.checkAll() == ["abc"]
 
   sub.checkExpectedCalls()
 

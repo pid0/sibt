@@ -13,9 +13,7 @@ class QueuingScheduler(object):
     self.checkQueue += schedulings
 
   def checkAll(self):
-    return ["in {0}: {1}".format(", ".join(
-        scheduling.ruleName for scheduling in self.checkQueue), error) for 
-        error in self.subScheduler.check(self.checkQueue)]
+    return self.subScheduler.check(self.checkQueue)
 
   def executeSchedulings(self):
     if len(self.runQueue) == 0:

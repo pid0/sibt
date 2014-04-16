@@ -6,7 +6,7 @@ from test.acceptance.runresult import RunResult
 from test.acceptance.bufferingoutput import BufferingOutput
 from test.common.interceptingoutput import InterceptingOutput
 from test.common.execmock import ExecMock
-from py._path.local import LocalPath
+from py.path import local
 from sibt import main
 import pytest
 import os
@@ -24,13 +24,14 @@ TestSchedulerPreamble = """
 availableOptions = ["Interval", "Syslog"]
 def init(*args): pass
 def check(*args): return []
+def run(*args): pass
 """
 
 class SibtSpecFixture(object):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
-    userDir = tmpdir.join("user")
-    sysDir = tmpdir.join("system")
+    userDir = tmpdir / "user"
+    sysDir = tmpdir / "system"
     readonlyDir = tmpdir.mkdir("usr-share")
 
     self.paths = existingPaths(pathsIn(userDir, readonlyDir))
@@ -43,6 +44,17 @@ class SibtSpecFixture(object):
     self.setRootUserId()
     self.mockedSchedulers = dict()
     self.execs = ExecMock()
+
+  def validLocForInterpreter(self):
+    self.testDirNumber += 1
+    ret = self.tmpdir.mkdir("loc-" + str(self.testDirNumber))
+    ret.join("file").write("")
+    return str(ret)
+
+  def formatValidLocs(self, ruleString):
+    return ruleString.format(loc1=self.validLocForInterpreter(), 
+        loc2=self.validLocForInterpreter())
+
   
   def createSysConfigFolders(self):
     self.sysPaths = existingPaths(self.sysPaths)
@@ -54,13 +66,13 @@ class SibtSpecFixture(object):
   def enableRule(self, ruleName):
     self.enableRuleAs(ruleName, ruleName)
   def enableRuleAs(self, ruleName, linkName):
-    ruleFile = LocalPath(self.paths.rulesDir).join(ruleName)
-    LocalPath(self.paths.enabledDir).join(linkName).mksymlinkto(ruleFile)
+    ruleFile = local(self.paths.rulesDir).join(ruleName)
+    local(self.paths.enabledDir).join(linkName).mksymlinkto(ruleFile)
 
   def writeScheduler(self, name, contents):
     self._writeScheduler(self.paths, name, contents)
   def _writeScheduler(self, paths, name, contents):
-    LocalPath(paths.schedulersDir).join(name).write(contents)
+    local(paths.schedulersDir).join(name).write(contents)
   def _writeAnyScheduler(self, paths, name):
     self._writeScheduler(paths, name, TestSchedulerPreamble)
   def writeAnyScheduler(self, name):
@@ -85,14 +97,19 @@ class SibtSpecFixture(object):
         "AddFlags\nKeepCopies\n")
 
   def _writeRule(self, paths, name, contents):
-    LocalPath(paths.rulesDir).join(name).write(contents)
+    local(paths.rulesDir).join(name).write(contents)
   def writeSysRule(self, name, contents):
     self._writeRule(self.sysPaths, name, contents)
   def writeRule(self, name, contents):
     self._writeRule(self.paths, name, contents)
   def _writeAnyRule(self, paths, name, schedulerName, interpreterName):
-    self._writeRule(paths, name, ("[Interpreter]\nName = {0}\nLoc1=\nLoc2=\n" +
-        "[Scheduler]\nName={1}").format(interpreterName, schedulerName))
+    self._writeRule(paths, name, self.formatValidLocs("""
+    [Interpreter]
+    Name = {{0}}
+    Loc1={loc1}
+    Loc2={loc2}
+    [Scheduler]
+    Name={{1}}""").format(interpreterName, schedulerName))
   def writeAnyRuleWithSchedAndInter(self, name):
     schedulerName = name + "-sched"
     interpreterName = name + "-inter"
@@ -106,7 +123,7 @@ class SibtSpecFixture(object):
 
   def writeRunner(self, name):
     os.makedirs(self.paths.runnersDir)
-    runnerPath = LocalPath(self.paths.runnersDir).join(name)
+    runnerPath = local(self.paths.runnersDir).join(name)
     runnerPath.write("#!/usr/bin/env bash\necho $1")
     runnerPath.chmod(0o700)
     return str(runnerPath)
@@ -122,7 +139,7 @@ class SibtSpecFixture(object):
   def writeInterpreter(self, name, contents):
     return self._writeInterpreter(self.paths, name, contents)
   def _writeInterpreter(self, paths, name, contents):
-    path = LocalPath(paths.interpretersDir).join(name)
+    path = local(paths.interpretersDir).join(name)
     path.write(contents)
     path.chmod(0o700)
     return str(path)
@@ -224,23 +241,23 @@ def fixture(tmpdir):
   return SibtSpecFixture(tmpdir)
     
 def test_shouldInvokeTheCorrectConfiguredSchedulersAndInterpreters(fixture):
-  fixture.writeRule("foo-rule", """
+  fixture.writeRule("foo-rule", fixture.formatValidLocs("""
 [Interpreter]
 Name = interpreter1
 Option=1
-Loc1=
-Loc2=
+Loc1={loc1}
+Loc2={loc2}
 
 [Scheduler]
-Name = scheduler1""")
+Name = scheduler1"""))
 
-  fixture.writeRule("bar-rule", """[Scheduler]
+  fixture.writeRule("bar-rule", fixture.formatValidLocs("""[Scheduler]
   Name = scheduler1
 [Interpreter]
 Name = interpreter2
-Loc1=
-Loc2=
-""")
+Loc1={loc1}
+Loc2={loc2}
+"""))
 
   fixture.writeScheduler("scheduler1", TestSchedulerPreamble +
 """def run(args): print("scheduled rule '" + args[0].ruleName + "'")
@@ -361,16 +378,18 @@ def test_shouldPassOptionsAsIsToCorrectSchedulersAndInterpreters(fixture):
   
   interPath = fixture.writeAnyInterpreter("inter")
 
+  loc1 = fixture.validLocForInterpreter()
+  loc2 = fixture.validLocForInterpreter()
   fixture.writeRule(calledRuleName, """
   [Interpreter]
   Name = inter
   AddFlags = -X -A
-  Loc1 = a
-  Loc2 = b
+  Loc1 = {0}
+  Loc2 = {1}
   [Scheduler]
   Name = sched
   Interval = 2w
-  """)
+  """.format(loc1, loc2))
 
   fixture.execs.expectMatchingCalls(
       fixture.testInterpreterOptionsCall(interPath))
@@ -380,7 +399,8 @@ def test_shouldPassOptionsAsIsToCorrectSchedulersAndInterpreters(fixture):
   fixture.execs.expectMatchingCalls(
       fixture.testInterpreterOptionsCall(interPath),
       (interPath, lambda args: args[0] == "sync" and 
-          set(args[1:]) == {"AddFlags=-X -A", "Loc1=a", "Loc2=b"}, ""))
+          set(args[1:]) == {"AddFlags=-X -A", "Loc1=" + loc1, "Loc2=" + loc2}, 
+          ""))
   fixture.runSibtCheckingExecs("sync-uncontrolled", calledRuleName)
 
 def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
@@ -388,15 +408,15 @@ def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
   fixture.writeTestScheduler("sched")
   fixture.writeTestInterpreter("inter")
 
-  fixture.writeRule("rule", """[Interpreter]
+  fixture.writeRule("rule", fixture.formatValidLocs("""[Interpreter]
   Name = inter
   AddFlags = foo
   DoesNotExist = abc
-  Loc1=
-  Loc2=
+  Loc1={loc1}
+  Loc2={loc2}
   [Scheduler]
   Name = sched
-  Interval = bar""")
+  Interval = bar"""))
 
   fixture.runSibtWithRealStreamsAndExec()
   fixture.stdoutShouldBeEmpty()
@@ -496,11 +516,11 @@ def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
 
 def test_shouldAdditionallyReadInterpretersAndSchedulersFromReadonlyDir(
     fixture):
-  schedulersDir = LocalPath(fixture.paths.readonlySchedulersDir)
+  schedulersDir = local(fixture.paths.readonlySchedulersDir)
   schedulersDir.mkdir()
   schedulersDir.join("included-scheduler").write(TestSchedulerPreamble)
 
-  interpretersDir = LocalPath(fixture.paths.readonlyInterpretersDir)
+  interpretersDir = local(fixture.paths.readonlyInterpretersDir)
   interpretersDir.mkdir()
   interpreterPath = interpretersDir.join("included-interpreter")
   interpreterPath.write("")
@@ -546,13 +566,13 @@ Interval = 3w
 Name = inter
 """)
 
-  fixture.writeRule("rule", """
+  fixture.writeRule("rule", fixture.formatValidLocs("""
 #import header
 [Interpreter]
-Loc1=
-Loc2=
+Loc1={loc1}
+Loc2={loc2}
 [Scheduler]
-Syslog = yes""")
+Syslog = yes"""))
 
   scheduler.expectCallsInOrder(mock.callMatching("run", lambda schedulings:
       schedulings[0].ruleName == "rule" and schedulings[0].options == {
@@ -561,7 +581,7 @@ Syslog = yes""")
   fixture.runSibt("sync", "*")
   scheduler.checkExpectedCalls()
 
-def test_shouldCheckOptionsBeforeSchedulingRulesAndAbortIfAnErrorOccurs(
+def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
     fixture):
   sched = fixture.mockTestScheduler("uncontent-scheduler")
   sched.check = lambda schedulings: ["this problem cannot be solved"] if \
@@ -725,7 +745,6 @@ def test_shouldCallListFilesWithAnInterfaceSimilarToRestore(fixture):
   fixture.stdoutShouldExactlyContainLinePatternsInAnyOrder("F some-file", 
       "D and-a-dir")
 
-
 def test_shouldCallRunnerNamedInHashbangLineOfInterpretersIfItExists(fixture):
   runnerPath = fixture.writeRunner("faith")
   interPath = fixture.writeInterpreter("custom-inter", """#!faith
@@ -737,4 +756,32 @@ def test_shouldCallRunnerNamedInHashbangLineOfInterpretersIfItExists(fixture):
   fixture.runSibtCheckingExecs("list", "interpreters")
   fixture.shouldHaveExitedWithStatus(0)
 
+def test_shouldPerformSanityChecksOnRulesBeforeSyncingExceptWhenDisabled(
+    fixture):
+  containerDir = fixture.tmpdir.mkdir("is")
+  containerDir.mkdir("relative-dir")
 
+  fixture.writeAnyScheduler("simple")
+  fixture.writeAnyInterpreter("rsync")
+  fixture.writeRule("backup-rule", """
+  [Scheduler]
+  Name = simple
+  [Interpreter]
+  Name = rsync
+  Loc1 = {0}
+  Loc2 = {1}""".format("relative-dir", fixture.validLocForInterpreter()))
+
+  with containerDir.as_cwd():
+    fixture.runSibt("sync", "backup-rule")
+    fixture.shouldHaveExitedWithStatus(1)
+    fixture.stderrShouldContain("backup-rule", "relative-dir", "not absolute")
+
+  fixture.writeRule("invalid-rule", """
+  [Scheduler]
+  Name = simple
+  [Interpreter]
+  Name = rsync
+  Loc1 = 
+  Loc2 = """)
+  fixture.runSibt("--no-checks", "sync", "invalid-rule")
+  fixture.shouldHaveExitedWithStatus(0)

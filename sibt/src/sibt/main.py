@@ -1,4 +1,6 @@
-from sibt.domain.finegrainedrulesvalidator import FineGrainedRulesValidator
+from sibt.domain.validatorcollectionvalidator import \
+    ValidatorCollectionValidator
+from sibt.domain import subvalidators
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
@@ -43,7 +45,13 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
       return 1
 
   if args.action == "sync":
-    validator = FineGrainedRulesValidator(configRepo.schedulers)
+    validator = subvalidators.AcceptingValidator() if \
+        args.options["no-checks"] else ValidatorCollectionValidator([
+        subvalidators.LocExistenceValidator(),
+        subvalidators.LocAbsoluteValidator(),
+        subvalidators.LocNotEmptyValidator(),
+        subvalidators.SchedulerCheckValidator(configRepo.schedulers)
+    ])
     errors = validator.validate(matchingRules)
     if len(errors) > 0:
       stderr.println("errors in rules:")
@@ -72,6 +80,8 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         stringsToVersions[string] = version
 
     if args.action == "versions-of":
+      if len(stringsToVersions) == 0:
+        stderr.println("no backups found")
       for versionString in stringsToVersions.keys():
         stdout.println(versionString)
 

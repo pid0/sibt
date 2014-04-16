@@ -5,7 +5,7 @@ from test.common.builders import scheduling, anyScheduling
 from test.common import mock
 from test.common.pathsbuilder import pathsIn, existingPaths
 import os.path
-from py._path.local import LocalPath
+from py.path import local
 from test.common.execmock import ExecMock
 import sys
 from fnmatch import fnmatchcase
@@ -20,7 +20,7 @@ class Fixture(object):
     paths = existingPaths(pathsIn(self.tmpdir))
     self.mod = loader.loadFromFile("sibt/schedulers/anacron", "anacron", 
         (sibtCall, paths))
-    self.anaVarDir = LocalPath(paths.varDir).join("anacron")
+    self.anaVarDir = local(paths.varDir) / "anacron"
     self.execs = ExecMock()
 
   def run(self, schedulings, mockingExecs=True):
@@ -32,7 +32,7 @@ class Fixture(object):
     return self.mod.check(schedulings)
 
   def runWithMockedSibt(self, sibtProgram, schedulings, sibtArgs=[]):
-    sibt = self.miscDir.join("sibt")
+    sibt = self.miscDir / "sibt"
     self.init([str(sibt)] + sibtArgs)
     sibt.write(sibtProgram)
     sibt.chmod(0o700)
@@ -49,7 +49,7 @@ class Fixture(object):
     self.run(schedulings)
 
   def tabShouldContainLinesMatching(self, tabPath, *expectedPatterns):
-    lines = [line.strip() for line in LocalPath(tabPath).readlines()]
+    lines = [line.strip() for line in local(tabPath).readlines()]
     for pattern in expectedPatterns:
       assert any(fnmatchcase(line, pattern) for line in lines)
   def shouldBeDeleted(self, path):
@@ -64,7 +64,7 @@ def anacronCallMatching(matcher):
   return ("/usr/bin/anacron", matcher, "")
 
 def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
-  testFile = str(fixture.miscDir.join("test"))
+  testFile = str(fixture.miscDir / "test")
   assert not os.path.isfile(testFile)
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
@@ -86,9 +86,9 @@ def test_shouldCountUpTabAndScriptNamesNamesIfTheyExistAndDeleteThemAfterwards(
     fixture):
   fixture.init()
   usedTabPath = []
-  fixture.anaVarDir.join("script-1").write("")
-  fixture.anaVarDir.join("tab-1").write("")
-  fixture.anaVarDir.join("tab-2").write("")
+  (fixture.anaVarDir / "script-1").write("")
+  (fixture.anaVarDir / "tab-1").write("")
+  (fixture.anaVarDir / "tab-2").write("")
   
   def checkTab(tab):
     usedTabPath.append(tab)
@@ -138,7 +138,7 @@ def test_shouldCheckIfIntervalSyntaxIsCorrectByCatchingExceptionsOfTheParser(
   assert errorMessage in fixture.check([anyScheduling()])[0]
 
 def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
-  logFile = fixture.miscDir.join("log")
+  logFile = fixture.miscDir / "log"
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
   if [ $2 = not-logging ]; then
     echo lorem ipsum
@@ -166,9 +166,9 @@ def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
   assert "LogFile" in fixture.mod.availableOptions
   
 def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
-  testFile = fixture.miscDir.join("test")
-  testFile2 = str(fixture.miscDir.join("test2"))
-  onFailScript = fixture.miscDir.join("on-fail")
+  testFile = fixture.miscDir / "test"
+  testFile2 = str(fixture.miscDir / "test2")
+  onFailScript = fixture.miscDir / "on-fail"
   onFailScript.write("""#!/usr/bin/env bash
   if [ $1 = a ]; then
     echo $2 >{0}
