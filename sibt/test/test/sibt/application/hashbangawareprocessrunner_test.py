@@ -28,12 +28,12 @@ def test_shouldForwardGetOutputAndExecuteCallsToWrappedRunner(fixture):
   wrapped, runner = fixture.construct()
 
   wrapped.expectCallsInOrder(mock.call("getOutput", ("file", "1", "2"), 
-      returnValue))
+      ret=returnValue))
   assert runner.getOutput("file", "1", "2") == returnValue
   wrapped.checkExpectedCalls()
 
   wrapped.expectCallsInOrder(mock.call("execute", ("executable", "foo"), 
-      None))
+      ret=None))
   runner.execute("executable", "foo") 
   wrapped.checkExpectedCalls()
 
@@ -47,7 +47,7 @@ def test_shouldPrependRunnerToArgsIfHashbangLineMatchesRunnerName(fixture):
 
   def checkMethod(methodName):
     wrapped.expectCallsInOrder(mock.call(methodName, 
-        (firstRunnerPath, executable, "one", "two"), ""))
+        (firstRunnerPath, executable, "one", "two"), ret=""))
     if methodName == "execute":
       runner.execute(executable, "one", "two")
     else:

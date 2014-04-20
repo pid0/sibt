@@ -30,7 +30,7 @@ options(setup=dict(
         (ReadonlyConfigDir + "runners", ["sibt/runners/bash-runner"])
     ]
     ))
-    # test_requires = "pytest >= 2.5"
+    # test_requires = "pytest"
 install_distutils_tasks()
 
 def runPyTest(testFiles):

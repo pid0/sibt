@@ -1,38 +1,7 @@
-import pytest
 import os.path
 from sibt.domain.subvalidators import LocExistenceValidator, \
-    LocAbsoluteValidator, LocNotEmptyValidator
-
-class Fixture(object):
-  def __init__(self, tmpdir):
-    self.tmpdir = tmpdir
-    self.dirCounter = 0
-
-  def validLocDir(self):
-    self.dirCounter = self.dirCounter + 1
-    ret = self.tmpdir.mkdir("dir" + str(self.dirCounter))
-    ret.join("file").write("")
-    return ret
-
-@pytest.fixture
-def fix(tmpdir):
-  return Fixture(tmpdir)
-
-def mockRule(loc1, loc2, name=None):
-  ret = lambda x:x
-  ret.loc = lambda x: str(loc1) if x == 1 else str(loc2)
-  ret.name = name or str(hash(loc2))
-
-  return ret
-
-def validRule(fix):
-  return mockRule(fix.validLocDir(), fix.validLocDir())
-
-class ValidatorTest(object):
-  def test_validatorShouldReturnNoErrorsIfRulesAreOk(self, fix):
-    validator = self.construct()
-    rules = [validRule(fix), validRule(fix)]
-    assert validator.validate(rules) == []
+    LocAbsoluteValidator, LocNotEmptyValidator, NoOverlappingWritesValidator
+from test.common.validatortest import fix, mockRule, validRule, ValidatorTest
 
 class Test_LocExistenceValidatorTest(ValidatorTest):
   def construct(self):
@@ -46,11 +15,12 @@ class Test_LocExistenceValidatorTest(ValidatorTest):
         aFile,
         fix.validLocDir())])[0]
 
+    ruleName = "rulename"
     errors = validator.validate([validRule(fix),
-        mockRule(fix.validLocDir(), "/does/not/exist", name="rulename")])
+        mockRule(fix.validLocDir(), "/does/not/exist", name=ruleName)])
     assert len(errors) == 1
     assert "does not exist" in errors[0]
-    assert "rulename" in errors[0]
+    assert ruleName in errors[0]
 
     assert len(validator.validate([mockRule("", fix.validLocDir())])) == 1
 
@@ -74,5 +44,18 @@ class Test_LocNotEmptyValidatorTest(ValidatorTest):
 
     assert "is empty" in validator.validate([validRule(fix), mockRule(
         fix.validLocDir(), fix.tmpdir.mkdir("empty-dir"))])[0]
+
+class Test_NoOverlappingWritesValidator(ValidatorTest):
+  def construct(self):
+    return NoOverlappingWritesValidator()
         
+  def test_shouldReturnAnErrorIfTheLocARuleWritesToIsWithinThatOfASecond(
+      self, fix):
+    validator = self.construct()
+    assert "overlapping" in validator.validate([
+        mockRule("/src/1", "/dest/1"),
+        mockRule("/src/2", "/dest/1/foo")])[0]
+    assert len(validator.validate([
+        mockRule("/src/1", "/dest/1"),
+        mockRule("/dest/1", "/dest/2", writeLocs=[1,2])])) == 1
 

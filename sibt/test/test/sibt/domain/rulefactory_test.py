@@ -22,6 +22,7 @@ def outRaises():
 def fakeConfigurable(name, *availableOptions):
   ret = lambda x:x
   ret.name = name
+  ret.writeLocIndices = []
   ret.availableOptions = list(availableOptions)
   return ret
 

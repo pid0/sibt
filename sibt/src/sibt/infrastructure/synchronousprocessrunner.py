@@ -7,7 +7,7 @@ class SynchronousProcessRunner(object):
     try:
       return func()
     except subprocess.CalledProcessError as ex:
-      raise ExternalFailureException(program, "failed") from ex
+      raise ExternalFailureException(program, ex.returncode) from ex
     
   def getOutput(self, program, *arguments):
     return self._wrappingException(program, 

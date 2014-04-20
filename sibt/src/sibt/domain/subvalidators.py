@@ -1,4 +1,5 @@
 import os.path
+from sibt.infrastructure.pathhelper import isPathWithinPath
 
 class Validator(object):
   def locsOf(self, rule):
@@ -50,4 +51,18 @@ class LocNotEmptyValidator(Validator):
       for loc in self.locsOf(rule):
         if len(os.listdir(loc)) == 0:
           return [self.errMsg(loc + " is empty", rule)]
+    return []
+
+class NoOverlappingWritesValidator(Validator):
+  def validate(self, rules):
+    for rule in rules:
+      for rule2 in rules:
+        if rule is rule2:
+          continue
+        for writeLoc1 in rule.writeLocs:
+          for writeLoc2 in rule2.writeLocs:
+            if isPathWithinPath(writeLoc1, writeLoc2):
+              return [self.errMsg(writeLoc1 + ", " + writeLoc2 + 
+                  ": overlapping writes", rule, rule2)]
+
     return []

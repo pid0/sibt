@@ -1,7 +1,5 @@
-from sibt.domain.validatorcollectionvalidator import \
-    ValidatorCollectionValidator
-from sibt.domain import subvalidators
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
+from sibt.application import constructRulesValidator
 from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
 from sibt.infrastructure.fileobjoutput import FileObjOutput
@@ -18,6 +16,7 @@ from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from sibt.application.configrepo import ConfigRepo
 import sys
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
+from sibt.domain import subvalidators
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, schedulerLoader):
@@ -46,12 +45,8 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
   if args.action == "sync":
     validator = subvalidators.AcceptingValidator() if \
-        args.options["no-checks"] else ValidatorCollectionValidator([
-        subvalidators.LocExistenceValidator(),
-        subvalidators.LocAbsoluteValidator(),
-        subvalidators.LocNotEmptyValidator(),
-        subvalidators.SchedulerCheckValidator(configRepo.schedulers)
-    ])
+        args.options["no-checks"] else constructRulesValidator(
+            configRepo.schedulers)
     errors = validator.validate(matchingRules)
     if len(errors) > 0:
       stderr.println("errors in rules:")
@@ -90,7 +85,8 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           stringsToVersions.keys() if all(substring in versionString for 
               substring in args.options["version-substrings"])]
       if len(matchingVersions) > 1:
-        stderr.println("error: version patterns are ambiguous")
+        stderr.println("error: version patterns are ambiguous:")
+        stderr.println(str(matchingVersions))
         return 1
       if len(matchingVersions) == 0:
         stderr.println("error: no matching version for patterns")
@@ -129,7 +125,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
 def printException(ex, stderr):
   stderr.println(str(ex))
-  stderr.println("reason:\n{0}".format(ex.__cause__))
+  stderr.println("reason:\n{0}".format(str(ex.__cause__)))
 
 def listConfiguration(printer, output, listType, rules, sysRules, interpreters, 
     schedulers):

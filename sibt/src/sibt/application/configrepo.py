@@ -1,4 +1,5 @@
 from sibt.configuration.dirbasedrulesreader import DirBasedRulesReader
+from sibt.domain.defaultvalueinterpreter import DefaultValueInterpreter
 from sibt.infrastructure.executablefileruleinterpreter import \
     ExecutableFileRuleInterpreter
 from sibt.domain.queuingscheduler import QueuingScheduler
@@ -16,8 +17,8 @@ from sibt.application.hashbangawareprocessrunner import \
 def readInterpreters(dirs, processRunner):
   def load(path, fileName):
     try:
-      return ExecutableFileRuleInterpreter.createWithFile(path, fileName, 
-        processRunner)
+      return DefaultValueInterpreter(ExecutableFileRuleInterpreter.
+          createWithFile(path, fileName, processRunner))
     except ConfigConsistencyException:
       return None
 

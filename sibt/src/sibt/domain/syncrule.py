@@ -12,6 +12,9 @@ class SyncRule(object):
     self.scheduler = scheduler
     self.interpreter = interpreter
 
+    writeLocIndices = interpreter.writeLocIndices
+    self.writeLocs = [self.loc(i) for i in writeLocIndices]
+
   def loc(self, index):
     return self.interpreterOptions["Loc" + str(index)]
 

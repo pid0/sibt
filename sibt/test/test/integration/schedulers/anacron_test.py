@@ -44,7 +44,7 @@ class Fixture(object):
     return ret
 
   def checkOption(self, optionName, schedulings, matcher):
-    self.execs.expectMatchingCalls(anacronCallMatching(
+    self.execs.expectCalls(anacronCallMatching(
       lambda args: matcher(args[args.index(optionName) + 1])))
     self.run(schedulings)
 

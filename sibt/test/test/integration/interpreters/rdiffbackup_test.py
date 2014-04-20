@@ -1,12 +1,12 @@
 import os.path
 import time
 import pytest
+from sibt.domain.defaultvalueinterpreter import DefaultValueInterpreter
 from sibt.infrastructure.executablefileruleinterpreter import \
     ExecutableFileRuleInterpreter
 from sibt.application.configrepo import createHashbangAwareProcessRunner
 from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
-from test.common.interceptingoutput import InterceptingOutput
 from test.common.assertutil import iterableContainsInAnyOrder
 import os
 
@@ -15,8 +15,9 @@ class Fixture(object):
     processRunner = createHashbangAwareProcessRunner("sibt/runners",
         SynchronousProcessRunner())
     path = os.path.abspath("sibt/interpreters/rdiff-backup")
-    self.inter = ExecutableFileRuleInterpreter(path, os.path.basename(path),
-        processRunner)
+    self.inter = DefaultValueInterpreter(
+        ExecutableFileRuleInterpreter(path, os.path.basename(path),
+            processRunner))
 
     self.loc1 = tmpdir.mkdir("Loc1")
     self.loc2 = tmpdir.mkdir("Loc2")
@@ -111,7 +112,7 @@ def test_shouldUseTheIncrementsAsVersions(fixture):
   assert topFile.read() == "foo"
   assert destFile.read() == someContent
 
-def test_shouldBeAbleToListDirectories(fixture):
+def test_shouldBeAbleToListDirectories(fixture, capfd):
   folder = fixture.loc1.mkdir("folder")
   folder.join("file1").write("")
   folder.join("file2").write("")
@@ -122,17 +123,20 @@ def test_shouldBeAbleToListDirectories(fixture):
   folder.remove()
 
   version = fixture.inter.versionsOf("folder", 1, options)[0]
-  stdout = None
-  with InterceptingOutput.stdout() as stdout:
-    fixture.inter.listFiles("folder", 1, version, options)
+  fixture.inter.listFiles("folder", 1, version, options)
 
-  assert iterableContainsInAnyOrder(stdout.stringBuffer.split(os.linesep)[:-1],
+  stdout, _ = capfd.readouterr()
+
+  assert iterableContainsInAnyOrder(stdout.split(os.linesep)[:-1],
       lambda line: line == "F file1",
       lambda line: line == "F file2",
       lambda line: line == "D sub")
 
-  with InterceptingOutput.stdout() as stdout:
-    fixture.inter.listFiles("folder/file1", 1, version, options)
-  assert stdout.stringBuffer == "F file1\n"
+  fixture.inter.listFiles("folder/file1", 1, version, options)
+  stdout, _ = capfd.readouterr()
+  assert stdout == "F file1\n"
+
+def test_shouldReturn2IfAskedForTheLocationsItWritesTo(fixture):
+  assert fixture.inter.writeLocIndices == [2]
 
 

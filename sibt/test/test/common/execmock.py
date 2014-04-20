@@ -6,18 +6,25 @@ class ExecMock(object):
     self.ignoring = False
 
 
-  def expectMatchingCalls(self, *execs, anyOrder=False):
-    expectedCalls = [mock.callMatchingTuple("getOutput", (lambda expected: 
-      lambda args: args[0] == expected[0] and expected[1](args[1]))(
-        expectedExec), expectedExec[2]) for expectedExec in execs]
+  def expectCalls(self, *execs, anyOrder=False):
+    expectedCalls = []
+    for expectedExec in execs:
+      kwargs = dict() if len(expectedExec) == 3 else expectedExec[3]
+      if callable(expectedExec[1]):
+        call = mock.callMatchingTuple("getOutput", (lambda expected:
+            lambda args: args[0] == expected[0] and 
+                expected[1](args[1]))(expectedExec), 
+            ret=expectedExec[2], **kwargs) 
+      else:
+        call = mock.call("getOutput", (expectedExec[0],
+            expectedExec[1]), ret=expectedExec[2], **kwargs)
+
+      expectedCalls.append(call)
+
     if anyOrder:
       self.mockedExec.expectCallsInAnyOrder(*expectedCalls)
     else: 
       self.mockedExec.expectCallsInOrder(*expectedCalls)
-  def expectCalls(self, *execs):
-    expectedCalls = [mock.call("getOutput", (expectedExec[0],
-        expectedExec[1]), ret=expectedExec[2]) for expectedExec in execs]
-    self.mockedExec.expectCallsInOrder(*expectedCalls)
 
   def execute(self, program, *arguments):
     self.getOutput(program, *arguments)

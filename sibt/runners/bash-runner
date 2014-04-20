@@ -16,11 +16,16 @@ setup-variables() {
   done
 }
 
+writes-to() {
+  return 3
+}
+
 case $action in
   available-options) available-options;;
   sync) setup-variables "${@:1:${#@}}"; sync;;
   versions-of) setup-variables "${@:3:${#@}}"; versions-of "$@";;
   restore) setup-variables "${@:6:${#@}}"; restore "$@";;
   list-files) setup-variables "${@:5:${#@}}"; list-files "$@";;
+  writes-to) writes-to;;
 esac
 

@@ -9,8 +9,8 @@ class RuleFactory(object):
   def build(self, name, schedulerOptions, interpreterOptions, enabled):
     self._throwIfOptionsNotPresent(schedulerOptions, ["Name"], "scheduler")
     self._throwIfOptionsNotPresent(interpreterOptions, 
-
         ["Name", "Loc1", "Loc2"], "interpreter (Loc1, Loc2, Name)")
+
     scheduler = self._findName(self.schedulers, schedulerOptions["Name"], 
         "scheduler")
     interpreter = self._findName(self.interpreters, interpreterOptions["Name"], 

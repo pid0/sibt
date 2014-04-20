@@ -107,15 +107,18 @@ def test_shouldThrowExceptionIfConstructionOfRuleFailsBecauseOfConsistency(
   except ConfigSyntaxException as ex:
     assert ex.__cause__ == causeEx
 
-  otherEx = Exception("not consistency")
+  regularEx = Exception("fatal")
   def totallyFail(_):
-    raise otherEx
+    raise regularEx
+  
+  fixture.factory.clearExpectedCalls()
+
   fixture.factory.expectCallsInAnyOrder(buildCall(totallyFail))
   try:
     fixture.read()
     assert False
   except Exception as ex:
-    assert ex == otherEx
+    assert ex == regularEx
 
 def test_shouldIgnoreRuleFilesEndingWithInc(fixture):
   fixture.writeAnyRule("header-rule.inc")

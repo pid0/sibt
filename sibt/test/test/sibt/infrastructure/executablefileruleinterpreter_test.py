@@ -5,7 +5,12 @@ from test.common.execmock import ExecMock
 from sibt.infrastructure.executablefileruleinterpreter import \
     ExecutableFileRuleInterpreter
 from test.common.assertutil import iterableContainsInAnyOrder
+from sibt.infrastructure.interpreterfuncnotimplementedexception import \
+    InterpreterFuncNotImplementedException
+from sibt.infrastructure.externalfailureexception import \
+    ExternalFailureException
 from datetime import datetime, timezone
+from functools import partial
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -46,7 +51,7 @@ def test_shouldCallExecutableWithOptionsInKeyValueFormat(fixture):
   options = {"First": "foo", "Second": "/tmp/quux"}
 
   interpreter, execs = fixture.createWithExecutable()
-  execs.expectMatchingCalls(fixture.lastInterpreterCall(
+  execs.expectCalls(fixture.lastInterpreterCall(
       lambda args: args[0] == "sync" and set(args[1:3]) == 
           set(["First=foo", "Second=/tmp/quux"]) and len(args) == 3, ""))
 
@@ -67,7 +72,7 @@ def test_shouldParseUnixTimestampsAndW3CDateTimesAsVersions(fixture):
   inter, execs = fixture.createWithExecutable()
   path = "/etc/config"
 
-  execs.expectMatchingCalls(fixture.lastInterpreterCall(
+  execs.expectCalls(fixture.lastInterpreterCall(
       lambda args: args[0] == "versions-of" and args[1] == "/etc/config" and 
       args[2] == "2" and args[3] == "Blah=quux", """
       250
@@ -89,19 +94,47 @@ def test_shouldCallRestoreWithAW3CDateAndAUnixTimestamp(fixture):
   path = "path/to/file"
   expectedArgs = ("restore", path, "1", "1970-01-01T00:01:33+00:00", 
       "93")
-  optionArg = "Foo=Bar"
   time = datetime(1970, 1, 1, 0, 1, 33, tzinfo=timezone.utc)
-  options = {"Foo": "Bar"}
 
-  execs.expectMatchingCalls(fixture.lastInterpreterCall(
-      lambda args: args[0:5] == expectedArgs and args[5] == "" and 
-      args[6] == optionArg, ""))
+  options = {"Foo": "Bar"}
+  optionArg = "Foo=Bar"
+
+  def expectRestoreCall(expectedDestination):
+    execs.expectCalls(fixture.lastInterpreterCall(
+        lambda args: args[0:5] == expectedArgs and 
+        args[5] == expectedDestination and 
+        args[6] == optionArg, ""))
+
+  expectRestoreCall("")
   inter.restore(path, 1, time, None, options)
   execs.check()
 
-  execs.expectMatchingCalls(fixture.lastInterpreterCall(
-      lambda args: args[0:5] == expectedArgs and args[5] == "the-dest" and 
-      args[6] == optionArg, ""))
+  expectRestoreCall("the-dest")
   inter.restore(path, 1, time, "the-dest", options)
   execs.check()
+
+def test_shouldGatherEachLineOfOutputAsLocationIndicesWhenCallingWritesTo(
+    fixture):
+  inter, execs = fixture.createWithExecutable()
+
+  execs.expectCalls(fixture.lastInterpreterCall(("writes-to",),
+      "1\n2"))
+  assert set(inter.writeLocIndices) == set([1, 2])
+
+  execs.check()
+
+def test_shouldThrowNotImplementedExceptionIfExecutableReturns3(fixture):
+  def throwExWithExitCode(exitCode, *args):
+    raise ExternalFailureException("", exitCode)
+
+  def checkExitCodeAndExceptionType(code, expectedExType):
+    inter, execs = fixture.createWithExecutable()
+
+    execs.expectCalls(fixture.lastInterpreterCall(
+        partial(throwExWithExitCode, code), ""))
+    with pytest.raises(expectedExType):
+      inter.writeLocIndices
+
+  checkExitCodeAndExceptionType(3, InterpreterFuncNotImplementedException)
+  checkExitCodeAndExceptionType(1, ExternalFailureException)
 

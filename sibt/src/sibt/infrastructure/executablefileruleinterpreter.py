@@ -2,6 +2,10 @@ import os
 from sibt.configuration.exceptions import ConfigConsistencyException
 from datetime import datetime, timezone
 import time
+from sibt.infrastructure.externalfailureexception import \
+    ExternalFailureException
+from sibt.infrastructure.interpreterfuncnotimplementedexception import \
+    InterpreterFuncNotImplementedException
 
 def normalizedLines(string):
   return [line.strip() for line in string.split("\n") if line.strip() != ""]
@@ -39,6 +43,26 @@ class ExecutableFileRuleInterpreter(object):
     return normalizedLines(self.processRunner.getOutput(
         self.executable, "available-options"))
   availableOptions = property(availableOptions)
+
+  def writeLocIndices(self):
+    return [int(line) for line in normalizedLines(self._getOutput("writes-to"))]
+  writeLocIndices = property(writeLocIndices)
+
+
+  def _getOutput(self, funcName, *args):
+    return self._catchNotImplemented(
+        lambda: self.processRunner.getOutput(self.executable, funcName, *args),
+        funcName)
+  def _catchNotImplemented(self, func, funcName):
+    try:
+      ret = func()
+      return ret
+    except ExternalFailureException as ex:
+      if ex.exitStatus == 3:
+        raise InterpreterFuncNotImplementedException(self.executable, funcName)\
+          from ex
+      else:
+        raise ex
 
 
   def _encodeTime(self, version):

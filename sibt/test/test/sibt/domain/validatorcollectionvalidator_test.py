@@ -7,6 +7,9 @@ def test_shouldReturnTheErrorsOfTheFirstValidatorThatReturnsSome():
   errors1 = ["first error", "foo"]
   errors2 = ["second error", "bar"]
 
+  sub0 = mock.mock()
+  sub0.expectCallsInOrder(mock.call("validate", (rules,),
+    ret=[]))
   sub1 = mock.mock()
   sub1.expectCallsInOrder(mock.call("validate", (rules,),
     ret=errors1))
@@ -14,6 +17,6 @@ def test_shouldReturnTheErrorsOfTheFirstValidatorThatReturnsSome():
   sub2.expectCallsInOrder(mock.call("validate", (rules,),
     ret=errors2))
 
-  validator = ValidatorCollectionValidator([sub2, sub1])
+  validator = ValidatorCollectionValidator([sub0, sub2, sub1])
   assert validator.validate(rules) == errors2
 
