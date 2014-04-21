@@ -1,5 +1,4 @@
 from datetime import time, datetime
-from sibt import executiontimeprediction
 
 class EachOwnLineConfigPrinter(object):
   def __init__(self, output):
@@ -25,8 +24,3 @@ class EachOwnLineConfigPrinter(object):
   def printSysRules(self, rules):
     self._printRules(rules, True)
       
-#  def _formatExecutionTime(self, pointInTime):
-#    return ("n/a" if pointInTime is None else
-#      "Due" if pointInTime is executiontimeprediction.Due else
-#      datetime.strftime(pointInTime, "%Y-%m-%d %H:%M:%S.%f %z"))
-    

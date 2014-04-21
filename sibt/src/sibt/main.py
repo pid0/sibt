@@ -1,4 +1,6 @@
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
+from sibt.application.inifilesyntaxruleconfigprinter import \
+    IniFileSyntaxRuleConfigPrinter
 from sibt.application import constructRulesValidator
 from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
@@ -11,7 +13,6 @@ from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException
 from sibt.infrastructure.externalfailureexception import \
     ExternalFailureException
-from sibt.application.rulesetrunner import RuleSetRunner
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from sibt.application.configrepo import ConfigRepo
 import sys
@@ -35,7 +36,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     printException(ex, stderr)
     return 1
 
-  if args.action in ["sync", "sync-uncontrolled"]:
+  if args.action in ["sync", "sync-uncontrolled", "check", "show"]:
     matchingRules = configRepo.findSyncRulesByPatterns(
         args.options["rule-patterns"])
     if len(matchingRules) == 0:
@@ -43,22 +44,26 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           args.options["rule-patterns"]))
       return 1
 
-  if args.action == "sync":
+  if args.action == "show":
+    showRule(matchingRules[0], stdout)
+  elif args.action in ["sync", "check"]:
     validator = subvalidators.AcceptingValidator() if \
         args.options["no-checks"] else constructRulesValidator(
             configRepo.schedulers)
     errors = validator.validate(matchingRules)
+    errorsOutput = stderr if args.action == "sync" else stdout
     if len(errors) > 0:
-      stderr.println("errors in rules:")
+      errorsOutput.println("errors in rules:")
       for error in errors:
-        stderr.println(error)
+        errorsOutput.println(error)
       return 1
 
-    for rule in matchingRules:
-      rule.schedule()
+    if args.action == "sync":
+      for rule in matchingRules:
+        rule.schedule()
 
-    for scheduler in configRepo.schedulers:
-      scheduler.executeSchedulings()
+      for scheduler in configRepo.schedulers:
+        scheduler.executeSchedulings()
   elif args.action == "sync-uncontrolled":
     for rule in matchingRules:
       rule.sync()
@@ -102,27 +107,6 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
   return 0
 
-  try:
-    configuration, configErrors = readConfig(paths.configDir, output)
-  except ConfigParseException as ex:
-    output.println("Configuration parsing errors:")
-    output.println(ex)
-    return
-  
-  executionTimeRepo = ExecutionTimeFileRepo(paths.varDir)
-  rulesFilter = IntervalBasedRulesFilter(executionTimeRepo, clock)
-  
-  rulesRunner = RuleSetRunner(processRunner, rulesFilter, externalProgramConfs)
-  
-  if args.listConfig:
-    ConfigPrinter().printConfig(configuration, output, rulesFilter)
-    return
-
-  if len(configErrors) == 0:
-    executeRulesWithConfig(configuration, rulesRunner, rulesFilter, 
-      executionTimeRepo, clock)
-
-
 def printException(ex, stderr):
   stderr.println(str(ex))
   stderr.println("reason:\n{0}".format(str(ex.__cause__)))
@@ -162,30 +146,9 @@ def overridePaths(paths, cmdLineArgs):
 def createNotExistingDirs(paths):
   DirTreeNormalizer(paths).createNotExistingDirs()
 
-def readConfig(configDir, output):
-  configReader = ConfigDirReader(configDir)
-  
-  configuration = configReader.read()
-  
-  configValidator = ConfigValidator(externalProgramConfs.keys())
-  configErrors = configValidator.errorsIn(configuration)
-  if len(configErrors) != 0:
-    output.println("Semantic configuration errors:")
-  for error in configErrors:
-    output.println("  " + error)
-    
-  return (configuration, configErrors)
-    
-def executeRulesWithConfig(configuration, rulesRunner, rulesFilter, 
-  executionTimeRepo, clock):
-  if configuration.timeOfDayRestriction != None and \
-    clock.localTimeOfDay() in configuration.timeOfDayRestriction:
-    return
-  
-  rulesRunner.runRules(configuration.rules)
-    
-  for dueRule in rulesFilter.getDueRules(configuration.rules):
-    executionTimeRepo.setExecutionTimeFor(dueRule, clock.time())
+def showRule(rule, output):
+  output.println(rule.name + ":")
+  IniFileSyntaxRuleConfigPrinter(output).show(rule)
 
 def main():
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 

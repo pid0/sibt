@@ -139,8 +139,8 @@ class SibtSpecFixture(object):
       interpreterName = name + "-inter"
       self.writeAnyInterpreter(interpreterName)
 
-    loc1 = loc1 or self.validLocForInterpreter()
-    loc2 = loc2 or self.validLocForInterpreter()
+    loc1 = self.validLocForInterpreter() if loc1 is None else loc1
+    loc2 = self.validLocForInterpreter() if loc2 is None else loc2
 
     paths = self.sysPaths if sysRule else self.paths
 
@@ -577,11 +577,8 @@ def test_shouldConsiderNameLoc1AndLoc2AsMinimumAndAlreadyAvailableOptions(
 
 def test_shouldProvideAWayToImportRuleConfigsAndANamingSchemeForIncludeFiles(
     fixture):
-  scheduler = fixture.mockTestScheduler("sched")
+  fixture.writeAnyScheduler("sched")
   fixture.writeTestInterpreter("inter")
-
-  fixture.enableRule("header.inc")
-  fixture.enableRule("rule")
 
   fixture.writeRule("header.inc", """
 [Scheduler]
@@ -591,7 +588,8 @@ Interval = 3w
 Name = inter
 """)
 
-  fixture.writeRule("rule", fixture.formatValidLocs("""
+  ruleName = "actual-rule"
+  fixture.writeRule(ruleName, fixture.formatValidLocs("""
 #import header
 [Interpreter]
 Loc1={loc1}
@@ -599,12 +597,17 @@ Loc2={loc2}
 [Scheduler]
 Syslog = yes"""))
 
-  scheduler.expectCallsInOrder(mock.callMatching("run", lambda schedulings:
-      schedulings[0].ruleName == "rule" and schedulings[0].options == {
-          "Interval": "3w", "Syslog": "yes"}))
+  fixture.runSibt("show", ruleName)
+  fixture.stdoutShouldContainLinePatterns(
+      "*actual-rule*",
+      "*Interval = 3w*",
+      "*Syslog = yes*",
+      "*Loc1 =*")
 
-  fixture.runSibt("sync", "*")
-  scheduler.checkExpectedCalls()
+  fixture.runSibt("show", "header.inc")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderrShouldContain("no", "rule")
+  fixture.stdoutShouldBeEmpty()
 
 def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
     fixture):
@@ -835,3 +838,20 @@ def test_shouldCheckIfTwoRulesToSyncWouldWriteToTheSameLocation(fixture):
   fixture.runSibtWithRealStreamsAndExec("sync", "uni", "bi")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderrShouldContain("dest/1", "overlapping writes", "bi", "uni")
+
+def test_shouldProvideACheckActionThatPerformsTheSameChecksAsSyncButDoesntSync(
+    fixture):
+  fixture.writeRuleWithSchedAndInter("valid-rule")
+
+  fixture.runSibt("check", "valid-rule")
+  fixture.stdoutShouldBeEmpty()
+  fixture.stderrShouldBeEmpty()
+  fixture.shouldHaveExitedWithStatus(0)
+
+  fixture.writeRuleWithSchedAndInter("invalid-rule",
+      loc1="",
+      loc2="")
+
+  fixture.runSibt("check", "invalid-rule", "valid-rule")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stdoutShouldContain("invalid-rule", "exist")

@@ -2,10 +2,6 @@ import os.path
 from sibt.infrastructure.pathhelper import isPathWithinPath
 
 class Validator(object):
-  def locsOf(self, rule):
-    yield rule.loc(1)
-    yield rule.loc(2)
-
   def errMsg(self, message, *rules):
     return "in " + ", ".join(rule.name for rule in rules) + ": " + message
 
@@ -24,7 +20,7 @@ class SchedulerCheckValidator(Validator):
 class LocExistenceValidator(Validator):
   def validate(self, rules):
     for rule in rules:
-      for loc in self.locsOf(rule):
+      for loc in rule.locs:
         if os.path.isfile(loc):
           return [self.errMsg(loc + " is file, should be folder", rule)]
         if not os.path.isdir(loc):
@@ -35,7 +31,7 @@ class LocExistenceValidator(Validator):
 class LocAbsoluteValidator(Validator):
   def validate(self, rules):
     for rule in rules:
-      for loc in self.locsOf(rule):
+      for loc in rule.locs:
         if not os.path.isabs(loc):
           return [self.errMsg(loc + " is not absolute", rule)]
 
@@ -48,7 +44,7 @@ class AcceptingValidator(object):
 class LocNotEmptyValidator(Validator):
   def validate(self, rules):
     for rule in rules:
-      for loc in self.locsOf(rule):
+      for loc in rule.locs:
         if len(os.listdir(loc)) == 0:
           return [self.errMsg(loc + " is empty", rule)]
     return []

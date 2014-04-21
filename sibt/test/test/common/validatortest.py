@@ -17,7 +17,7 @@ def fix(tmpdir):
 
 def mockRule(loc1, loc2, name=None, writeLocs=[2]):
   ret = lambda x:x
-  ret.loc = lambda x: str(loc1) if x == 1 else str(loc2)
+  ret.locs = [str(loc1), str(loc2)]
   ret.writeLocs = [str(loc1)] if 1 in writeLocs else [] + \
       [str(loc2)] if 2 in writeLocs else []
   ret.checkScheduler = lambda *args: None

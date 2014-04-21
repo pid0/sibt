@@ -72,6 +72,12 @@ class CmdLineArgsParser(object):
 
     listFiles = subs.add_parser("list-files")
     addListFilesLikeArgs(listFiles)
+
+    check = subs.add_parser("check")
+    check.add_argument("rule-patterns", nargs="+", action="store")
+
+    show = subs.add_parser("show")
+    show.add_argument("rule-patterns", nargs="+", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 

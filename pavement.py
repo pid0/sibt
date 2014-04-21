@@ -38,7 +38,7 @@ def runPyTest(testFiles):
 
 @task
 def setup_pythonpath():
-  sys.path += ["sibt/src"]
+  sys.path = ["sibt/src"] + sys.path
   
 @task
 @needs(["setup_pythonpath"])

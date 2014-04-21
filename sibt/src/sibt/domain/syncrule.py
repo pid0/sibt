@@ -13,9 +13,14 @@ class SyncRule(object):
     self.interpreter = interpreter
 
     writeLocIndices = interpreter.writeLocIndices
-    self.writeLocs = [self.loc(i) for i in writeLocIndices]
+    self.writeLocs = [self._loc(i) for i in writeLocIndices]
 
-  def loc(self, index):
+  def locs(self):
+    yield self._loc(1)
+    yield self._loc(2)
+  locs = property(locs)
+
+  def _loc(self, index):
     return self.interpreterOptions["Loc" + str(index)]
 
   def _scheduling(self):
@@ -35,21 +40,21 @@ class SyncRule(object):
       return []
     return [Version(self, time) for time in 
         self.interpreter.versionsOf(
-            removeCommonPrefix(path, self.loc(locNumber)), locNumber,
+            removeCommonPrefix(path, self._loc(locNumber)), locNumber,
             self.interpreterOptions)]
 
   def restore(self, path, version, destination):
     locNumber = self.getLocNumber(path)
-    self.interpreter.restore(removeCommonPrefix(path, self.loc(locNumber)),
+    self.interpreter.restore(removeCommonPrefix(path, self._loc(locNumber)),
         locNumber, version.time, destination, self.interpreterOptions)
   def listFiles(self, path, version):
     locNumber = self.getLocNumber(path)
-    self.interpreter.listFiles(removeCommonPrefix(path, self.loc(locNumber)),
+    self.interpreter.listFiles(removeCommonPrefix(path, self._loc(locNumber)),
         locNumber, version.time, self.interpreterOptions)
 
   def getLocNumber(self, path):
-    return 1 if isPathWithinPath(path, self.loc(1)) else 2 if \
-        isPathWithinPath(path, self.loc(2)) else 0
+    return 1 if isPathWithinPath(path, self._loc(1)) else 2 if \
+        isPathWithinPath(path, self._loc(2)) else 0
 
   def __repr__(self):
     return "SyncRule{0}".format((self.name, self.schedulerOptions, 
