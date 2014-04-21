@@ -2,8 +2,14 @@ from sibt.infrastructure.synchronousprocessrunner import \
     SynchronousProcessRunner
 from sibt.infrastructure.intervalparser import IntervalParser
 import os
+from sibt.infrastructure.schedulerhelper import evalTruth
 
-availableOptions = ["Interval", "LogFile", "ExecOnFailure", "AllowedHours"]
+availableOptions = ["Interval", "LogFile", "ExecOnFailure", "AllowedHours",
+    "Syslog"]
+
+def quoted(options, optionKey):
+  string = options.get(optionKey, "")
+  return '"{0}"'.format(string)
 
 class Anacron(object):
   def init(self, initSibtCall, paths):
@@ -64,12 +70,24 @@ ruleName="$1"
 logFile="$2"
 execOnFailure="$3"
 execOnFailure=${execOnFailure/'%r'/"$ruleName"}
+syslog=$4
+syslogTestOpts="$5"
+
+set -o pipefail
+
+logCommand=tee
+if [ $syslog = 1 ]; then
+  logCommand+=' >(logger -t sibt $syslogTestOpts)'
+fi
+if [ -n "$logFile" ]; then
+  logCommand+=' >>"$logFile"'
+fi
 
 declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled "$ruleName")
-if [ -z "$logFile" ]; then
-  "${sibtCall[@]}"
+if [[ $syslog = 1 || -n "$logFile" ]]; then
+  "${sibtCall[@]}" 2>&1 | eval $logCommand
 else
-  "${sibtCall[@]}" >>"$logFile" 2>&1
+  "${sibtCall[@]}"
 fi
 
 if [ $? != 0 ]; then
@@ -80,13 +98,17 @@ fi
     os.chmod(path, 0o700)
 
   def writeTabEntry(self, scriptPath, tabFile, scheduling):
-    for field in [self.getInterval(scheduling),
+    for field in [
+        self.getInterval(scheduling),
         "0", 
         scheduling.ruleName,
+
         scriptPath,
         scheduling.ruleName,
-        scheduling.options.get("LogFile", '""'),
-        '"{0}"'.format(scheduling.options.get("ExecOnFailure", ""))]:
+        quoted(scheduling.options, "LogFile"),
+        quoted(scheduling.options, "ExecOnFailure"),
+        "1" if evalTruth(scheduling.options.get("Syslog", "")) else "0",
+        quoted(scheduling.options, "SyslogTestOpts")]:
       tabFile.write(field)
       tabFile.write(" ")
 

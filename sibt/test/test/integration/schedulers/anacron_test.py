@@ -1,4 +1,6 @@
 import pytest
+from test.common.servermock import ServerMock
+import socket
 import time
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from test.common.builders import scheduling, anyScheduling
@@ -69,7 +71,7 @@ def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
   if [[ $1 = --some-global-opt && $2 = 'blah foo' && \
-      $3 = sync-uncontrolled && $4 == some-rule ]]; then
+      $3 = sync-uncontrolled && $4 = some-rule ]]; then
     touch {0}
   fi""".format(testFile), [scheduling().withRuleName("some-rule")],
   sibtArgs=["--some-global-opt", "blah foo"])
@@ -153,7 +155,7 @@ def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
   """, [
       scheduling().withRuleName("not-logging").build(),
       scheduling().withRuleName("logging").
-      withOption("LogFile", str(logFile)).build(),
+          withOption("LogFile", str(logFile)).build(),
       scheduling().withRuleName("logging-2").withOption("LogFile", 
           str(logFile)).build()])
 
@@ -164,6 +166,35 @@ def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
   assert "lorem ipsum" not in log
   
   assert "LogFile" in fixture.mod.availableOptions
+
+def test_shouldSupportSysloggingSibtOutput(fixture):
+  fixture.init()
+  assert "Syslog" in fixture.mod.availableOptions
+
+  logFile = fixture.tmpdir.join("log")
+
+  message1 = "goes to stdout"
+  message2 = "its an error"
+
+  syslogMock = None
+  with ServerMock("5024", socket.SOCK_DGRAM) as syslogMock:
+    fixture.runWithMockedSibt(
+    """#!/usr/bin/env bash
+    echo {0}
+    echo {1} >&2""".format(message1, message2), 
+    [scheduling().
+        withOption("LogFile", str(logFile)).
+        withOption("Syslog", "yes").
+        withOption("SyslogTestOpts", "--server localhost --port 5024").build()])
+
+  syslog = syslogMock.receivedBytes.decode("utf-8")
+
+  assert "sibt: " in syslog
+  assert message1 in syslog
+  assert message2 in syslog
+  assert message1 in logFile.read()
+  assert message2 in logFile.read()
+
   
 def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
   testFile = fixture.miscDir / "test"
@@ -176,7 +207,8 @@ def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
   onFailScript.chmod(0o700)
 
   executingScheduling = scheduling().withOption(
-      "ExecOnFailure", "{0} {1} {2}".format(str(onFailScript), "a", "%r"))
+      "ExecOnFailure", "{0} {1} {2}".format(str(onFailScript), "a", "%r")).\
+      withOption("LogFile", "/tmp/foo")
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
   if [ $2 = fails ]; then
@@ -204,12 +236,14 @@ def test_shouldHaveAnInterfaceToAnacronsStartHoursRange(fixture):
   fixture.checkOption("-t", schedulings, checkTab)
 
   assert fixture.check(schedulings) == []
+
 def test_shouldCheckIfAllowedHoursSettingsAreContradictory(fixture):
   fixture.init()
 
   assert "contradictory AllowedHours" in \
-      fixture.check([scheduling().withOption("AllowedHours", "2-5").build(),
-      scheduling().withOption("AllowedHours", "3-10").build()])[0]
+      fixture.check([
+          scheduling().withOption("AllowedHours", "2-5").build(),
+          scheduling().withOption("AllowedHours", "3-10").build()])[0]
   assert fixture.check([
       scheduling().withOption("AllowedHours", "12-20").build(),
       scheduling().withOption("AllowedHours", "12-20").build()]) == []
