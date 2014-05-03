@@ -811,9 +811,6 @@ def test_shouldPerformSanityChecksOnRulesBeforeSyncingExceptWhenDisabled(
   fixture.shouldHaveExitedWithStatus(0)
 
 def test_shouldCheckIfTwoRulesToSyncWouldWriteToTheSameLocation(fixture):
-  os.remove("/tmp/blah")
-  with open("/tmp/blah", "a") as file:
-    print("foo", file=file)
   fixture.writeInterpreter("bidirectional", """#!/usr/bin/env bash
   if [ $1 = writes-to ]; then
     echo 1
@@ -833,8 +830,6 @@ def test_shouldCheckIfTwoRulesToSyncWouldWriteToTheSameLocation(fixture):
       loc2=fixture.validLocForInterpreter("dest/2"),
       interpreterName="bidirectional")
 
-  with open("/tmp/blah", "a") as file:
-    print("bar", file=file)
   fixture.runSibtWithRealStreamsAndExec("sync", "uni", "bi")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderrShouldContain("dest/1", "overlapping writes", "bi", "uni")
