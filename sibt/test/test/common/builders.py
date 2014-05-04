@@ -1,5 +1,6 @@
 from sibt.domain.scheduling import Scheduling
 from sibt.application.runner import Runner
+from datetime import datetime, timezone, timedelta
 from random import random
 import os.path
 
@@ -31,4 +32,7 @@ def existingRunner(tmpdir, name):
   path = tmpdir.join(name)
   path.write("#!/bin/sh")
   return str(path), Runner(name, str(path))
+
+def anyUTCDateTime():
+  return datetime.now(timezone.utc) - timedelta(days=330)
 

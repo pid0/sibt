@@ -9,7 +9,7 @@ availableOptions = ["Interval", "LogFile", "ExecOnFailure", "AllowedHours",
 
 def quoted(options, optionKey):
   string = options.get(optionKey, "")
-  return '"{0}"'.format(string)
+  return "'{0}'".format(string)
 
 class Anacron(object):
   def init(self, initSibtCall, paths):
@@ -40,7 +40,7 @@ class Anacron(object):
       for scheduling in schedulings:
         self.writeTabEntry(scriptPath, tabFile, scheduling)
 
-    self.processRunner.execute("/usr/bin/anacron", "-t", tabPath,
+    self.processRunner.execute("anacron", "-t", tabPath,
         "-S", self.spoolDir, "-d")
 
     os.remove(tabPath)
@@ -52,6 +52,10 @@ class Anacron(object):
         self.getInterval(scheduling)
       except Exception as ex:
         return [str(ex)]
+
+      for option in availableOptions:
+        if "'" in scheduling.options.get(option, ""):
+          return ["single quote not allowed in {0}".format(option)]
 
     allowedHours = None
     allowedHoursSettings = [scheduling.options["AllowedHours"] for 

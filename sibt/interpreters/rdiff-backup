@@ -73,6 +73,7 @@ list-files() {
   fi
 
   getBasename='s,^([A-Z] ).*/([^/]+)$,\1\2,'
+  filterDirectChildren='\,^[^/]+/[^/]+/,!p'
 
   typeOfFile=$(get-file-type "$path" $timestamp)
 
@@ -81,5 +82,6 @@ list-files() {
     "${listCall[@]}" | sed -n -e '1!p'
   else
     "${listCall[@]}"
-  fi | prepend-file-types $timestamp | sed -r -e "$getBasename"
+  fi | sed -nr -e "$filterDirectChildren" |\
+      prepend-file-types $timestamp | sed -r -e "$getBasename"
 }

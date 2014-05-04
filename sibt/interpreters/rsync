@@ -1,0 +1,59 @@
+#!bash-runner
+
+available-options() {
+cat <<EOF
+AdditionalSyncOpts
+EOF
+}
+
+run-rsync() {
+  local srcPath="$1"
+  if [[ "$srcPath" =~ [^/]$ && -d "$srcPath" ]]; then
+    srcPath+=/
+  fi
+  rsync -a --acls --xattrs --delete "$srcPath" "$2" $AdditionalSyncOpts
+}
+
+sync() {
+  run-rsync "$Loc1" "$Loc2"
+}
+
+versions-of() {
+  path="$1"
+  locNumber=$2
+
+  if [ $locNumber = 2 ]; then
+    return
+  fi
+
+  fullPath="$Loc2"/"$path"
+  if [ -e "$fullPath" ]; then
+    stat -c%Y "$fullPath"
+  fi
+}
+
+restore() {
+  path="$1"
+  locNumber="$2"
+  dest="$5"
+
+  if [ "$dest" = "" ]; then
+    dest="$Loc1"/"$path"
+  fi
+  
+  run-rsync "$Loc2"/"$path" "$dest"
+}
+
+list-files() {
+  path="$1"
+  locNumber="$2"
+
+  recognizeDirectoryByTrailingSlash='
+    \,/$,!s,^(.*)$,F &,
+    s,([^/]+)/$,D \1,'
+  basenames='s,.*/([^/]+/?)$,\1,'
+
+  ls -A --format=single-column --indicator-style=slash "$Loc2"/"$path" | \
+      sed -r -e "$basenames" |\
+      sed -r -e "$recognizeDirectoryByTrailingSlash"
+}

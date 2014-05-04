@@ -1,142 +1,94 @@
-import os.path
 import time
 import pytest
-from sibt.domain.defaultvalueinterpreter import DefaultValueInterpreter
-from sibt.infrastructure.executablefileruleinterpreter import \
-    ExecutableFileRuleInterpreter
-from sibt.application.configrepo import createHashbangAwareProcessRunner
-from sibt.infrastructure.synchronousprocessrunner import \
-    SynchronousProcessRunner
 from test.common.assertutil import iterableContainsInAnyOrder
 import os
+from test.integration.interpreters.interpretertest import \
+    InterpreterTestFixture, MirrorInterpreterTest
 
-class Fixture(object):
+class Fixture(InterpreterTestFixture):
   def __init__(self, tmpdir):
-    processRunner = createHashbangAwareProcessRunner("sibt/runners",
-        SynchronousProcessRunner())
-    path = os.path.abspath("sibt/interpreters/rdiff-backup")
-    self.inter = DefaultValueInterpreter(
-        ExecutableFileRuleInterpreter(path, os.path.basename(path),
-            processRunner))
-
-    self.loc1 = tmpdir.mkdir("Loc1")
-    self.loc2 = tmpdir.mkdir("Loc2")
-    self.tmpdir = tmpdir
-
-  def optsWith(self, options):
-    options["Loc1"] = str(self.loc1)
-    options["Loc2"] = str(self.loc2)
-    return options
+    self.load("rdiff-backup", tmpdir)
 
 @pytest.fixture
 def fixture(tmpdir):
   return Fixture(tmpdir)
 
-def test_shouldReturnItsSupportedOptionsIfAsked(fixture):
-  for option in ["RemoveOlderThan", "AdditionalSyncOpts"]: 
-    assert option in fixture.inter.availableOptions 
+class Test_RdiffBackupTest(MirrorInterpreterTest):
+  @property
+  def minimumDelayBetweenTestsInS(self):
+    return 1
 
-def test_shouldCopyLoc1ToRdiffRepoAtLoc2IfToldToSync(fixture):
-  content = "... the raven “Nevermore.”"
-  fixture.loc1.join("poe").write(content)
+  def test_shouldUseRemoveOlderThanFeatureAfterSyncingIfSpecified(self, 
+      fixture):
+    assert "RemoveOlderThan" in fixture.inter.availableOptions
+    assert "AdditionalSyncOpts" in fixture.inter.availableOptions
 
-  fixture.inter.sync(fixture.optsWith(dict()))
+    def withTime(unixTime, andAlso=dict()):
+      in2037 = aDay * 366 * 67
+      andAlso["AdditionalSyncOpts"] = "--current-time=" + str(in2037 + unixTime)
+      return fixture.optsWith(andAlso)
 
-  assert os.listdir(str(fixture.loc2)) == ["poe", "rdiff-backup-data"]
-  assert fixture.loc2.join("poe").read() == content
+    firstFile = fixture.loc1.join("first")
+    secondFile = fixture.loc1.join("second")
+    thirdFile = fixture.loc1.join("third")
 
-def test_shouldUseRemoveOlderThanFeatureAfterSyncingIfSpecified(fixture):
-  def withTime(unixTime, andAlso=dict()):
-    in2037 = aDay * 366 * 67
-    andAlso["AdditionalSyncOpts"] = "--current-time=" + str(in2037 + unixTime)
-    return fixture.optsWith(andAlso)
+    aDay = 86400
 
-  firstFile = fixture.loc1.join("first")
-  secondFile = fixture.loc1.join("second")
-  thirdFile = fixture.loc1.join("third")
+    firstFile.write("")
+    fixture.inter.sync(withTime(0))
+    firstFile.remove()
 
-  aDay = 86400
+    secondFile.write("")
+    fixture.inter.sync(withTime(1 * aDay))
 
-  firstFile.write("")
-  fixture.inter.sync(withTime(0))
-  firstFile.remove()
+    thirdFile.write("")
+    fixture.inter.sync(withTime(2 * aDay + 1, 
+        andAlso={"RemoveOlderThan": "2D"}))
 
-  secondFile.write("")
-  fixture.inter.sync(withTime(1 * aDay))
+    files = os.listdir(str(fixture.loc2)) 
+    assert "first" not in files
+    assert "second" in files
+    assert "third" in files
 
-  thirdFile.write("")
-  fixture.inter.sync(withTime(2 * aDay + 1, andAlso={"RemoveOlderThan": "2D"}))
+  def test_shouldUseTheIncrementsAsVersions(self, fixture):
+    folder = fixture.loc1.mkdir("poe")
+    topFile = fixture.loc1.join("top")
+    quoteFile = folder.join("quote")
+    fileLaterCreated = folder.join("created-later")
 
-  files = os.listdir(str(fixture.loc2)) 
-  assert "first" not in files
-  assert "second" in files
-  assert "third" in files
+    options = fixture.optsWith(dict())
 
-def test_shouldUseTheIncrementsAsVersions(fixture):
-  folder = fixture.loc1.mkdir("poe")
-  topFile = fixture.loc1.join("top")
-  quoteFile = folder.join("quote")
-  fileLaterCreated = folder.join("created-later")
+    ravenQuote = "tell me what thy lordly name is"
+    someContent = "content"
 
-  options = fixture.optsWith(dict())
+    topFile.write(someContent)
+    quoteFile.write(ravenQuote)
+    fixture.inter.sync(options)
 
-  ravenQuote = "tell me what thy lordly name is"
-  someContent = "content"
+    time.sleep(1)
+    fileLaterCreated.write("")
+    topFile.write("foo")
+    fixture.inter.sync(options)
 
-  topFile.write(someContent)
-  quoteFile.write(ravenQuote)
-  fixture.inter.sync(options)
+    versions = fixture.inter.versionsOf("poe", 1, options)
+    assert fixture.inter.versionsOf("poe", 2, options) == []
+    assert fixture.inter.versionsOf("not-there", 1, options) == []
+    assert len(fixture.inter.versionsOf("poe/created-later", "1", 
+        options)) == 1
+    assert len(versions) == 2
 
-  time.sleep(1)
-  fileLaterCreated.write("")
-  topFile.write("foo")
-  fixture.inter.sync(options)
+    older, newer = sorted(versions)
 
-  versions = fixture.inter.versionsOf("poe", 1, options)
-  assert fixture.inter.versionsOf("poe", 2, options) == []
-  assert len(fixture.inter.versionsOf("poe/created-later", "1", 
-      options)) == 1
-  assert len(versions) == 2
+    fixture.inter.restore("poe", 1, older, None, options)
+    assert os.listdir(str(folder)) == ["quote"]
+    assert quoteFile.read() == ravenQuote
 
-  older = versions[0]
-  newer = versions[1]
-  if newer < older:
-    older, newer = newer, older
+    destFile = fixture.tmpdir.join("backup")
+    fixture.inter.restore("top", 1, older, str(destFile), options)
+    assert topFile.read() == "foo"
+    assert destFile.read() == someContent
 
-  fixture.inter.restore("poe", 1, older, None, options)
-  assert os.listdir(str(folder)) == ["quote"]
-  assert quoteFile.read() == ravenQuote
-
-  destFile = fixture.tmpdir.join("backup")
-  fixture.inter.restore("top", 1, older, str(destFile), options)
-  assert topFile.read() == "foo"
-  assert destFile.read() == someContent
-
-def test_shouldBeAbleToListDirectories(fixture, capfd):
-  folder = fixture.loc1.mkdir("folder")
-  folder.join("file1").write("")
-  folder.join("file2").write("")
-  folder.mkdir("sub")
-  options = fixture.optsWith(dict())
-
-  fixture.inter.sync(options)
-  folder.remove()
-
-  version = fixture.inter.versionsOf("folder", 1, options)[0]
-  fixture.inter.listFiles("folder", 1, version, options)
-
-  stdout, _ = capfd.readouterr()
-
-  assert iterableContainsInAnyOrder(stdout.split(os.linesep)[:-1],
-      lambda line: line == "F file1",
-      lambda line: line == "F file2",
-      lambda line: line == "D sub")
-
-  fixture.inter.listFiles("folder/file1", 1, version, options)
-  stdout, _ = capfd.readouterr()
-  assert stdout == "F file1\n"
-
-def test_shouldReturn2IfAskedForTheLocationsItWritesTo(fixture):
-  assert fixture.inter.writeLocIndices == [2]
+  def test_shouldReturn2IfAskedForTheLocationsItWritesTo(self, fixture):
+    assert fixture.inter.writeLocIndices == [2]
 
 

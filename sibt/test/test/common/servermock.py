@@ -22,7 +22,7 @@ class ServerMock(object):
         type=self.socketType)[0]
     self.sock = socket.socket(family=addrinfo[0], 
         type=addrinfo[1])
-    self.sock.settimeout(0.3)
+    self.sock.settimeout(0.8)
     self.sock.bind(addrinfo[4])
     
     if self.socketType != socket.SOCK_DGRAM:

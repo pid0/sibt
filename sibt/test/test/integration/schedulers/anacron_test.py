@@ -63,7 +63,7 @@ def fixture(tmpdir):
   return Fixture(tmpdir)
 
 def anacronCallMatching(matcher):
-  return ("/usr/bin/anacron", matcher, "")
+  return ("anacron", matcher, "")
 
 def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
   testFile = str(fixture.miscDir / "test")
@@ -128,6 +128,7 @@ def test_shouldPassIntervalOptionInDaysToAnacron(fixture):
     return True
 
   fixture.checkOption("-t", schedulings, checkTab)
+
 def test_shouldCheckIfIntervalSyntaxIsCorrectByCatchingExceptionsOfTheParser(
     fixture):
   fixture.init()
@@ -186,6 +187,7 @@ def test_shouldSupportSysloggingSibtOutput(fixture):
         withOption("LogFile", str(logFile)).
         withOption("Syslog", "yes").
         withOption("SyslogTestOpts", "--server localhost --port 5024").build()])
+    time.sleep(0.2)
 
   syslog = syslogMock.receivedBytes.decode("utf-8")
 
@@ -252,3 +254,8 @@ def test_shouldManageToBeInitializedMultipleTimesWithTheSameFolder(fixture):
   fixture.init()
   fixture.init()
 
+def test_shouldNotAllowSingleQuotesInOptionsPassedToExecutable(fixture):
+  fixture.init()
+
+  assert "single quote" in fixture.mod.check([
+      scheduling().withOption("LogFile", "user's log").build()])[0]
