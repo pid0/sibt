@@ -1,0 +1,11 @@
+#!bash-runner
+
+output-info() {
+  echo $(date) — from "$Loc1" to "$Loc2"
+}
+
+sync() {
+  output-info
+  output-info >> "$Loc2"/increments
+}
+

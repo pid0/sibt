@@ -4,7 +4,7 @@ from sibt.infrastructure.pathhelper import isPathWithinPath
 class Validator(object):
   def errMsg(self, message, *rules):
     return "in " + ", ".join(rule.name for rule in rules) + ": " + message
-
+  
 class SchedulerCheckValidator(Validator):
   def __init__(self, queuingSchedulers):
     self.queuingScheduler = queuingSchedulers
@@ -60,5 +60,15 @@ class NoOverlappingWritesValidator(Validator):
             if isPathWithinPath(writeLoc1, writeLoc2):
               return [self.errMsg(writeLoc1 + ", " + writeLoc2 + 
                   ": overlapping writes", rule, rule2)]
+
+    return []
+
+class NoSourceDirOverwriteValidator(Validator):
+  def validate(self, rules):
+    for rule in rules:
+      for nonWriteLoc in rule.nonWriteLocs:
+        for writeLoc in rule.writeLocs:
+          if isPathWithinPath(nonWriteLoc, writeLoc):
+            return [self.errMsg(nonWriteLoc + " within " + writeLoc)]
 
     return []

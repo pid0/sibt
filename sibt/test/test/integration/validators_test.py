@@ -18,3 +18,8 @@ class Test_CollectionValidatorTest(ValidatorTest):
       assert "absolute" in validator.validate([
           mockRule("dir", fix.validLocDir())])[0]
 
+  def test_shouldReturnAnErrorIfLoc1EqualsLoc2(self, fix):
+    validator = self.construct()
+
+    locDir = fix.validLocDir()
+    assert len(validator.validate([mockRule(locDir, locDir)])) > 0

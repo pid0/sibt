@@ -65,7 +65,7 @@ class Test_RdiffBackupTest(MirrorInterpreterTest):
     quoteFile.write(ravenQuote)
     fixture.inter.sync(options)
 
-    time.sleep(1)
+    time.sleep(self.minimumDelayBetweenTestsInS)
     fileLaterCreated.write("")
     topFile.write("foo")
     fixture.inter.sync(options)

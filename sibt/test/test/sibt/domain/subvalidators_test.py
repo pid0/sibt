@@ -1,6 +1,7 @@
 import os.path
 from sibt.domain.subvalidators import LocExistenceValidator, \
-    LocAbsoluteValidator, LocNotEmptyValidator, NoOverlappingWritesValidator
+    LocAbsoluteValidator, LocNotEmptyValidator, NoOverlappingWritesValidator, \
+    NoSourceDirOverwriteValidator
 from test.common.validatortest import fix, mockRule, validRule, ValidatorTest
 
 class Test_LocExistenceValidatorTest(ValidatorTest):
@@ -59,3 +60,14 @@ class Test_NoOverlappingWritesValidator(ValidatorTest):
         mockRule("/src/1", "/dest/1"),
         mockRule("/dest/1", "/dest/2", writeLocs=[1,2])])) == 1
 
+class Test_NoSourceDirOverwriteValidator(ValidatorTest):
+  def construct(self):
+    return NoSourceDirOverwriteValidator()
+
+  def test_shouldFindAnErrorInAWriteLocThatContainsANonWriteLoc(self, fix):
+    validator = self.construct()
+
+    assert "foo within /mnt" in validator.validate([validRule(fix),
+      mockRule("/mnt/data/foo", "/mnt/data")])[0]
+
+    assert len(validator.validate([mockRule("/src", "/src")])) > 0

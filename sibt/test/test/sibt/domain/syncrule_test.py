@@ -40,20 +40,23 @@ def test_shouldReturnVersionsGotFromInterpreterIfFileIsInALocOption(fixture):
   check("/mnt/backup/loc2/one/two/", "one/two", 2)
   assert len(rule.versionsOf("/mnt/data/quux")) == 0
 
-def test_shouldProvideACollectionOfWriteLocsWithIndicesSelectedByInterpreter(
+def test_shouldProvideAListOfWriteAndNonWriteLocsWithIndicesGivenByInterpreter(
     fixture):
   loc1 = "/loc1"
-  loc2 = "/loc1"
+  loc2 = "/loc2"
 
-  def checkWriteLocs(indices, expectedLocs):
+  def checkWriteLocs(indices, expectedWriteLocs, expectedNonWriteLocs, 
+      loc2=loc2):
     inter = lambda x:x
     inter.writeLocIndices = indices
 
     rule = fixture.ruleWith(inter, interOptions={"Loc1": loc1,
         "Loc2": loc2})
 
-    assert set(rule.writeLocs) == set(expectedLocs)
+    assert set(rule.writeLocs) == set(expectedWriteLocs)
+    assert set(rule.nonWriteLocs) == set(expectedNonWriteLocs)
 
-  checkWriteLocs([1], [loc1])
-  checkWriteLocs([1, 2], [loc1, loc2])
+  checkWriteLocs([1], [loc1], [loc2])
+  checkWriteLocs([2], [loc1], [loc1], loc2=loc1)
+  checkWriteLocs([1, 2], [loc1, loc2], [])
 

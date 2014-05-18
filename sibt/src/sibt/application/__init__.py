@@ -8,5 +8,6 @@ def constructRulesValidator(queuingSchedulers):
         subvalidators.LocAbsoluteValidator(),
         subvalidators.LocNotEmptyValidator(),
         subvalidators.NoOverlappingWritesValidator(),
+        subvalidators.NoSourceDirOverwriteValidator(),
         subvalidators.SchedulerCheckValidator(queuingSchedulers)
     ])

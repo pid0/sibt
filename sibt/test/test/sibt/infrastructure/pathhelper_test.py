@@ -7,6 +7,8 @@ def test_shouldBeAbleToTellIfAPathIsWithinSomeAbsoluteOne(tmpdir):
     assert not isPathWithinPath("../bar", str(tmpdir))
     assert not isPathWithinPath("bar", str(tmpdir.join("folder")))
 
+  assert isPathWithinPath("/home", "/home/")
+
   assert isPathWithinPath("/home/blah", "/home")
   assert isPathWithinPath("/home//foo/blah/..//blah/", "/home///foo")
   assert not isPathWithinPath("/mnt/foo", "/home")

@@ -14,6 +14,8 @@ class SyncRule(object):
 
     writeLocIndices = interpreter.writeLocIndices
     self.writeLocs = [self._loc(i) for i in writeLocIndices]
+    self.nonWriteLocs = [self._loc(i) for i in range(1, 3) if i not in 
+        writeLocIndices]
 
   def locs(self):
     yield self._loc(1)

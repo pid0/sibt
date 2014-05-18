@@ -5,6 +5,26 @@ shift 1
 action="$1"
 shift 1
 
+writes-to() {
+  return 3
+}
+
+available-options() {
+  return
+}
+
+restore() {
+  return
+}
+
+list-files() {
+  return
+}
+
+versions-of() {
+  return
+}
+
 source "$fileToRun"
 
 setup-variables() {
@@ -16,16 +36,12 @@ setup-variables() {
   done
 }
 
-writes-to() {
-  return 3
-}
-
 case $action in
   available-options) available-options;;
-  sync) setup-variables "${@:1:${#@}}"; sync;;
-  versions-of) setup-variables "${@:3:${#@}}"; versions-of "$@";;
-  restore) setup-variables "${@:6:${#@}}"; restore "$@";;
-  list-files) setup-variables "${@:5:${#@}}"; list-files "$@";;
+  sync) setup-variables "${@:1:$#}"; sync;;
+  versions-of) setup-variables "${@:3:$#}"; versions-of "$@";;
+  restore) setup-variables "${@:6:$#}"; restore "$@";;
+  list-files) setup-variables "${@:5:$#}"; list-files "$@";;
   writes-to) writes-to;;
 esac
 
