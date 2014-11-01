@@ -4,7 +4,7 @@ from paver.setuputils import install_distutils_tasks, find_packages
 import sys
 
 import pytest
-import sys
+import os
 
 ReadonlyConfigDir = "share/sibt/"
 options(setup=dict(
@@ -36,9 +36,19 @@ install_distutils_tasks()
 def runPyTest(testFiles):
   pytest.main(["--color=yes"] + testFiles)
 
+def prependToPythonPath(newPath):
+  envVarName = "PYTHONPATH"
+
+  if envVarName in os.environ:
+    os.environ[envVarName] += newPath + ":"
+  else:
+    os.environ[envVarName] = newPath
+
+  sys.path = [newPath] + sys.path
+
 @task
 def setup_pythonpath():
-  sys.path = ["sibt/src"] + sys.path
+  prependToPythonPath("sibt/src")
   
 @task
 @needs(["setup_pythonpath"])

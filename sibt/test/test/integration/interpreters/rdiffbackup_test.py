@@ -3,7 +3,7 @@ import pytest
 from test.common.assertutil import iterableContainsInAnyOrder
 import os
 from test.integration.interpreters.interpretertest import \
-    InterpreterTestFixture, MirrorInterpreterTest
+    InterpreterTestFixture, MirrorInterpreterTest, IncrementalInterpreterTest
 
 class Fixture(InterpreterTestFixture):
   def __init__(self, tmpdir):
@@ -13,7 +13,7 @@ class Fixture(InterpreterTestFixture):
 def fixture(tmpdir):
   return Fixture(tmpdir)
 
-class Test_RdiffBackupTest(MirrorInterpreterTest):
+class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
   @property
   def minimumDelayBetweenTestsInS(self):
     return 1
@@ -49,44 +49,6 @@ class Test_RdiffBackupTest(MirrorInterpreterTest):
     assert "first" not in files
     assert "second" in files
     assert "third" in files
-
-  def test_shouldUseTheIncrementsAsVersions(self, fixture):
-    folder = fixture.loc1.mkdir("poe")
-    topFile = fixture.loc1.join("top")
-    quoteFile = folder.join("quote")
-    fileLaterCreated = folder.join("created-later")
-
-    options = fixture.optsWith(dict())
-
-    ravenQuote = "tell me what thy lordly name is"
-    someContent = "content"
-
-    topFile.write(someContent)
-    quoteFile.write(ravenQuote)
-    fixture.inter.sync(options)
-
-    time.sleep(self.minimumDelayBetweenTestsInS)
-    fileLaterCreated.write("")
-    topFile.write("foo")
-    fixture.inter.sync(options)
-
-    versions = fixture.inter.versionsOf("poe", 1, options)
-    assert fixture.inter.versionsOf("poe", 2, options) == []
-    assert fixture.inter.versionsOf("not-there", 1, options) == []
-    assert len(fixture.inter.versionsOf("poe/created-later", "1", 
-        options)) == 1
-    assert len(versions) == 2
-
-    older, newer = sorted(versions)
-
-    fixture.inter.restore("poe", 1, older, None, options)
-    assert os.listdir(str(folder)) == ["quote"]
-    assert quoteFile.read() == ravenQuote
-
-    destFile = fixture.tmpdir.join("backup")
-    fixture.inter.restore("top", 1, older, str(destFile), options)
-    assert topFile.read() == "foo"
-    assert destFile.read() == someContent
 
   def test_shouldReturn2IfAskedForTheLocationsItWritesTo(self, fixture):
     assert fixture.inter.writeLocIndices == [2]

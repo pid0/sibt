@@ -14,10 +14,6 @@ def fixture(tmpdir):
   return Fixture(tmpdir)
 
 class Test_RsyncTest(MirrorInterpreterTest):
-  @property
-  def minimumDelayBetweenTestsInS(self):
-    return 0
-
   def rewriteLoc1PathForMirrorTest(self, path):
     if path.endswith("/"):
       return path[:-1]

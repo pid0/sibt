@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+
+from sibt.infrastructure.pymoduleloader import PyModuleLoader
+import sys
+import os
+import itertools
+
+Nop = lambda *_, **kw: None
+
+NumberOfPositionalArgs = { "availableOptions": 0,
+    "sync": 0,
+    "versionsOf": 2,
+    "restore": 5,
+    "listFiles": 4,
+    "writesTo": 0 }
+DefaultMembers = { "availableOptions": [],
+    "sync": Nop,
+    "writesTo": [2],
+    "versionsOf": lambda *_, **kw: [],
+    "restore": Nop }
+
+def parseKeyValuePairs(pairs):
+  def parsePair(string):
+    equalsSign = string.index("=")
+    key = string[0:equalsSign]
+    key = key[0].lower() + key[1:]
+    return (key, string[equalsSign+1:])
+
+  return dict(parsePair(string) for string in pairs)
+
+def transformActionName(name):
+  words = []
+  for isDash, group in itertools.groupby(name, lambda char: True if 
+      char == "-" else False):
+    if not isDash:
+      word = list(group)
+      if len(words) > 0:
+        word = word[0].upper() + "".join(word[1:])
+      else:
+        word = "".join(word)
+      words.append(word)
+
+  return "".join(words)
+
+def getMember(mod, name):
+  return getattr(mod, name, DefaultMembers[name])
+
+def printOutput(lines):
+  for line in lines:
+    print(line)
+
+if __name__ == "__main__":
+  loader = PyModuleLoader("interpreternamespace")
+  mod = loader.loadFromFile(sys.argv[1], os.path.basename(sys.argv[1]))
+
+  action = transformActionName(sys.argv[2])
+  numberOfPositionals = NumberOfPositionalArgs[action]
+  positionals = sys.argv[3:3+numberOfPositionals]
+  options = parseKeyValuePairs(sys.argv[3+numberOfPositionals:])
+
+  member = getMember(mod, action)
+
+  if action in ["availableOptions", "writesTo"]:
+    printOutput(member)
+  elif action == "versionsOf":
+    printOutput(member(**options))
+  else:
+    member(**options)

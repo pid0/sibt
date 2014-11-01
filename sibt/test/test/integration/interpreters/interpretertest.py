@@ -32,7 +32,11 @@ class InterpreterTestFixture(object):
     os.utime(str(path), (0, newModiticationTime))
 
 class InterpreterTest(object):
-  def test_shouldBeAbleToListDirectoriesInLoc1AsTheyWereInThePastNotRecursively(
+  @property
+  def minimumDelayBetweenTestsInS(self):
+    return 0
+
+  def test_shouldBeAbleToListDirsInLoc1AsTheyWereInThePastWithoutRecursion(
       self, fixture, capfd):
     folder = fixture.loc1.mkdir("folder")
     folder.join("file1").write("")
@@ -82,3 +86,43 @@ class MirrorInterpreterTest(InterpreterTest):
 
     assert os.listdir(str(fixture.loc2 / "folder")) == ["file"]
     assert fixture.loc2.join("poe").read() == content
+
+class IncrementalInterpreterTest(InterpreterTest):
+  def test_shouldUseTheIncrementsAsVersions(self, fixture):
+    folder = fixture.loc1.mkdir("poe")
+    topFile = fixture.loc1.join("top")
+    quoteFile = folder.join("quote")
+    fileLaterCreated = folder.join("created-later")
+
+    options = fixture.optsWith(dict())
+    ravenQuote = "tell me what thy lordly name is"
+    someContent = "content"
+
+
+    topFile.write(someContent)
+    quoteFile.write(ravenQuote)
+    fixture.inter.sync(options)
+
+    time.sleep(self.minimumDelayBetweenTestsInS)
+    fileLaterCreated.write("")
+    topFile.write("foo")
+    fixture.inter.sync(options)
+
+    versions = fixture.inter.versionsOf("poe", 1, options)
+    assert fixture.inter.versionsOf("poe", 2, options) == []
+    assert fixture.inter.versionsOf("not-there", 1, options) == []
+    assert len(fixture.inter.versionsOf("poe/created-later", "1", 
+        options)) == 1
+    assert len(versions) == 2
+
+    older, newer = sorted(versions)
+
+    fixture.inter.restore("poe", 1, older, None, options)
+    assert os.listdir(str(folder)) == ["quote"]
+    assert quoteFile.read() == ravenQuote
+
+    destFile = fixture.tmpdir.join("backup")
+    fixture.inter.restore("top", 1, older, str(destFile), options)
+    assert topFile.read() == "foo"
+    assert destFile.read() == someContent
+

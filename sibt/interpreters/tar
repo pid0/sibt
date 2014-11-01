@@ -1,0 +1,52 @@
+#!python-runner
+
+import os
+import tarfile
+
+availableOptions = ["KeepCopies"]
+
+class Archive(object):
+  def __init__(path, metaFile):
+    pass
+
+def _findAllArchives(loc2):
+  pass
+
+def _cycleName(loc2, maximumNumber):
+  filePath = os.path.join(loc2, "counter")
+
+  counter = _readCounter(filePath)
+  counter = (counter + 1) % maximumNumber
+  _writeCounter(filePath, counter)
+
+  return counter
+
+def _readCounter(path):
+  if not os.path.isfile(path):
+    return -1
+
+  with open(path, "r") as counterFile:
+    return int(counterFile.read().strip())
+
+def _writeCounter(path, counter):
+  with open(path, "w") as counterFile:
+    counterFile.write(str(counter))
+
+
+def sync(loc1, loc2, keepCopies=2, **kwargs):
+  counter = _cycleName(loc2, int(keepCopies))
+  archiveName = "ar" + str(counter)
+
+  os.chdir(loc1)
+  with tarfile.open(os.path.join(loc2, archiveName), "w:xz") as tar:
+    for loc1File in os.listdir("."):
+      tar.add(loc1File, recursive=True)
+
+def versionsOf(path, locNumber, loc1, loc2, **kwargs):
+  if locNumber == 2:
+    return []
+
+#TODO 
+# search through archives (with extra file "metan"): find all that contain path
+# metan needs only the names (\0)
+# print their mtimes
