@@ -62,6 +62,11 @@ def unit_test():
 
 @task
 @needs(["setup_pythonpath"])
+def test_test():
+  runPyTest(["sibt/test/test/common"])
+
+@task
+@needs(["setup_pythonpath"])
 def integration_test():
   runPyTest(["sibt/test/test/integration"])
 
@@ -73,7 +78,7 @@ def test_only(args):
 
 @task
 @consume_args
-@needs(["acceptance_test", "unit_test", "integration_test"])
+@needs(["acceptance_test", "unit_test", "integration_test", "test_test"])
 def test(args):
   pass
     

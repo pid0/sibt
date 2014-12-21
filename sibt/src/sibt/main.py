@@ -16,11 +16,11 @@ from sibt.infrastructure.externalfailureexception import \
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from sibt.application.configrepo import ConfigRepo
 import sys
-from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
+from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from sibt.domain import subvalidators
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
-    userId, schedulerLoader):
+    userId, moduleLoader):
   argParser = CmdLineArgsParser()
   args = argParser.parseArgs(cmdLineArgs)
 
@@ -31,7 +31,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
   try:
     configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
-        schedulerLoader, [sys.argv[0]] + args.globalOptionsArgs)
+        moduleLoader, [sys.argv[0]] + args.globalOptionsArgs)
   except (ConfigSyntaxException, ExternalFailureException) as ex:
     printException(ex, stderr)
     return 1
@@ -156,5 +156,5 @@ def main():
       SynchronousProcessRunner(), 
       Paths(UserBasePaths.forCurrentUser()),
       Paths(UserBasePaths(0)), os.getuid(), 
-      PyModuleSchedulerLoader("schedulers"))
+      PyModuleLoader("schedulers"))
   sys.exit(exitStatus)

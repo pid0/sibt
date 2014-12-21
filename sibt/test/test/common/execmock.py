@@ -1,30 +1,27 @@
 from test.common import mock
 
+def tupleToMockCall(expectationTuple):
+  kwargs = dict() if len(expectationTuple) == 3 else expectationTuple[3]
+
+  matcher = (lambda args: args[0] == expectationTuple[0] and
+      expectationTuple[1](args[1])) if callable(expectationTuple[1]) else (
+      lambda args: args[0] == expectationTuple[0] and 
+        args[1] == expectationTuple[1])
+
+  return mock.callMatchingTuple("getOutput", matcher, ret=expectationTuple[2], 
+      **kwargs)
+
 class ExecMock(object):
   def __init__(self):
     self.mockedExec = mock.mock()
     self.ignoring = False
 
+  def reset(self):
+    self.mockedExec.clearExpectedCalls()
 
   def expectCalls(self, *execs, anyOrder=False):
-    expectedCalls = []
-    for expectedExec in execs:
-      kwargs = dict() if len(expectedExec) == 3 else expectedExec[3]
-      if callable(expectedExec[1]):
-        call = mock.callMatchingTuple("getOutput", (lambda expected:
-            lambda args: args[0] == expected[0] and 
-                expected[1](args[1]))(expectedExec), 
-            ret=expectedExec[2], **kwargs) 
-      else:
-        call = mock.call("getOutput", (expectedExec[0],
-            expectedExec[1]), ret=expectedExec[2], **kwargs)
-
-      expectedCalls.append(call)
-
-    if anyOrder:
-      self.mockedExec.expectCallsInAnyOrder(*expectedCalls)
-    else: 
-      self.mockedExec.expectCallsInOrder(*expectedCalls)
+    self.mockedExec.expectCalls(*map(tupleToMockCall, execs), 
+        inAnyOrder=anyOrder)
 
   def execute(self, program, *arguments):
     self.getOutput(program, *arguments)

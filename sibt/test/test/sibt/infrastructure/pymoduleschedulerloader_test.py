@@ -1,37 +1,42 @@
 import pytest
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
+from test.common import mock
 
 class Fixture(object):
-  def __init__(self, tmpdir):
-    self.loader = PyModuleSchedulerLoader("top")
-    self.tmpdir = tmpdir
+  def __init__(self):
+    self.moduleLoader = mock.mock()
+    self.loader = PyModuleSchedulerLoader(self.moduleLoader)
+    self.path = "/etc/foo.py"
+    self.validModule = lambda x:x
+    self.validModule.init = lambda *args: None
 
-  def loadModule(self, name, code, *initArgs):
-    path = self.tmpdir.join(name + "foo")
-    path.write(code)
-    return self.loader.loadFromFile(str(path), name, initArgs)
-
-EmptyInitFunc = "def init(*args): pass"
+  def loadScheduler(self, module, name, initArgs=[]):
+    self.moduleLoader.expectCalls(
+        mock.call("loadFromFile", (self.path, name), ret=module))
+    ret = self.loader.loadFromFile(self.path, name, initArgs)
+    self.moduleLoader.checkExpectedCalls()
+    return ret
 
 @pytest.fixture
-def fixture(tmpdir):
-  return Fixture(tmpdir)
+def fixture():
+  return Fixture()
 
-def test_shouldReturnUsableModule(fixture):
-  module = fixture.loadModule("some-module", 
-      "def getX(): return 4\n" + EmptyInitFunc)
-  assert module.getX() == 4
+def test_shouldReturnPythonModuleLoadedFromFileWithNameAttributeSet(fixture):
+  name = "a-sched-module"
+  module = fixture.validModule
 
-def test_shouldSetNameAttribute(fixture):
-  module = fixture.loadModule("foo", EmptyInitFunc)
-  module2 = fixture.loadModule("bar", EmptyInitFunc)
-  assert module.name == "foo"
-  assert module2.name == "bar"
+  loadedMod = fixture.loadScheduler(module, name)
+  assert loadedMod is module
+  assert loadedMod.name == name
 
 def test_shouldCallInitFunctionAsFinalStep(fixture):
-  fixture.loadModule("module", """
-from test.sibt.infrastructure import pymoduleschedulerloader_test 
-def init(x, y): pymoduleschedulerloader_test.Result = x + y""",
-      1, 2)
-  assert Result == 3
+  expectedArgs = (1, 2, 3)
+  result = [0]
+  def initFunc(*args):
+    if args == expectedArgs:
+      result[0] = 4
 
+  module = lambda x:x
+  module.init = initFunc
+  fixture.loadScheduler(module, "module", expectedArgs)
+  assert result[0] == 4

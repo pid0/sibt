@@ -3,6 +3,7 @@ from test.common.servermock import ServerMock
 import socket
 import time
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
+from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from test.common.builders import scheduling, anyScheduling
 from test.common import mock
 from test.common.pathsbuilder import pathsIn, existingPaths
@@ -18,7 +19,7 @@ class Fixture(object):
     self.miscDir = tmpdir.mkdir("misc")
 
   def init(self, sibtCall=["/where/sibt/is"]):
-    loader = PyModuleSchedulerLoader("testpackage")
+    loader = PyModuleSchedulerLoader(PyModuleLoader("testpackage"))
     paths = existingPaths(pathsIn(self.tmpdir))
     self.mod = loader.loadFromFile("sibt/schedulers/anacron", "anacron", 
         (sibtCall, paths))

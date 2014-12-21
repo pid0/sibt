@@ -13,6 +13,7 @@ import itertools
 from sibt.application.runner import Runner
 from sibt.application.hashbangawareprocessrunner import \
     HashbangAwareProcessRunner
+from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 
 def readInterpreters(dirs, processRunner):
   def load(path, fileName):
@@ -54,16 +55,17 @@ class ConfigRepo(object):
 
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
-      schedulerLoader, sibtInvocation):
+      moduleLoader, sibtInvocation):
     processRunnerWrapper = createHashbangAwareProcessRunner(paths.runnersDir,
         processRunner)
 
     interpreters = readInterpreters([paths.interpretersDir, 
       paths.readonlyInterpretersDir] + ([sysPaths.interpretersDir] if 
         readSysConf else []), processRunnerWrapper)
-    schedulers = readSchedulers([paths.schedulersDir, 
-      paths.readonlySchedulersDir] + ([sysPaths.schedulersDir] if 
-        readSysConf else []), schedulerLoader, (sibtInvocation, paths))
+    schedulers = readSchedulers(
+        [paths.schedulersDir, paths.readonlySchedulersDir] + 
+        ([sysPaths.schedulersDir] if readSysConf else []), 
+        PyModuleSchedulerLoader(moduleLoader), (sibtInvocation, paths))
 
     factory = RuleFactory(schedulers, interpreters)
     rules = readRules(paths.rulesDir, paths.enabledDir, factory)

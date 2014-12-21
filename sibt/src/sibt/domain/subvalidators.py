@@ -15,6 +15,7 @@ class SchedulerCheckValidator(Validator):
       rule.checkScheduler()
     for scheduler in self.queuingScheduler:
       errors += scheduler.checkAll()
+
     return [self.errMsg(error, *rules) for error in errors]
 
 class LocExistenceValidator(Validator):

@@ -8,6 +8,7 @@ class DirTreeNormalizer(object):
   def _createIfDoesntExist(self, path):
     if not os.path.isdir(path):
       os.makedirs(path)
+
   def createNotExistingDirs(self):
     for path in [self.paths.rulesDir,
         self.paths.interpretersDir,

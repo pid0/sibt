@@ -6,26 +6,25 @@ class Paths(object):
     self.readonlyDir = basePaths.readonlyDir
     self.configDir = basePaths.configDir
 
+  @property
   def rulesDir(self):
     return os.path.join(self.configDir, "rules")
+  @property
   def interpretersDir(self):
     return os.path.join(self.configDir, "interpreters")
+  @property
   def schedulersDir(self):
     return os.path.join(self.configDir, "schedulers")
+  @property
   def enabledDir(self):
     return os.path.join(self.configDir, "enabled")
+  @property
   def readonlySchedulersDir(self):
     return os.path.join(self.readonlyDir, "schedulers")
+  @property
   def readonlyInterpretersDir(self):
     return os.path.join(self.readonlyDir, "interpreters")
+  @property
   def runnersDir(self):
     return os.path.join(self.readonlyDir, "runners")
-
-  rulesDir = property(rulesDir)
-  interpretersDir = property(interpretersDir)
-  schedulersDir = property(schedulersDir)
-  enabledDir = property(enabledDir)
-  readonlySchedulersDir = property(readonlySchedulersDir)
-  readonlyInterpretersDir = property(readonlyInterpretersDir)
-  runnersDir = property(runnersDir)
 

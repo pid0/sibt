@@ -48,48 +48,86 @@ def callMatchingTuple(funcName, matcher, **kwargs):
 def mock():
   return Mock()
 
+class ExpectationGroup(object):
+  def __init__(self, expectedCalls, inOrder):
+    self.expectedCalls = expectedCalls
+    self.inOrder = inOrder
+
+  def __repr__(self):
+    return "ExpectationGroup{0}".format((self.expectedCalls, self.inOrder))
+
+
 class Mock(object):
   def __init__(self):
-    self.__expectedCalls = []
+    self._expectationGroups = []
     self.inOrder = True
 
   def clearExpectedCalls(self):
-    self.__expectedCalls = []
+    self._expectationGroups = []
 
-  def expectCallsInAnyOrder(self, *expectedCalls):
-    self.__expectedCalls += list(expectedCalls)
-    self.inOrder = False
+  def expectCalls(self, *expectedCalls, inAnyOrder=False):
+    anyNumberExpectations, finiteCountExpectations = partitionList(
+        lambda call: call.params.anyNumber, expectedCalls)
+
+    self._expectationGroups += [ExpectationGroup(
+      list(finiteCountExpectations), not inAnyOrder),
+      ExpectationGroup(anyNumberExpectations, False)]
+
   def expectCallsInOrder(self, *expectedCalls):
-    self.__expectedCalls += list(expectedCalls)
-    self.inOrder = True
+    self.expectCalls(*expectedCalls, inAnyOrder=False)
+  def expectCallsInAnyOrder(self, *expectedCalls):
+    self.expectCalls(*expectedCalls, inAnyOrder=True)
 
   def checkExpectedCalls(self):
-    expectedCalls = self.__expectedCalls
-    remainingCalls = [call for call in expectedCalls if 
-        not call.params.anyNumber]
-    descriptions = [repr(call) for call in remainingCalls]
-    assert len(remainingCalls) == 0, "{0} expected calls remain: {1}".format(
-        len(remainingCalls), descriptions)
+    for group in self._expectationGroups:
+      expectedCalls = group.expectedCalls
+      remainingCalls = [call for call in expectedCalls if 
+          not call.params.anyNumber]
+
+      descriptions = [repr(call) for call in remainingCalls]
+      assert len(remainingCalls) == 0, "{0} expected calls remain: {1}".format(
+          len(remainingCalls), descriptions)
+
+  def __getattribute__(self, name):
+    expectationGroups = object.__getattribute__(self, "_expectationGroups")
+    funcNames = [call.funcName for group in expectationGroups
+        for call in group.expectedCalls]
+
+    if name in funcNames:
+      raise AttributeError
+
+    return object.__getattribute__(self, name)
 
   def __getattr__(self, name):
     def callHandler(*args):
       message = "{0} unexpectedly called with args {1}".format(name, args)
-      expectedCalls = self.__expectedCalls
-      mandatoryCalls = [call for call in expectedCalls if
-          not call.params.anyNumber]
-      matchingCalls = [call for call in expectedCalls if
-          call.funcName == name and call.matches(args)]
-      assert len(matchingCalls) > 0, message
-      nextCall = matchingCalls[0]
-      
-      if self.inOrder:
-        assert len(mandatoryCalls) == 0 or \
-            nextCall == mandatoryCalls[0] or \
-            nextCall.params.anyNumber
+      callMatching = False
+      returnValue = None
 
-      if not nextCall.params.anyNumber:
-        self.__expectedCalls.remove(nextCall)
-      return nextCall.params.returnValue
+      for group in self._expectationGroups:
+        expectedCalls = group.expectedCalls
+        matchingCalls = [call for call in expectedCalls if
+            call.funcName == name and call.matches(args)]
+
+        callMatching |= len(matchingCalls) > 0
+        if len(matchingCalls) == 0:
+          continue
+
+        nextCall = expectedCalls[0] if group.inOrder else\
+            matchingCalls[0]
+        
+        assert matchingCalls[0] == nextCall
+
+        if not nextCall.params.anyNumber:
+          group.expectedCalls.remove(nextCall)
+        returnValue = nextCall.params.returnValue if returnValue is None else\
+            returnValue
+
+      assert callMatching, message
+      return returnValue
 
     return callHandler
 
+def partitionList(p, xs):
+  return (list(filter(p, xs)), 
+      list(filter(lambda *args: not p(*args), xs)))

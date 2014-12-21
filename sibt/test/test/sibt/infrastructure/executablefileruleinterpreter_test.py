@@ -27,6 +27,7 @@ class Fixture(object):
     os.chmod(str(path), 0o700)
 
     return self._create(path, name)
+
   def lastInterpreterCall(self, args, result):
     return (self.lastPath, args, result)
   def createWithRegularFile(self, name):

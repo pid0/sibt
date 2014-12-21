@@ -6,6 +6,7 @@ class UserBasePaths(object):
   def __init__(self, uid):
     self._uid = uid
     self.readonlyDir = "/usr/share"
+
   @classmethod
   def forCurrentUser(clazz):
     return clazz(os.getuid())
@@ -13,19 +14,19 @@ class UserBasePaths(object):
   def isRoot(self):
     return self._uid == 0
 
-  def getVarDir(self):
+  @property
+  def varDir(self):
     if self.isRoot():
       return "/var"
     else:
-      return self.getUserSibtDir() + "/var"
-  def getConfigDir(self):
+      return os.path.join(self.getUserSibtDir(), "var")
+
+  @property
+  def configDir(self):
     if self.isRoot():
       return "/etc"
     else:
-      return self.getUserSibtDir() + "/config"
-
-  varDir = property(getVarDir)
-  configDir = property(getConfigDir)
+      return os.path.join(self.getUserSibtDir(), "config")
 
   def getUserSibtDir(self):
-    return pwd.getpwuid(self._uid)[5] + "/.sibt"
+    return os.path.join(pwd.getpwuid(self._uid)[5], ".sibt")
