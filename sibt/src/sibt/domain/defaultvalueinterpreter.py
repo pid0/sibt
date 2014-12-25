@@ -5,12 +5,19 @@ class DefaultValueInterpreter(object):
   def __init__(self, wrapped):
     self.wrapped = wrapped
 
+  @property
   def writeLocIndices(self):
     try:
       return self.wrapped.writeLocIndices
     except InterpreterFuncNotImplementedException:
       return [2]
-  writeLocIndices = property(writeLocIndices)
+
+  @property
+  def availableOptions(self):
+    try:
+      return self.wrapped.availableOptions
+    except InterpreterFuncNotImplementedException:
+      return []
 
   def __getattr__(self, name):
     return getattr(self.wrapped, name)

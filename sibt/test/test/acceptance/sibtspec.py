@@ -627,7 +627,7 @@ def test_shouldCheckIfTwoRulesToSyncWouldWriteToTheSameLocation(fixture):
   fi""").write()
   unidirectional = fixture.conf.anInter().withBashCode("""
   if [ $1 = writes-to ]; then
-    notImplementedCode=3
+    notImplementedCode=200
     exit $notImplementedCode
   fi""").write()
 

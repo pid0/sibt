@@ -4,5 +4,5 @@ class ExternalFailureException(Exception):
     self.exitStatus = exitStatus
 
   def __str__(self):
-    return """error when calling "{0}": {1}""".format(self.program,
+    return """error when calling "{0}" ({1})""".format(self.program,
         self.exitStatus)

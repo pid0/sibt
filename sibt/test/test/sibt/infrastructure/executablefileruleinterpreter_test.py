@@ -28,8 +28,8 @@ class Fixture(object):
 
     return self._create(path, name)
 
-  def lastInterpreterCall(self, args, result):
-    return (self.lastPath, args, result)
+  def lastInterpreterCall(self, args, result, options=dict()):
+    return (self.lastPath, args, result, options)
   def createWithRegularFile(self, name):
     path = self.tmpdir.join(name)
     path.write("foo")
@@ -124,7 +124,7 @@ def test_shouldGatherEachLineOfOutputAsLocationIndicesWhenCallingWritesTo(
 
   execs.check()
 
-def test_shouldThrowNotImplementedExceptionIfExecutableReturns3(fixture):
+def test_shouldThrowNotImplementedExceptionIfExecutableReturns200(fixture):
   def throwExWithExitCode(exitCode, *args):
     raise ExternalFailureException("", exitCode)
 
@@ -132,10 +132,15 @@ def test_shouldThrowNotImplementedExceptionIfExecutableReturns3(fixture):
     inter, execs = fixture.createWithExecutable()
 
     execs.expectCalls(fixture.lastInterpreterCall(
-        partial(throwExWithExitCode, code), ""))
+        partial(throwExWithExitCode, code), "", {"anyNumber": True}))
     with pytest.raises(expectedExType):
       inter.writeLocIndices
+    with pytest.raises(expectedExType):
+      inter.versionsOf("file", 2, dict())
+    with pytest.raises(expectedExType):
+      inter.sync(dict())
 
-  checkExitCodeAndExceptionType(3, InterpreterFuncNotImplementedException)
+
+  checkExitCodeAndExceptionType(200, InterpreterFuncNotImplementedException)
   checkExitCodeAndExceptionType(1, ExternalFailureException)
 

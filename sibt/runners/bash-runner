@@ -1,28 +1,38 @@
 #!/usr/bin/env bash
 
+set -e
+set -u
+set -o pipefail
+
+notImplStatus=200
+
 fileToRun="$1"
 shift 1
 action="$1"
 shift 1
 
 writes-to() {
-  return 3
+  return $notImplStatus
 }
 
 available-options() {
-  return
+  return $notImplStatus
 }
 
 restore() {
-  return
+  return $notImplStatus
 }
 
 list-files() {
-  return
+  return $notImplStatus
 }
 
 versions-of() {
-  return
+  return $notImplStatus
+}
+
+sync() {
+  return $notImplStatus
 }
 
 source "$fileToRun"

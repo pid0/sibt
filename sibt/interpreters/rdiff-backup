@@ -9,7 +9,7 @@ available-options() {
 
 sync() {
   rdiff-backup $AdditionalSyncOpts "$Loc1" "$Loc2"
-  if [ -n "$RemoveOlderThan" ]; then
+  if [ -n "${RemoveOlderThan+a}" ]; then
     rdiff-backup $AdditionalSyncOpts --remove-older-than "$RemoveOlderThan" \
         "$Loc2"
   fi
@@ -22,7 +22,7 @@ versions-of() {
     return
   fi
   rdiff-backup --parsable-output --list-increments "$Loc2"/"$path" | \
-      grep -v missing | cut -d ' ' -f 1
+      { grep -v missing || true; } | cut -d ' ' -f 1
 }
 
 restore() {

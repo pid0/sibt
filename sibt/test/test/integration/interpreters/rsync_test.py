@@ -44,18 +44,18 @@ class Test_RsyncTest(MirrorInterpreterTest):
 
     assert os.listdir(str(fixture.loc2)) == ["file=b"]
 
-  def test_shouldRestoreFilesThatSameWayItMirroredThem(self, fixture):
+  def test_shouldRestoreFilesTheSameWayItMirroredThem(self, fixture):
     fileName = "inner-district"
 
-    fixture.loc1.mkdir("net")
-    folder = fixture.loc2.mkdir("net")
-    loc2File = folder.join(fileName)
+    loc1Folder = fixture.loc1.mkdir("net")
+    loc2Folder = fixture.loc2.mkdir("net")
+    loc2File = loc2Folder.join(fileName)
     loc2File.write("")
     fixture.changeMTime(loc2File, 20)
 
     fixture.inter.restore("net", 1, anyUTCDateTime(), None, fixture.optsWith({
         "AdditionalSyncOpts": "--no-t"}))
-    assert os.stat(str(fixture.loc1 / "net" / fileName)).st_mtime != 20
+    assert os.stat(str(loc1Folder / fileName)).st_mtime != 20
 
     fixture.inter.restore("net/" + fileName, 1, anyUTCDateTime(), 
         str(fixture.tmpdir), fixture.optsWith({}))

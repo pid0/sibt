@@ -24,7 +24,7 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
     assert "AdditionalSyncOpts" in fixture.inter.availableOptions
 
     def withTime(unixTime, andAlso=dict()):
-      in2037 = aDay * 366 * 67
+      in2037 = oneDay * 366 * 67
       andAlso["AdditionalSyncOpts"] = "--current-time=" + str(in2037 + unixTime)
       return fixture.optsWith(andAlso)
 
@@ -32,17 +32,17 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
     secondFile = fixture.loc1.join("second")
     thirdFile = fixture.loc1.join("third")
 
-    aDay = 86400
+    oneDay = 86400
 
     firstFile.write("")
     fixture.inter.sync(withTime(0))
     firstFile.remove()
 
     secondFile.write("")
-    fixture.inter.sync(withTime(1 * aDay))
+    fixture.inter.sync(withTime(1 * oneDay))
 
     thirdFile.write("")
-    fixture.inter.sync(withTime(2 * aDay + 1, 
+    fixture.inter.sync(withTime(2 * oneDay + 1, 
         andAlso={"RemoveOlderThan": "2D"}))
 
     files = os.listdir(str(fixture.loc2)) 

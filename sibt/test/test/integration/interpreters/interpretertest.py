@@ -1,23 +1,14 @@
 import os.path
 import time
 import pytest
-from sibt.domain.defaultvalueinterpreter import DefaultValueInterpreter
-from sibt.infrastructure.executablefileruleinterpreter import \
-    ExecutableFileRuleInterpreter
-from sibt.application.configrepo import createHashbangAwareProcessRunner
-from sibt.infrastructure.synchronousprocessrunner import \
-    SynchronousProcessRunner
 from test.common.assertutil import iterableContainsInAnyOrder
 import os
+from test.integration.interpreters import loadInterpreter
 
 class InterpreterTestFixture(object):
   def load(self, interpreterName, tmpdir):
-    processRunner = createHashbangAwareProcessRunner("sibt/runners",
-        SynchronousProcessRunner())
     path = os.path.abspath("sibt/interpreters/" + interpreterName)
-    self.inter = DefaultValueInterpreter(
-        ExecutableFileRuleInterpreter(path, os.path.basename(path),
-            processRunner))
+    self.inter = loadInterpreter(path)
 
     self.loc1 = tmpdir.mkdir("Loc1")
     self.loc2 = tmpdir.mkdir("Loc2")
@@ -67,7 +58,7 @@ class MirrorInterpreterTest(InterpreterTest):
   def rewriteLoc1PathForMirrorTest(self, path):
     return path
 
-  def test_shouldMirrorLoc1InRepoAtLoc2IfToldToSync(self, fixture):
+  def test_shouldMirrorLoc1InRepoAtLoc2WhenToldToSync(self, fixture):
     content = "... the raven “Nevermore.”"
     fixture.loc1.join("poe").write(content)
     folder = fixture.loc1.mkdir("folder")

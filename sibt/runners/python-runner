@@ -4,8 +4,7 @@ from sibt.infrastructure.pymoduleloader import PyModuleLoader
 import sys
 import os
 import itertools
-
-Nop = lambda *_, **kw: None
+from subprocess import CalledProcessError
 
 NumberOfPositionalArgs = { "availableOptions": 0,
     "sync": 0,
@@ -13,11 +12,6 @@ NumberOfPositionalArgs = { "availableOptions": 0,
     "restore": 5,
     "listFiles": 4,
     "writesTo": 0 }
-DefaultMembers = { "availableOptions": [],
-    "sync": Nop,
-    "writesTo": [2],
-    "versionsOf": lambda *_, **kw: [],
-    "restore": Nop }
 
 def parseKeyValuePairs(pairs):
   def parsePair(string):
@@ -43,7 +37,7 @@ def transformActionName(name):
   return "".join(words)
 
 def getMember(mod, name):
-  return getattr(mod, name, DefaultMembers[name])
+  return getattr(mod, name) if hasattr(mod, name) else NotImplemented
 
 def printOutput(lines):
   for line in lines:
@@ -59,10 +53,16 @@ if __name__ == "__main__":
   options = parseKeyValuePairs(sys.argv[3+numberOfPositionals:])
 
   member = getMember(mod, action)
+  if member == NotImplemented:
+    sys.exit(200)
 
-  if action in ["availableOptions", "writesTo"]:
-    printOutput(member)
-  elif action == "versionsOf":
-    printOutput(member(**options))
-  else:
-    member(**options)
+  try:
+    if action in ["availableOptions", "writesTo"]:
+      printOutput(member)
+    elif action == "versionsOf":
+      printOutput(member(**options))
+    else:
+      member(**options)
+  except CalledProcessError as ex:
+    sys.exit(ex.returncode)
+

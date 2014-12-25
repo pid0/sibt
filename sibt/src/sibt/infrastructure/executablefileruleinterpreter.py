@@ -19,46 +19,46 @@ class ExecutableFileRuleInterpreter(object):
 
 
   def sync(self, options):
-    self.processRunner.execute(self.executable, "sync",
-        *self._keyValueEncode(options))
+    self._execute("sync", *self._keyValueEncode(options))
 
   def versionsOf(self, path, locNumber, options):
-    times = normalizedLines(self.processRunner.getOutput(
-        self.executable, "versions-of", path, str(locNumber), 
-        *self._keyValueEncode(options)))
+    times = normalizedLines(self._getOutput("versions-of", path, 
+      str(locNumber), *self._keyValueEncode(options)))
     return [self._parseTime(time) for time in times]
 
   def restore(self, path, locNumber, version, dest, options):
     w3c, timestamp = self._encodeTime(version)
-    self.processRunner.execute(self.executable, "restore", path, 
-        str(locNumber), w3c, str(timestamp), dest or "", 
-        *self._keyValueEncode(options))
+    self._execute("restore", path, str(locNumber), w3c, 
+        str(timestamp), dest or "", *self._keyValueEncode(options))
 
   def listFiles(self, path, locNumber, version, options):
     w3c, timestamp = self._encodeTime(version)
-    self.processRunner.execute(self.executable, "list-files", path, 
-        str(locNumber), w3c, str(timestamp), *self._keyValueEncode(options))
+    self._execute("list-files", path, str(locNumber), w3c, 
+        str(timestamp), *self._keyValueEncode(options))
 
+  @property
   def availableOptions(self):
-    return normalizedLines(self.processRunner.getOutput(
-        self.executable, "available-options"))
-  availableOptions = property(availableOptions)
+    return normalizedLines(self._getOutput("available-options"))
 
+  @property
   def writeLocIndices(self):
     return [int(line) for line in normalizedLines(self._getOutput("writes-to"))]
-  writeLocIndices = property(writeLocIndices)
-
 
   def _getOutput(self, funcName, *args):
     return self._catchNotImplemented(
         lambda: self.processRunner.getOutput(self.executable, funcName, *args),
         funcName)
+  def _execute(self, funcName, *args):
+    return self._catchNotImplemented(
+        lambda: self.processRunner.execute(self.executable, funcName, *args),
+        funcName)
+
   def _catchNotImplemented(self, func, funcName):
     try:
       ret = func()
       return ret
     except ExternalFailureException as ex:
-      if ex.exitStatus == 3:
+      if ex.exitStatus == 200:
         raise InterpreterFuncNotImplementedException(self.executable, funcName)\
           from ex
       else:

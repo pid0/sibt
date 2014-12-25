@@ -1,5 +1,7 @@
 #!bash-runner
 
+AdditionalSyncOpts=
+
 available-options() {
 cat <<EOF
 AdditionalSyncOpts
