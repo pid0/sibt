@@ -19,5 +19,11 @@ class DefaultValueInterpreter(object):
     except InterpreterFuncNotImplementedException:
       return []
 
+  def versionsOf(self, *args):
+    try:
+      return self.wrapped.versionsOf(*args)
+    except InterpreterFuncNotImplementedException:
+      return []
+
   def __getattr__(self, name):
     return getattr(self.wrapped, name)

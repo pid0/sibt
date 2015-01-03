@@ -126,7 +126,7 @@ def test_shouldGatherEachLineOfOutputAsLocationIndicesWhenCallingWritesTo(
 
 def test_shouldThrowNotImplementedExceptionIfExecutableReturns200(fixture):
   def throwExWithExitCode(exitCode, *args):
-    raise ExternalFailureException("", exitCode)
+    raise ExternalFailureException("", [], exitCode)
 
   def checkExitCodeAndExceptionType(code, expectedExType):
     inter, execs = fixture.createWithExecutable()

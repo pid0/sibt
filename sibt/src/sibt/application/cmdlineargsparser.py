@@ -26,6 +26,7 @@ GlobalOpts = [opt("config-dir"),
   opt("var-dir"), 
   opt("readonly-dir"), 
   opt("no-sys-config", True),
+  opt("verbose", True),
   opt("no-checks", True),
   opt("utc", True)]
 
@@ -57,7 +58,7 @@ class CmdLineArgsParser(object):
     sync.add_argument("rule-patterns", nargs="+", action="store")
 
     syncUncontrolled = subs.add_parser("sync-uncontrolled")
-    syncUncontrolled.add_argument("rule-patterns", nargs="+", action="store")
+    syncUncontrolled.add_argument("rule-name", action="store")
 
     versionsOf = subs.add_parser("versions-of")
     versionsOf.add_argument("file", action="store")
@@ -77,7 +78,7 @@ class CmdLineArgsParser(object):
     check.add_argument("rule-patterns", nargs="+", action="store")
 
     show = subs.add_parser("show")
-    show.add_argument("rule-patterns", nargs="+", action="store")
+    show.add_argument("rule-name", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 

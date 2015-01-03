@@ -16,9 +16,12 @@ class Fixture(object):
   def writeAnyRule(self, name):
     self.writeRuleFile(name, "[Interpreter]\nName=a\n[Scheduler]\nName=b")
   def writeRuleFile(self, name, contents):
-    self.rulesDir.join(name).write(contents)
+    self.filePathOf(name).write(contents)
   def linkToAs(self, ruleName, linkName):
     self.enabledDir.join(linkName).mksymlinkto(self.rulesDir.join(ruleName))
+
+  def filePathOf(self, ruleName):
+    return self.rulesDir.join(ruleName)
     
   def _createReader(self):
     return DirBasedRulesReader(str(self.rulesDir), str(self.enabledDir), 
@@ -54,7 +57,7 @@ def test_shouldReadEachFileAsRuleAndConstructRulesWithFactory(fixture):
       lambda x: x == firstConstructedRule,
       lambda x: x == secondConstructedRule)
 
-def test_shouldParseInterpreterAndSchedulerOptionsAsValuesInRespectiveSections(
+def test_shouldParseInterpreterAndSchedulerOptionsAsEntriesInRespectiveSections(
     fixture):
   fixture.writeRuleFile("some-rule", 
       """  [Interpreter]
@@ -74,7 +77,7 @@ Option2 = some-value%%r
             "Option2": "some-value%r"}))
   fixture.read()
 
-def test_shouldSwallowOptionsBeginningWithUnderscore(fixture):
+def test_shouldIgnoreOptionsBeginningWithUnderscore(fixture):
   fixture.writeRuleFile("rule-with-template-opts",
       """[Interpreter]
       _Template = bar
@@ -92,33 +95,30 @@ def test_shouldThrowExceptionIfItEncountersASyntaxError(fixture):
   with pytest.raises(ConfigSyntaxException):
     fixture.read()
 
-def test_shouldThrowExceptionIfConstructionOfRuleFailsBecauseOfConsistency(
-    fixture):
+def test_shouldPassOnExceptionIfRuleIsFoundInconsistentByTheFactory(fixture):
   fixture.writeAnyRule("rule")
 
-  causeEx = ConfigConsistencyException("foo")
+  consistencyEx = ConfigConsistencyException("rule", "foo", "bar", file=None)
   def fail(_):
-    raise causeEx
+    raise consistencyEx
 
-  fixture.factory.expectCallsInAnyOrder(buildCall(fail))
-  try:
+  fixture.factory.expectCalls(buildCall(fail))
+  with pytest.raises(ConfigConsistencyException) as ex:
     fixture.read()
-    assert False, "should have thrown"
-  except ConfigSyntaxException as ex:
-    assert ex.__cause__ == causeEx
+  assert ex.value is consistencyEx
+  assert ex.value.file == str(fixture.filePathOf("rule"))
+
 
   regularEx = Exception("fatal")
   def totallyFail(_):
     raise regularEx
   
   fixture.factory.clearExpectedCalls()
+  fixture.factory.expectCalls(buildCall(totallyFail))
 
-  fixture.factory.expectCallsInAnyOrder(buildCall(totallyFail))
-  try:
+  with pytest.raises(Exception) as ex:
     fixture.read()
-    assert False
-  except Exception as ex:
-    assert ex == regularEx
+  assert ex.value == regularEx
 
 def test_shouldIgnoreRuleFilesEndingWithInc(fixture):
   fixture.writeAnyRule("header-rule.inc")

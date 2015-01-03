@@ -19,3 +19,7 @@ def iterableContainsPropertiesInAnyOrder(iterable, propertyProducer,
 
 def equalsPred(expectedValue):
   return lambda arg: arg == expectedValue
+
+class FakeException(Exception):
+  def __init__(self, *args):
+    super().__init__(*args)

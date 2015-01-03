@@ -14,7 +14,7 @@ from test.common import mock
 from test.common.mockedmoduleloader import MockedModuleLoader
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from test.common.assertutil import iterableContainsInAnyOrder, \
-    iterableContainsPropertiesInAnyOrder, equalsPred
+    iterableContainsPropertiesInAnyOrder, equalsPred, FakeException
 from test.common.pathsbuilder import existingPaths, pathsIn
 from test.acceptance.configfolderswriter import ConfigFoldersWriter
 from test.acceptance.interpreterbuilder import InterpreterBuilder
@@ -94,10 +94,13 @@ class SibtSpecFixture(object):
     self.userId = 0
   
   def runSibtWithRealStreamsAndExec(self, *arguments):
-    exitStatus = self._runSibt(FileObjOutput(sys.stdout), 
-        FileObjOutput(sys.stderr), SynchronousProcessRunner(), arguments)
-    stdout, stderr = self.capfd.readouterr()
-    self.result = RunResult(stdout, stderr, exitStatus)
+    exitStatus = 1
+    try:
+      exitStatus = self._runSibt(FileObjOutput(sys.stdout), 
+          FileObjOutput(sys.stderr), SynchronousProcessRunner(), arguments)
+    finally:
+      stdout, stderr = self.capfd.readouterr()
+      self.result = RunResult(stdout, stderr, exitStatus)
 
   def runSibtCheckingExecs(self, *arguments):
     self.execs.ignoring = False
@@ -110,11 +113,14 @@ class SibtSpecFixture(object):
   def _runSibtMockingExecAndStreams(self, execs, arguments):
     stdout = BufferingOutput()
     stderr = BufferingOutput()
-    exitStatus = self._runSibt(stdout, stderr, self.execs, arguments)
-    self.execs.check()
-    self.execs.reset()
-    self.result = RunResult(stdout.stringBuffer, stderr.stringBuffer,
-        exitStatus)
+    exitStatus = 1
+    try:
+      exitStatus = self._runSibt(stdout, stderr, self.execs, arguments)
+    finally:
+      self.execs.check()
+      self.execs.reset()
+      self.result = RunResult(stdout.stringBuffer, stderr.stringBuffer,
+          exitStatus)
 
   def _runSibt(self, stdout, stderr, processRunner, arguments):
     moduleLoader = PyModuleLoader("foo") if \
@@ -241,7 +247,7 @@ def test_shouldExitWithErrorMessageIfInvalidSyntaxIsFound(fixture):
   fixture.runSibt()
   fixture.stdoutShouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderrShouldContain("invalid", "suspect-rule")
+  fixture.stderrShouldContain("syntax error", "suspect-rule")
 
 def test_shouldDistinguishBetweenDisabledAndSymlinkedToEnabledRules(fixture):
   fixture.conf.ruleWithSchedAndInter("is-on").enabled().write()
@@ -356,8 +362,21 @@ def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
   fixture.conf.ruleWithSchedAndInter("rule").write()
 
   fixture.runSibt("sync", "foo")
-  fixture.stderrShouldContain("no matching rule", "foo")
+  fixture.stderrShouldContain("no rule matching", "foo")
   fixture.shouldHaveExitedWithStatus(1)
+
+def test_shouldRequireAnExactRuleNameMatchWhenSyncingUncontrolled(fixture):
+  inter = fixture.conf.anInter().allowingSetupCalls()
+  rule = fixture.conf.ruleWithSched("[rule]a*b").withInterpreter(inter).\
+    enabled().write()
+
+  inter.expecting((lambda args: args[0] == "sync", "")).write()
+  fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
+
+  inter.reMakeExpectations()
+  fixture.runSibtCheckingExecs("sync-uncontrolled", "*")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderrShouldContain("no rule")
 
 def test_shouldIgnoreSysRulesWhenSyncing(fixture):
   fixture.confFolders.createSysFolders()
@@ -367,7 +386,7 @@ def test_shouldIgnoreSysRulesWhenSyncing(fixture):
   fixture.setNormalUserId()
 
   fixture.runSibt("sync", "sys-rule")
-  fixture.stderrShouldContain("no matching", "sys-rule")
+  fixture.stderrShouldContain("no rule", "sys-rule")
 
 def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
   fixture.confFolders.createSysFolders()
@@ -430,17 +449,18 @@ Interval = 3w
 Name = {inter}
 """).write()
 
-  fixture.conf.aRule("actual-rule").withContent("""
+  fixture.conf.aRule("[actual]-rule").withContent("""
 #import header
 [Interpreter]
 Loc1={loc1}
 Loc2={loc2}
 [Scheduler]
-Syslog = yes""").write()
+Syslog = yes""").enabled().write()
 
-  fixture.runSibt("show", "actual-rule")
+  fixture.runSibt("show", "[actual]-rule")
+  fixture.shouldHaveExitedWithStatus(0)
   fixture.stdoutShouldContainLinePatterns(
-      "*actual-rule*",
+      "*[[]actual]-rule*",
       "*Interval = 3w*",
       "*Syslog = yes*",
       "*Loc1 =*")
@@ -475,14 +495,49 @@ def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
   fixture.runSibt("sync", "correctl*", "badly*")
   fixture.stderrShouldNotContain("correctly-confd")
 
-def test_shouldFailAndPrintErrorIfInterpreterReturnsNonZero(fixture):
-  inter = fixture.conf.anInter("failing-inter").withBashCode("exit 1").write()
+def test_shouldFailAndPrintErrorIfExternalProgramReturnsErrorCode(fixture):
+  inter = fixture.conf.anInter("failing-inter").withBashCode("""
+      if [ $1 = available-options ]; then exit 4; else exit 200; fi""").write()
   fixture.conf.ruleWithSched().withInterpreter(inter).write()
 
   fixture.runSibtWithRealStreamsAndExec()
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stdoutShouldBeEmpty()
-  fixture.stderrShouldContain("failing-inter", "error", "calling")
+  fixture.stderrShouldContain("failing-inter", "error", "calling", "(4)", 
+      "arguments", "available-options")
+
+def test_shouldPrintRuleNameIfSyncFailsAndAlsoNormalErrorMessageIfVerboseIsOn(
+    fixture):
+  failingInter = fixture.conf.anInter().withBashCode(
+      "if [ $1 = sync ]; then exit 23; fi").write()
+  rule = fixture.conf.ruleWithSched().withInterpreter(failingInter).write()
+
+  fixture.runSibtWithRealStreamsAndExec("sync-uncontrolled", rule.name)
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderrShouldContain("syncing", "rule", rule.name, "failed", "(23)")
+  fixture.stderrShouldNotContain(str(failingInter.path))
+
+  fixture.runSibtWithRealStreamsAndExec("--verbose", "sync-uncontrolled", 
+      rule.name)
+  fixture.stderrShouldContain(str(failingInter.path))
+
+  def failSyncing(args):
+    if args[0] == "sync":
+      raise FakeException()
+  failingInter.allowing((failSyncing, "")).\
+      allowingSetupCalls().reMakeExpectations()
+  with pytest.raises(FakeException):
+    fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
+  fixture.stderrShouldContain(rule.name, "failed", "unexpected error")
+
+def test_shouldFailAndReportItIfAnInterpreterDoesntSupportAFunction(fixture):
+  inter = fixture.conf.anInter("not-impld").withBashCode("exit 200").write()
+  rule = fixture.conf.ruleWithSched().withInterpreter(inter).write()
+
+  fixture.runSibtWithRealStreamsAndExec("sync-uncontrolled", rule.name)
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stdoutShouldBeEmpty()
+  fixture.stderrShouldContain("not-impld", "does not implement", "sync")
 
 def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
     fixture):
@@ -529,6 +584,10 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
         "*rule-1," + utc123 + "*",
         "*rule-2," + utcThirdOfMarch + "*",
         "*rule-2," + utc0 + "*")
+
+  fixture.runSibtWithRealStreamsAndExec("versions-of", "/does-not-exist")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stdoutShouldBeEmpty()
 
 def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
     fixture):

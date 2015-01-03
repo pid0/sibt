@@ -47,10 +47,10 @@ def createHashbangAwareProcessRunner(runnersDir, processRunner):
   
 
 class ConfigRepo(object):
-  def __init__(self, schedulers, interpreters, rules, sysRules):
+  def __init__(self, schedulers, interpreters, userRules, sysRules):
     self.schedulers = schedulers
     self.interpreters = interpreters
-    self.rules = rules
+    self.userRules = userRules
     self.sysRules = sysRules
 
   @classmethod
@@ -68,20 +68,26 @@ class ConfigRepo(object):
         PyModuleSchedulerLoader(moduleLoader), (sibtInvocation, paths))
 
     factory = RuleFactory(schedulers, interpreters)
-    rules = readRules(paths.rulesDir, paths.enabledDir, factory)
+    userRules = readRules(paths.rulesDir, paths.enabledDir, factory)
     sysRules = [] if not readSysConf else readRules(sysPaths.rulesDir, 
         sysPaths.enabledDir, factory)
 
-    return clazz(schedulers, interpreters, rules, sysRules)
+    return clazz(schedulers, interpreters, userRules, sysRules)
 
+  @property
   def allRules(self):
-    return itertools.chain(self.rules, self.sysRules)
-  allRules = property(allRules)
+    return itertools.chain(self.userRules, self.sysRules)
 
   def findSyncRulesByPatterns(self, patterns):
-    rules = self.rules
+    rules = self.userRules
     enabledRules = [rule for rule in rules if rule.enabled]
     disabledRules = [rule for rule in rules if not rule.enabled]
     ruleLists = [findRulePattern(pattern, enabledRules, 
             disabledRules) for pattern in patterns]
     return [rule for ruleList in ruleLists for rule in ruleList]
+
+  def findSyncRuleByName(self, name):
+    matching = [rule for rule in self.userRules if rule.name == name]
+    if len(matching) == 0:
+      return None
+    return matching[0]

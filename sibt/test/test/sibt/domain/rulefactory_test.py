@@ -19,7 +19,7 @@ def outRaises():
       pass
   return Ret()
 
-def fakeConfigurable(name, *availableOptions):
+def fakeConfigurable(name, availableOptions=[]):
   ret = lambda x:x
   ret.name = name
   ret.writeLocIndices = []
@@ -33,24 +33,24 @@ def withLocOptions(options):
   return ret
 
 def test_shouldThrowExceptionIfInterpreterOrSchedulerDoesNotExist(fixture):
-  existingScheduler = fakeConfigurable("one")
-  existingInterpreter = fakeConfigurable("two")
+  existingScheduler = fakeConfigurable("the-sched")
+  existingInterpreter = fakeConfigurable("the-inter")
 
   factory = RuleFactory([existingScheduler], [existingInterpreter])
   with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {"Name": "no"}, withLocOptions({"Name": "two"}), 
-        False)
+    factory.build("name", {"Name": "no"}, 
+        withLocOptions({"Name": "the-inter"}), False)
   with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {"Name": "one"}, withLocOptions({"Name": "no"}), 
-        False)
+    factory.build("name", {"Name": "the-sched"}, 
+        withLocOptions({"Name": "no"}), False)
 
   with outRaises():
-    factory.build("works", {"Name": "one"}, withLocOptions({"Name": "two"}), 
-        False)
+    factory.build("works", {"Name": "the-sched"}, 
+        withLocOptions({"Name": "the-inter"}), False)
 
 def test_shouldThrowExceptionIfAnOptionIsNotSupported(fixture):
-  scheduler = fakeConfigurable("sched", "sched-supported")
-  interpreter = fakeConfigurable("inter", "inter-supported")
+  scheduler = fakeConfigurable("sched", availableOptions=["sched-supported"])
+  interpreter = fakeConfigurable("inter", availableOptions=["inter-supported"])
 
   factory = RuleFactory([scheduler], [interpreter])
 
@@ -68,7 +68,8 @@ def test_shouldThrowExceptionIfAnOptionIsNotSupported(fixture):
   with outRaises():
     callBuild({"sched-supported": 1}, {"inter-supported": 1})
 
-def test_shouldThrowExceptionIfLoc1OrLoc2OptionsAreNotPresent(fixture):
+def test_shouldThrowExceptionIfMinimumOptionsSuchAsLoc1OrLoc2AreNotPresent(
+    fixture):
   scheduler = fakeConfigurable("scheduler")
   interpreter = fakeConfigurable("interpreter")
 

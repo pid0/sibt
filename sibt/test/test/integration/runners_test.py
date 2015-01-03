@@ -36,6 +36,7 @@ class RunnerTest(object):
     inter = self.loadInterpreterWithCode("", fixture)
     assert inter.availableOptions == []
     assert inter.writeLocIndices == [2]
+    assert inter.versionsOf("/mnt/data/bar", 1, dict()) == []
 
   def test_shouldThrowExceptionForNonTrivialNotImplementedFunctions(self, 
       fixture):

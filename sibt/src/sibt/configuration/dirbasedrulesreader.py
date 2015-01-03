@@ -2,14 +2,18 @@ from sibt.domain.syncrule import SyncRule
 import os
 import os.path
 from datetime import timedelta, datetime
-from sibt.configuration.exceptions import ConfigSyntaxException
-from sibt.configuration.exceptions import ConfigConsistencyException
+from sibt.configuration.exceptions import ConfigSyntaxException, \
+    ConfigConsistencyException
 from sibt.infrastructure import collectFilesInDirs
 from configparser import ConfigParser, BasicInterpolation
+import configparser
 import itertools
 
 InterSec = "Interpreter"
 SchedSec = "Scheduler"
+
+def makeException(file, message):
+  return ConfigSyntaxException("rule", message, file)
 
 class DirBasedRulesReader(object):
   def __init__(self, rulesDir, enabledDir, factory):
@@ -61,8 +65,8 @@ class DirBasedRulesReader(object):
 
     try:
       parser.read(path)
-    except Exception as ex:
-      raise ConfigSyntaxException(path, "error parsing ini syntax") from ex
+    except configparser.Error as ex:
+      raise makeException(path, "could not read ini file") from ex
 
     presetDicts = [self._readSectionsDict(os.path.join(
         self.rulesDir, name + ".inc")) for name in importedNames]
@@ -74,22 +78,23 @@ class DirBasedRulesReader(object):
 
   def _readRuleFile(self, path, fileName):
     if "," in fileName or "@" in fileName or " " in fileName:
-      raise ConfigSyntaxException(path, 
-          "invalid character (, and @) in rule name")
+      raise makeException(path, 
+          "invalid character (, and @ and space) in rule name")
     if fileName.endswith(".inc"):
       return None
     
     sections = self._readSectionsDict(path)
 
     if not self._exactlyKnownSectionsPresentIn(sections):
-      raise ConfigSyntaxException(path, 
-          "sections [Interpreter] and [Scheduler] are required")
+      raise makeException(path, 
+          "exactly sections [Interpreter] and [Scheduler] are required")
 
     try:
       ret = self.factory.build(fileName, dict(sections[SchedSec]), 
           dict(sections[InterSec]), self._isEnabled(fileName))
     except ConfigConsistencyException as ex:
-      raise ConfigSyntaxException(path, "can't logically create rule") from ex
+      ex.file = path
+      raise
 
     return ret
 

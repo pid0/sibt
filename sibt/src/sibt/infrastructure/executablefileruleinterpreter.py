@@ -86,7 +86,8 @@ class ExecutableFileRuleInterpreter(object):
   @classmethod
   def createWithFile(clazz, path, fileName, processRunner):
     if not clazz.isExecutable(path):
-      raise ConfigConsistencyException("interpreter file not executable")
+      raise ConfigConsistencyException("interpreter",
+          fileName, "file not executable", file=path)
 
     return clazz(path, fileName, processRunner)
   @classmethod
