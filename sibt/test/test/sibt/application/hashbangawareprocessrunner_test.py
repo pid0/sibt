@@ -23,13 +23,13 @@ def fixture(tmpdir):
   return Fixture(tmpdir)
 
 def test_shouldForwardGetOutputAndExecuteCallsToWrappedRunner(fixture):
-  returnValue = "the bag"
+  returnValue = ["the bag"]
 
   wrapped, runner = fixture.construct()
 
   wrapped.expectCallsInOrder(mock.call("getOutput", ("file", "1", "2"), 
-      ret=returnValue))
-  assert runner.getOutput("file", "1", "2") == returnValue
+      {"delimiter": "\t"}, ret=returnValue))
+  assert runner.getOutput("file", "1", "2", delimiter="\t") == returnValue
   wrapped.checkExpectedCalls()
 
   wrapped.expectCallsInOrder(mock.call("execute", ("executable", "foo"), 

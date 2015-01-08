@@ -10,7 +10,7 @@ NumberOfPositionalArgs = { "availableOptions": 0,
     "sync": 0,
     "versionsOf": 2,
     "restore": 5,
-    "listFiles": 4,
+    "listFiles": 5,
     "writesTo": 0 }
 
 def parseKeyValuePairs(pairs):

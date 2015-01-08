@@ -9,6 +9,8 @@ def removeCommonPrefix(path, containerPath):
 
 def isPathWithinPath(path, container):
   normalizedContainer = os.path.realpath(container)
-  return os.path.commonprefix([os.path.realpath(path), 
-      normalizedContainer]) == normalizedContainer
+  normalizedPath = os.path.realpath(path)
+  commonPart = os.path.commonprefix([normalizedPath, normalizedContainer])
+  return commonPart == normalizedContainer and \
+      ((normalizedPath[len(commonPart):] + "/")[0] == os.path.sep)
 

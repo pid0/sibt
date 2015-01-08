@@ -7,8 +7,8 @@ from sibt.infrastructure.externalfailureexception import \
 from sibt.infrastructure.interpreterfuncnotimplementedexception import \
     InterpreterFuncNotImplementedException
 
-def normalizedLines(string):
-  return [line.strip() for line in string.split("\n") if line.strip() != ""]
+def normalizedLines(lines):
+  return [line.strip() for line in lines if line.strip() != ""]
 TimeFormat = "%Y-%m-%dT%H:%M:%S%z"
 
 class ExecutableFileRuleInterpreter(object):
@@ -31,10 +31,11 @@ class ExecutableFileRuleInterpreter(object):
     self._execute("restore", path, str(locNumber), w3c, 
         str(timestamp), dest or "", *self._keyValueEncode(options))
 
-  def listFiles(self, path, locNumber, version, options):
+  def listFiles(self, path, locNumber, version, recursively, options):
     w3c, timestamp = self._encodeTime(version)
-    self._execute("list-files", path, str(locNumber), w3c, 
-        str(timestamp), *self._keyValueEncode(options))
+    return self._getOutput("list-files", path, str(locNumber), w3c, 
+        str(timestamp), "1" if recursively else "0",
+        *self._keyValueEncode(options), delimiter="\0")
 
   @property
   def availableOptions(self):
@@ -44,10 +45,10 @@ class ExecutableFileRuleInterpreter(object):
   def writeLocIndices(self):
     return [int(line) for line in normalizedLines(self._getOutput("writes-to"))]
 
-  def _getOutput(self, funcName, *args):
+  def _getOutput(self, funcName, *args, **kwargs):
     return self._catchNotImplemented(
-        lambda: self.processRunner.getOutput(self.executable, funcName, *args),
-        funcName)
+        lambda: self.processRunner.getOutput(self.executable, funcName, *args, 
+          **kwargs), funcName)
   def _execute(self, funcName, *args):
     return self._catchNotImplemented(
         lambda: self.processRunner.execute(self.executable, funcName, *args),

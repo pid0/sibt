@@ -47,15 +47,30 @@ restore() {
 }
 
 list-files() {
-  path="$1"
+  relativePath="$1"
   locNumber="$2"
+  recursively=$5
+  path="$Loc2"/"$relativePath"
 
-  recognizeDirectoryByTrailingSlash='
-    \,/$,!s,^(.*)$,F &,
-    s,([^/]+)/$,D \1,'
-  basenames='s,.*/([^/]+/?)$,\1,'
+  if [ $locNumber = 2 ]; then
+    return
+  fi
 
-  ls -A --format=single-column --indicator-style=slash "$Loc2"/"$path" | \
-      sed -r -e "$basenames" |\
-      sed -r -e "$recognizeDirectoryByTrailingSlash"
+  mindepth=0
+  filePathFormat=f
+  if [[ -d "$path" && ! -L "$path" ]]; then
+    mindepth=1
+    filePathFormat=P
+  fi
+
+  declare -a maxdepth=(-maxdepth 1)
+  if [ $recursively = 1 ]; then
+    maxdepth=()
+  fi
+
+  find "$path" -mindepth "$mindepth" "${maxdepth[@]:+${maxdepth[@]}}" \
+    -printf '%y%'$filePathFormat'\0' | \
+    sed -zr -e 's,^d(.*)$,\1/,
+      t
+      s,^.(.*)$,\1,'
 }

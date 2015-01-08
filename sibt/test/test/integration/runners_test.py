@@ -42,7 +42,7 @@ class RunnerTest(object):
       fixture):
     inter = self.loadInterpreterWithCode("", fixture)
     with pytest.raises(InterpreterFuncNotImplementedException):
-      inter.listFiles("/tmp/file", 1, anyUTCDateTime(), dict())
+      inter.listFiles("/tmp/file", 1, anyUTCDateTime(), False, dict())
     with pytest.raises(InterpreterFuncNotImplementedException):
       inter.sync(dict())
 

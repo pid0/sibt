@@ -16,34 +16,36 @@ class CallMatcher(object):
     self.matcher = matcher
     self.params = params
 
-  def matches(self, args):
-    return self.matcher(args)
+  def matches(self, args, kwargs):
+    return self.matcher(args, kwargs)
 
   def __repr__(self):
     return "CallMatcher{0}".format((self.funcName, self.matcher, 
         self.params))
 
 class ExactCall(object):
-  def __init__(self, funcName, args, params):
+  def __init__(self, funcName, args, kwargs, params):
     self.funcName = funcName
     self.expectedArgs = args
+    self.expectedKwargs = kwargs
     self.params = params
 
-  def matches(self, args):
-    return args == self.expectedArgs
+  def matches(self, args, kwargs):
+    return args == self.expectedArgs and kwargs == self.expectedKwargs
 
   def __repr__(self):
     return "ExactCall{0}".format((self.funcName, self.expectedArgs, 
         self.params))
 
-def call(funcName, args, **kwargs):
-  return ExactCall(funcName, args, 
+def call(funcName, args, expectedKwargs=dict(), **kwargs):
+  return ExactCall(funcName, args, expectedKwargs,
       CallParams.construct(**kwargs))
 def callMatching(funcName, matcher, **kwargs):
-  return CallMatcher(funcName, lambda args: matcher(*args), 
+  return CallMatcher(funcName, lambda args, kwargs: matcher(*args, **kwargs), 
       CallParams.construct(**kwargs))
 def callMatchingTuple(funcName, matcher, **kwargs):
-  return CallMatcher(funcName, matcher, CallParams.construct(**kwargs))
+  return CallMatcher(funcName, lambda args, kwargs: matcher(args), 
+      CallParams.construct(**kwargs))
 
 def mock():
   return Mock()
@@ -99,15 +101,16 @@ class Mock(object):
     return object.__getattribute__(self, name)
 
   def __getattr__(self, name):
-    def callHandler(*args):
-      message = "{0} unexpectedly called with args {1}".format(name, args)
+    def callHandler(*args, **kwargs):
+      message = "{0} unexpectedly called with args {1}, {2}".format(
+          name, args, kwargs)
       callMatching = False
       returnValue = None
 
       for group in self._expectationGroups:
         expectedCalls = group.expectedCalls
         matchingCalls = [call for call in expectedCalls if
-            call.funcName == name and call.matches(args)]
+            call.funcName == name and call.matches(args, kwargs)]
 
         callMatching |= len(matchingCalls) > 0
         if len(matchingCalls) == 0:

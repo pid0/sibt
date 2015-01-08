@@ -5,6 +5,7 @@ from fnmatch import fnmatchcase
 from test.acceptance.runresult import RunResult
 from test.acceptance.bufferingoutput import BufferingOutput
 from test.common.execmock import ExecMock
+from test.common import execmock
 from py.path import local
 from sibt import main
 import pytest
@@ -286,9 +287,9 @@ def test_shouldPassOptionsAsIsToCorrectSchedulersAndInterpreters(fixture):
 
   fixture.runSibtCheckingExecs("sync", rule.name)
 
-  inter.expecting((lambda args: args[0] == "sync" and 
+  inter.expecting(execmock.call(lambda args: args[0] == "sync" and 
     set(args[1:]) == {"AddFlags=-X -A", "Loc1=" + rule.loc1, 
-      "Loc2=" + rule.loc2}, "")).reMakeExpectations()
+      "Loc2=" + rule.loc2})).reMakeExpectations()
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
 
 def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
@@ -370,7 +371,7 @@ def test_shouldRequireAnExactRuleNameMatchWhenSyncingUncontrolled(fixture):
   rule = fixture.conf.ruleWithSched("[rule]a*b").withInterpreter(inter).\
     enabled().write()
 
-  inter.expecting((lambda args: args[0] == "sync", "")).write()
+  inter.expecting(execmock.call(lambda args: args[0] == "sync")).write()
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
 
   inter.reMakeExpectations()
@@ -524,8 +525,8 @@ def test_shouldPrintRuleNameIfSyncFailsAndAlsoNormalErrorMessageIfVerboseIsOn(
   def failSyncing(args):
     if args[0] == "sync":
       raise FakeException()
-  failingInter.allowing((failSyncing, "")).\
-      allowingSetupCalls().reMakeExpectations()
+  failingInter.allowing(execmock.call(failSyncing)).allowingSetupCalls().\
+      reMakeExpectations()
   with pytest.raises(FakeException):
     fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
   fixture.stderrShouldContain(rule.name, "failed", "unexpected error")
@@ -607,8 +608,8 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   march3rd = "2014-03-30T21:43:12+00:00"
   april5thTimestamp = "1396704934"
 
-  inter = inter.allowing((lambda args: args[0] == "versions-of",
-    "\n".join([april5th, march3rd]))).write()
+  inter = inter.allowing(execmock.call(lambda args: args[0] == "versions-of",
+    [april5th, march3rd])).write()
 
   callRestore(dataDir + fileName, "2014", "3:")
   fixture.shouldHaveExitedWithStatus(1)
@@ -619,42 +620,61 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderrShouldContain("patterns", "no match")
 
-  inter.expecting((lambda args: args[0] == "restore" and 
+  inter.expecting(execmock.call(lambda args: args[0] == "restore" and 
     "Loc2=" + backupDir in args and 
-    args[1:6] == (fileName, "1", april5th, april5thTimestamp, "dest.backup"),
-    "")).reMakeExpectations()
+    args[1:6] == (fileName, "1", april5th, april5thTimestamp, "dest.backup"))).\
+        reMakeExpectations()
   callRestore(dataDir + fileName, "tota", "04", "--to=dest.backup")
 
-def test_shouldCallListFilesWithAnInterfaceSimilarToRestore(fixture):
-  inter = fixture.conf.anInter().withBashCode("""
+def test_shouldGetANullSeparatedFileListingWithACallSimilarToRestore(fixture):
+  inter = fixture.conf.anInter().withBashCode(r"""
   if [ $1 = versions-of ]; then
     echo '1970-01-01T00:00:50+00:00'
     echo 100000000
   fi
   if [[ $1 = list-files && $2 = container/folder && $3 = 2 && $5 = 50 ]]; then
-    echo "F some-file"
-    echo "D and-a-dir"
+    echo -n -e 'some\n-file'
+    echo -n -e '\0'
+    echo -n 'and-a-dir/'
+    echo -n -e '\0'
   fi""").write()
   fixture.conf.ruleWithSched().withInterpreter(inter).\
       withLoc2("/var/spool").write()
 
+  folder = "/var/spool/container/folder"
   fixture.runSibtWithRealStreamsAndExec("list-files", 
-      "/var/spool/container/folder", "1970")
+    folder, "1970")
   fixture.stderrShouldBeEmpty()
-  fixture.stdoutShouldExactlyContainLinePatternsInAnyOrder("F some-file", 
-      "D and-a-dir")
+  fixture.stdoutShouldExactlyContainLinePatternsInAnyOrder("some\\n-file", 
+      "and-a-dir/")
+
+  fixture.runSibtWithRealStreamsAndExec("list-files", "--null", folder, 
+      "1970")
+  fixture.stdoutShouldContain("some\n-file\0", "and-a-dir/\0")
+
+def test_shouldHaveAnOptionForARecursiveFileListing(fixture):
+  inter = fixture.conf.anInter().write()
+  inter = inter.allowingSetupCalls().allowing(execmock.call(
+    lambda args: args[0] == "versions-of", ret=["20"]))
+  fixture.conf.ruleWithSched().withLoc1("/dir").withInterpreter(inter).write()
+  
+  inter.expectingListFiles(lambda args: args[5] == "0").reMakeExpectations()
+  fixture.runSibtCheckingExecs("list-files", "/dir/file", "1970")
+
+  inter.expectingListFiles(lambda args: args[5] == "1").reMakeExpectations()
+  fixture.runSibtCheckingExecs("list-files", "-r", "/dir/file", "1970")
 
 def test_shouldCallRunnerNamedInHashbangLineOfInterpretersIfItExists(fixture):
   runnerPath = fixture.confFolders.writeRunner("faith")
   inter = fixture.conf.anInter().withCode("#!faith").write()
   fixture.conf.ruleWithSched().withInterpreter(inter).write()
 
-  allowAnyCallsExceptOptions = (runnerPath, lambda args: args[1] != 
-      "available-options", "", {"anyNumber": True})
+  anyCallsExceptOptions = execmock.call(
+      lambda args: args[1] != "available-options")
+  fixture.execs.allow(runnerPath, anyCallsExceptOptions)
 
-  fixture.execs.expectCalls(
-      (runnerPath, (str(inter.path), "available-options"), ""),
-      allowAnyCallsExceptOptions)
+  fixture.execs.expect(runnerPath, execmock.call(
+      (str(inter.path), "available-options")))
   fixture.runSibtCheckingExecs("list", "interpreters")
   fixture.shouldHaveExitedWithStatus(0)
 

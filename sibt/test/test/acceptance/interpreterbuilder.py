@@ -1,5 +1,6 @@
 from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
+from test.common import execmock
 
 class InterpreterBuilder(ConfigObjectBuilder):
   def __init__(self, paths, sysPaths, foldersWriter, name, 
@@ -18,25 +19,28 @@ class InterpreterBuilder(ConfigObjectBuilder):
   def expecting(self, *execExpectations):
     return self._withParams(expectations=self.expectations + 
         list(execExpectations))
-  def allowing(self, *expectations):
-    return self.expecting(*(expectation + ({"anyNumber": True},) for 
-        expectation in expectations))
+  def allowing(self, *calls):
+    return self._withParams(allowances=self.allowances + list(calls))
 
   def _allowingWritesToCalls(self):
-    return self.allowing((lambda args: args[0] == "writes-to", ""))
+    return self.allowing(execmock.call(lambda args: args[0] == "writes-to"))
   def allowingSetupCallsExceptOptions(self):
     return self._allowingWritesToCalls()
   def allowingSetupCalls(self):
-    return self.allowingSetupCallsExceptOptions().allowing((
-        lambda args: args[0] == "available-options", ""))
+    return self.allowingSetupCallsExceptOptions().allowing(
+        execmock.call(lambda args: args[0] == "available-options"))
+
+  def expectingListFiles(self, matcher):
+    return self.expecting(execmock.call(lambda args: args[0] == "list-files" and
+      matcher(args), delimiter="\0"))
 
   def withTestOptions(self):
-    return self.expecting((lambda args: args[0] == "available-options", 
-      "AddFlags\nKeepCopies\n"))
+    return self.expecting(execmock.call(lambda args: args[0] == 
+      "available-options", ret=["AddFlags", "KeepCopies"]))
 
   def reMakeExpectations(self):
-    self.execChecker.expectCalls(*[(str(self.path),) + expectation for 
-      expectation in self.expectations])
+    self.execChecker.expect(str(self.path), *self.expectations)
+    self.execChecker.allow(str(self.path), *self.allowances)
     return self
 
   def write(self, toReadonlyDir=False):
@@ -56,6 +60,9 @@ class InterpreterBuilder(ConfigObjectBuilder):
   @property
   def expectations(self):
     return self.kwParams.get("expectations", [])
+  @property
+  def allowances(self):
+    return self.kwParams.get("allowances", [])
   @property
   def path(self):
     return local(self.configuredPaths.interpretersDir).join(self.name)

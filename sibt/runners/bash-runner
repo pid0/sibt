@@ -51,7 +51,7 @@ case $action in
   sync) setup-variables "${@:1:$#}"; sync;;
   versions-of) setup-variables "${@:3:$#}"; versions-of "$@";;
   restore) setup-variables "${@:6:$#}"; restore "$@";;
-  list-files) setup-variables "${@:5:$#}"; list-files "$@";;
+  list-files) setup-variables "${@:6:$#}"; list-files "$@";;
   writes-to) writes-to;;
 esac
 

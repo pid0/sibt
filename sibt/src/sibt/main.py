@@ -125,7 +125,13 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           version.rule.restore(args.options["file"], version,
               args.options.get("to", None))
         if args.action == "list-files":
-          version.rule.listFiles(args.options["file"], version)
+          files = version.rule.listFiles(args.options["file"], version, 
+              args.options["recursive"])
+          for fileName in files:
+            if args.options["null"]:
+              stdout.println(fileName, lineSeparator="\0")
+            else:
+              stdout.println(fileName.replace("\n", r"\n"), lineSeparator="\n")
 
     return 0
   except (ExternalFailureException, InterpreterFuncNotImplementedException) \

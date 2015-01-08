@@ -5,8 +5,8 @@ class HashbangAwareProcessRunner(object):
     self.wrapped = wrapped
     self.namesToRunners = dict((runner.name, runner) for runner in runners)
 
-  def getOutput(self, program, *args):
-    return self.wrapped.getOutput(*self._modifiedArgs(program, args))
+  def getOutput(self, program, *args, **kwargs):
+    return self.wrapped.getOutput(*self._modifiedArgs(program, args), **kwargs)
 
   def execute(self, program, *args):
     self.wrapped.execute(*self._modifiedArgs(program, args))

@@ -10,6 +10,7 @@ from test.common.pathsbuilder import pathsIn, existingPaths
 import os.path
 from py.path import local
 from test.common.execmock import ExecMock
+from test.common import execmock
 import sys
 from fnmatch import fnmatchcase
 
@@ -47,8 +48,8 @@ class Fixture(object):
     return ret
 
   def checkOption(self, optionName, schedulings, matcher):
-    self.execs.expectCalls(anacronCallMatching(
-      lambda args: matcher(args[args.index(optionName) + 1])))
+    self.execs.expect("anacron", execmock.call(
+      lambda args: matcher(args[1 + args.index(optionName)])))
     self.run(schedulings)
 
   def tabShouldContainLinesMatching(self, tabPath, *expectedPatterns):
@@ -63,19 +64,17 @@ class Fixture(object):
 def fixture(tmpdir):
   return Fixture(tmpdir)
 
-def anacronCallMatching(matcher):
-  return ("anacron", matcher, "")
-
 def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
   testFile = str(fixture.miscDir / "test")
   assert not os.path.isfile(testFile)
 
-  fixture.runWithMockedSibt("""#!/usr/bin/env bash
+  fixture.runWithMockedSibt(r"""#!/usr/bin/env bash
   if [[ $1 = --some-global-opt && $2 = 'blah foo' && \
-      $3 = sync-uncontrolled && $4 = some-rule ]]; then
+      $3 = sync-uncontrolled && $4 = 'some*rule' ]]; then
     touch {0}
-  fi""".format(testFile), [scheduling().withRuleName("some-rule")],
-  sibtArgs=["--some-global-opt", "blah foo"])
+  fi""".format(testFile), 
+      [scheduling().withRuleName("some*rule")], 
+      sibtArgs=["--some-global-opt", "blah foo"])
 
   assert os.path.isfile(testFile)
 

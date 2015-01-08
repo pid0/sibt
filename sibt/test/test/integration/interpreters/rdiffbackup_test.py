@@ -17,6 +17,9 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
   @property
   def minimumDelayBetweenTestsInS(self):
     return 1
+  @property
+  def supportsNewlinesInFileNames(self):
+    return False
 
   def test_shouldUseRemoveOlderThanFeatureAfterSyncingIfSpecified(self, 
       fixture):

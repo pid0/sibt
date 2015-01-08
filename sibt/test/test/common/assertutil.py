@@ -1,9 +1,9 @@
 def iterableContainsInAnyOrder(iterable, *predicates):
   iterableAsList = list(iterable)
-  if len(iterableAsList) != len(predicates):
+  matchers = list(predicates)
+  if len(iterableAsList) != len(matchers):
     return False
   
-  matchers = list(predicates)
   for x in iterableAsList:
     matchingMatchers = [matcher for matcher in matchers if matcher(x)]
     if len(matchingMatchers) == 0:

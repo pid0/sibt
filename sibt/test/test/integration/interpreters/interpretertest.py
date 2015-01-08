@@ -1,7 +1,7 @@
 import os.path
 import time
 import pytest
-from test.common.assertutil import iterableContainsInAnyOrder
+from test.common.assertutil import iterableContainsInAnyOrder, equalsPred
 import os
 from test.integration.interpreters import loadInterpreter
 
@@ -16,6 +16,7 @@ class InterpreterTestFixture(object):
 
   def optsWith(self, options):
     options["Loc1"] = str(self.loc1)
+    assert not options["Loc1"].endswith("/")
     options["Loc2"] = str(self.loc2)
     return options
 
@@ -26,33 +27,81 @@ class InterpreterTest(object):
   @property
   def minimumDelayBetweenTestsInS(self):
     return 0
+  @property
+  def supportsNewlinesInFileNames(self):
+    return True
+  @property
+  def fileNameWithNewline(self):
+    return "fi\nle1" if self.supportsNewlinesInFileNames else "file1"
 
-  def test_shouldBeAbleToListDirsInLoc1AsTheyWereInThePastWithoutRecursion(
-      self, fixture, capfd):
-    folder = fixture.loc1.mkdir("folder")
-    folder.join("file1").write("")
-    folder.join(".file2").write("")
-    subFolder = folder.mkdir("sub")
-    subFolder.join("file3").write("")
-    options = fixture.optsWith(dict())
+  def writeFileTree(self, folder, fileList):
+    newFolder = folder.mkdir(fileList[0])
+    for subFile in fileList[1:]:
+      if isinstance(subFile, list):
+        self.writeFileTree(newFolder, subFile)
+      elif " -> " in subFile:
+        symlinkName, symlinkDest = subFile.split(" -> ")
+        newFolder.join(symlinkName).mksymlinkto(symlinkDest)
+      else:
+        newFolder.join(subFile).write("")
+
+  def setUpTestTreeSyncAndDeleteIt(self, fixture, fileName1, options):
+    self.writeFileTree(fixture.loc1,
+        ["[folder],",
+          fileName1,
+          ".file2",
+          ["sub",
+            "file3 -> /home"]])
 
     fixture.inter.sync(options)
-    folder.remove()
+    fixture.loc1.join("[folder],").remove()
+    return fixture.inter.versionsOf("[folder],", 1, options)[0]
 
-    version = fixture.inter.versionsOf("folder", 1, options)[0]
-    fixture.inter.listFiles("folder", 1, version, options)
+  def test_shouldBeAbleToListDirsInLoc1AsTheyWereInThePastWithoutRecursion(
+      self, fixture):
+    options = fixture.optsWith(dict())
 
-    stdout, _ = capfd.readouterr()
+    version = self.setUpTestTreeSyncAndDeleteIt(fixture, 
+        self.fileNameWithNewline, options)
 
-    assert iterableContainsInAnyOrder(stdout.split(os.linesep)[:-1],
-        lambda line: line == "F file1",
-        lambda line: line == "F .file2",
-        lambda line: line == "D sub")
+    assert iterableContainsInAnyOrder(
+        fixture.inter.listFiles("[folder],", 1, version, False, options), 
+        *map(equalsPred, [self.fileNameWithNewline, ".file2", "sub/"]))
 
-    fixture.inter.listFiles("folder/file1", 1, version, options)
-    stdout, _ = capfd.readouterr()
-    assert stdout == "F file1\n"
+    assert list(fixture.inter.listFiles("[folder],/" + 
+      self.fileNameWithNewline, 1, version, False, options)) == \
+          [self.fileNameWithNewline]
 
+    assert list(fixture.inter.listFiles(".", 1, version, False, options)) == \
+        ["[folder],/"]
+
+    assert list(fixture.inter.listFiles(".", 2, version, False, options)) == []
+
+  def test_shouldBeAbleToGiveARecursiveFileListing(self, fixture):
+    options = fixture.optsWith(dict())
+
+    version = self.setUpTestTreeSyncAndDeleteIt(fixture, 
+        self.fileNameWithNewline, options)
+
+    recursively = True
+
+    assert iterableContainsInAnyOrder(fixture.inter.listFiles(".", 1, version, 
+      recursively, options), *map(equalsPred, [
+        "[folder],/",
+        "[folder],/" + self.fileNameWithNewline,
+        "[folder],/.file2",
+        "[folder],/sub/",
+        "[folder],/sub/file3"]))
+
+    assert iterableContainsInAnyOrder(fixture.inter.listFiles("[folder],", 1, 
+      version, recursively, options), *map(equalsPred, [
+        self.fileNameWithNewline,
+        ".file2",
+        "sub/",
+        "sub/file3"]))
+
+    assert list(fixture.inter.listFiles("[folder],/sub/file3", 1,
+      version, recursively, options)) == ["file3"]
 
 class MirrorInterpreterTest(InterpreterTest):
   def rewriteLoc1PathForMirrorTest(self, path):

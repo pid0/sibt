@@ -49,17 +49,23 @@ get-file-type() {
       "$Loc2"/"$1" | sed -n -e "/^${2}/p" | cut -d ' ' -f 2
 }
 
-prepend-file-types() {
-  declare -a words
-  while read -a words; do
-    fileType=$(get-file-type "${words[*]}" $1)
+append-slash-if-dir() {
+  while read fileName; do
+    fileType=$(get-file-type "$fileName" $1)
+    echo -n "$fileName"
+
     if [ $fileType = directory ]; then
-      echo -n 'D '
-    else
-      echo -n 'F '
+      echo -n '/'
     fi
 
-    echo "${words[*]}"
+    echo -n -e '\0'
+  done
+}
+
+remove-prefix() {
+  while read -d $'\0' word; do
+    echo -n "${word:${#1}:${#word}}"
+    echo -n -e '\0'
   done
 }
 
@@ -67,21 +73,35 @@ list-files() {
   path="$1"
   locNumber=$2
   timestamp=$4
+  recursively=$5
 
   if [ $locNumber = 2 ]; then
     return
   fi
 
-  getBasename='s,^([A-Z] ).*/([^/]+)$,\1\2,'
-  filterDirectChildren='\,^[^/]+/[^/]+/,!p'
-
   typeOfFile=$(get-file-type "$path" $timestamp)
+  if [ $typeOfFile != directory ]; then
+    echo -n "${path##*/}"
+    echo -e -n '\0'
+    return
+  fi
 
-  declare -a listCall=(rdiff-backup --list-at-time $timestamp "$Loc2"/"$path")
-  if [ $typeOfFile = directory ]; then
-    "${listCall[@]}" | sed -n -e '1!p'
-  else
-    "${listCall[@]}"
-  fi | sed -nr -e "$filterDirectChildren" |\
-      prepend-file-types $timestamp | sed -r -e "$getBasename"
+  filterDirectChildren='\,^[^/]+/[^/]+/,!p'
+  prependPeriodSlash='s,^,./,'
+
+  filter="$filterDirectChildren"
+  if [ $recursively = 1 ]; then
+    filter='p'
+  fi
+
+  preprocessing=''
+  prefix="$path"/
+  if [ "$path" = . ]; then
+    prefix=./
+    preprocessing="$prependPeriodSlash"
+  fi
+
+  rdiff-backup --list-at-time $timestamp "$Loc2"/"$path" | sed -n -e '1!p' |\
+    sed -r -e "$preprocessing" | sed -nr -e "$filter" |\
+    append-slash-if-dir $timestamp | remove-prefix "$prefix"
 }

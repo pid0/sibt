@@ -47,7 +47,7 @@ class CmdLineArgsParser(object):
       option.addToParser(parser)
 
     subs = parser.add_subparsers(title="actions", dest="action", 
-      metavar="list|sync|versions-of|restore|list-files")
+      metavar="list|sync|versions-of|restore|list-files|show")
 
     listAction = subs.add_parser("list", aliases=["li"])
     listAction.add_argument("list-type", nargs="?",
@@ -73,6 +73,8 @@ class CmdLineArgsParser(object):
 
     listFiles = subs.add_parser("list-files")
     addListFilesLikeArgs(listFiles)
+    listFiles.add_argument("--null", action="store_true")
+    listFiles.add_argument("--recursive", "-r", action="store_true")
 
     check = subs.add_parser("check")
     check.add_argument("rule-patterns", nargs="+", action="store")

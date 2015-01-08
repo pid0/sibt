@@ -12,9 +12,11 @@ def test_shouldBeAbleToTellIfAPathIsWithinSomeAbsoluteOne(tmpdir):
   assert isPathWithinPath("/home/blah", "/home")
   assert isPathWithinPath("/home//foo/blah/..//blah/", "/home///foo")
   assert not isPathWithinPath("/mnt/foo", "/home")
+  assert not isPathWithinPath("/home/foo-abc", "/home/foo")
 
 def test_shouldBeAbleToRemoveContainerPrefixFromAPath(tmpdir):
   assert removeCommonPrefix("/home/foo//bar/", "/home/../home") == "foo/bar"
+  assert removeCommonPrefix("/home/foo/", "/home/foo") == "."
   with tmpdir.as_cwd():
     assert removeCommonPrefix("foo/bar", str(tmpdir)) == "foo/bar"
 

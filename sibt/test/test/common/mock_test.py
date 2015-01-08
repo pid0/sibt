@@ -84,6 +84,24 @@ def test_shouldMakeExpectationsOverrideNormalMethods(fixture):
   with pytest.raises(AssertionError):
     mocked.foo(5)
 
+def test_shouldBeAbleToTestKeywordArguments(fixture):
+  mocked = mock.mock()
+
+  mocked.expectCallsInAnyOrder(mock.call("foo", (4,), {"arg": 2}, 
+    anyNumber=True),
+      mock.callMatching("bar", lambda *args, **kwargs: 
+        args == (4,) and kwargs == {"arg": 2}, anyNumber=True))
+
+  mocked.foo(4, arg=2)
+  with pytest.raises(AssertionError):
+    mocked.foo(4, arg=3)
+  with pytest.raises(AssertionError):
+    mocked.foo(4)
+
+  mocked.bar(4, arg=2)
+  with pytest.raises(AssertionError):
+    mocked.bar(4, arg=0)
+
 def expectTestCalls(mockedObject, anyOrder):
   mockedObject.expectCalls(mock.call("foo", (40,)),
       mock.call("bar", ()), inAnyOrder=anyOrder)

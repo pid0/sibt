@@ -38,7 +38,7 @@ class SyncRule(object):
 
   def versionsOf(self, path):
     locNumber = self.getLocNumber(path)
-    if locNumber == 0:
+    if locNumber is None:
       return []
     return [Version(self, time) for time in 
         self.interpreter.versionsOf(
@@ -49,14 +49,16 @@ class SyncRule(object):
     locNumber = self.getLocNumber(path)
     self.interpreter.restore(removeCommonPrefix(path, self._loc(locNumber)),
         locNumber, version.time, destination, self.interpreterOptions)
-  def listFiles(self, path, version):
+
+  def listFiles(self, path, version, recursively):
     locNumber = self.getLocNumber(path)
-    self.interpreter.listFiles(removeCommonPrefix(path, self._loc(locNumber)),
-        locNumber, version.time, self.interpreterOptions)
+    return self.interpreter.listFiles(
+        removeCommonPrefix(path, self._loc(locNumber)),
+        locNumber, version.time, recursively, self.interpreterOptions)
 
   def getLocNumber(self, path):
     return 1 if isPathWithinPath(path, self._loc(1)) else 2 if \
-        isPathWithinPath(path, self._loc(2)) else 0
+        isPathWithinPath(path, self._loc(2)) else None
 
   def __repr__(self):
     return "SyncRule{0}".format((self.name, self.schedulerOptions, 
