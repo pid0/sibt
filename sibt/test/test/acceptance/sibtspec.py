@@ -1,5 +1,4 @@
-from sibt.infrastructure.synchronousprocessrunner import \
-    SynchronousProcessRunner
+from sibt.infrastructure.coprocessrunner import CoprocessRunner
 from sibt.infrastructure.fileobjoutput import FileObjOutput
 from fnmatch import fnmatchcase
 from test.acceptance.runresult import RunResult
@@ -98,7 +97,7 @@ class SibtSpecFixture(object):
     exitStatus = 1
     try:
       exitStatus = self._runSibt(FileObjOutput(sys.stdout), 
-          FileObjOutput(sys.stderr), SynchronousProcessRunner(), arguments)
+          FileObjOutput(sys.stderr), CoprocessRunner(), arguments)
     finally:
       stdout, stderr = self.capfd.readouterr()
       self.result = RunResult(stdout, stderr, exitStatus)

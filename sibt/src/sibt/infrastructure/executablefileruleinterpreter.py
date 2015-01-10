@@ -35,7 +35,7 @@ class ExecutableFileRuleInterpreter(object):
     w3c, timestamp = self._encodeTime(version)
     return self._getOutput("list-files", path, str(locNumber), w3c, 
         str(timestamp), "1" if recursively else "0",
-        *self._keyValueEncode(options), delimiter="\0")
+        *self._keyValueEncode(options), evaluate=False, delimiter="\0")
 
   @property
   def availableOptions(self):
@@ -45,10 +45,12 @@ class ExecutableFileRuleInterpreter(object):
   def writeLocIndices(self):
     return [int(line) for line in normalizedLines(self._getOutput("writes-to"))]
 
-  def _getOutput(self, funcName, *args, **kwargs):
-    return self._catchNotImplemented(
-        lambda: self.processRunner.getOutput(self.executable, funcName, *args, 
-          **kwargs), funcName)
+  def _getOutput(self, funcName, *args, evaluate=True, **kwargs):
+    def call():
+      ret = self.processRunner.getOutput(self.executable, funcName, *args, 
+          **kwargs)
+      return list(ret) if evaluate else ret
+    return self._catchNotImplemented(call, funcName)
   def _execute(self, funcName, *args):
     return self._catchNotImplemented(
         lambda: self.processRunner.execute(self.executable, funcName, *args),

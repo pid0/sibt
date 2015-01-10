@@ -3,12 +3,12 @@ from sibt.domain.defaultvalueinterpreter import DefaultValueInterpreter
 from sibt.infrastructure.executablefileruleinterpreter import \
     ExecutableFileRuleInterpreter
 from sibt.application.configrepo import createHashbangAwareProcessRunner
-from sibt.infrastructure.synchronousprocessrunner import \
-    SynchronousProcessRunner
+from sibt.infrastructure.coprocessrunner import \
+    CoprocessRunner
 
 def loadInterpreter(absolutePath):
   processRunner = createHashbangAwareProcessRunner("sibt/runners",
-      SynchronousProcessRunner())
+      CoprocessRunner())
   return DefaultValueInterpreter(
       ExecutableFileRuleInterpreter(absolutePath, 
         os.path.basename(absolutePath), processRunner))

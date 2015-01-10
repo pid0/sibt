@@ -1,8 +1,23 @@
 from test.common import mock
 
+class OutputIterator(object):
+  def __init__(self, lines):
+    self.lines = lines
+    self.counter = -1
+
+  @property
+  def finished(self):
+    return self.counter >= len(self.lines)
+  def __iter__(self):
+    return self
+  def __next__(self):
+    self.counter += 1
+    if self.finished:
+      raise StopIteration()
+    return self.lines[self.counter]
+
 def call(*args, **kwargs):
   return (args, kwargs)
-
 
 def makeMockCall(program, predicateOrTuple, ret=[], delimiter="\n", 
     **otherKwargs):
@@ -22,11 +37,17 @@ def withAnyNumberIsTrue(kwargs):
 
 class ExecMock(object):
   def __init__(self):
-    self.mockedExec = mock.mock()
-    self.ignoring = False
+    self.reset()
+
+  def _asIterator(self, output):
+    ret = OutputIterator(output)
+    self.iterators.append(ret)
+    return ret
 
   def reset(self):
-    self.mockedExec.clearExpectedCalls()
+    self.mockedExec = mock.mock()
+    self.iterators = []
+    self.ignoring = False
 
   def expect(self, program, *calls, anyOrder=False):
     self.mockedExec.expectCalls(*[makeMockCall(program, *call[0], **call[1]) 
@@ -40,7 +61,12 @@ class ExecMock(object):
   def getOutput(self, program, *arguments, delimiter="\n"):
     if self.ignoring:
       return []
-    return self.mockedExec.getOutput(program, arguments, delimiter=delimiter)
+    return self._asIterator(self.mockedExec.getOutput(
+      program, arguments, delimiter=delimiter))
 
   def check(self, callsMustHaveFinished=False):
     self.mockedExec.checkExpectedCalls()
+    if callsMustHaveFinished:
+      for iterator in self.iterators:
+        assert iterator.finished, "unfinished call with output {0}".format(
+            iterator.lines)

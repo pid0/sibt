@@ -57,6 +57,7 @@ class Test_BashRunnerTest(RunnerTest):
   @property
   def runnerName(self):
     return "bash-runner"
+
   def syncCodeWithFailingSubcommand(self, exitStatus):
     return """sync() {{
         (echo rsync; exit {0})

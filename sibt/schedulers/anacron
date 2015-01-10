@@ -1,5 +1,4 @@
-from sibt.infrastructure.synchronousprocessrunner import \
-    SynchronousProcessRunner
+from sibt.infrastructure.coprocessrunner import CoprocessRunner
 from sibt.infrastructure.intervalparser import IntervalParser
 import os
 from sibt.infrastructure.schedulerhelper import evalTruth
@@ -13,7 +12,7 @@ def quoted(options, optionKey):
 
 class Anacron(object):
   def init(self, initSibtCall, paths):
-    self.processRunner = SynchronousProcessRunner()
+    self.processRunner = CoprocessRunner()
     self.intervalParser = IntervalParser()
     self.sibtCall = initSibtCall
     self.varDir = os.path.join(paths.varDir, "anacron")

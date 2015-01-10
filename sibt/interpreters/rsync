@@ -39,7 +39,7 @@ restore() {
   locNumber="$2"
   dest="$5"
 
-  if [ "$dest" = "" ]; then
+  if [ -z "$dest" ]; then
     dest="$Loc1"/"$path"
   fi
   

@@ -2,8 +2,8 @@ from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from sibt.application.inifilesyntaxruleconfigprinter import \
     IniFileSyntaxRuleConfigPrinter
 from sibt.application import constructRulesValidator
-from sibt.infrastructure.synchronousprocessrunner import \
-    SynchronousProcessRunner
+from sibt.infrastructure.coprocessrunner import \
+    CoprocessRunner
 from sibt.infrastructure.fileobjoutput import FileObjOutput
 import os.path
 from sibt.application.paths import Paths
@@ -187,7 +187,7 @@ def showRule(rule, output):
 def main():
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 
       FileObjOutput(sys.stderr),
-      SynchronousProcessRunner(), 
+      CoprocessRunner(), 
       Paths(UserBasePaths.forCurrentUser()),
       Paths(UserBasePaths(0)), os.getuid(), 
       PyModuleLoader("schedulers"))

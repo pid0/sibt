@@ -126,8 +126,8 @@ def test_shouldReturnIterableOfFilesSplitAtNullWhenAskedForListing(fixture):
     ("list-files", path, "2", EpochPlus93SecW3C, "93", "0", "Loc1=/place"), 
     ret=files, delimiter="\0"))
 
-  assert inter.listFiles(path, 2, EpochPlus93Sec, False,
-      {"Loc1": "/place"}) == files
+  assert list(inter.listFiles(path, 2, EpochPlus93Sec, False,
+      {"Loc1": "/place"})) == files
 
   execs.check(False)
 
@@ -139,7 +139,7 @@ def test_shouldGatherEachLineOfOutputAsLocationIndicesWhenCallingWritesTo(
       ret=["1", "2"]))
   assert set(inter.writeLocIndices) == set([1, 2])
 
-  execs.check()
+  execs.check(True)
 
 def test_shouldThrowNotImplementedExceptionIfExecutableReturns200(fixture):
   def throwExWithExitCode(exitCode, *args):
