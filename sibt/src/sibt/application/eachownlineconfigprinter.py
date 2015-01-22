@@ -16,7 +16,7 @@ class EachOwnLineConfigPrinter(object):
 
   def _printRules(self, rules, areSysRules):
     for rule in rules:
-      line = ("+" if areSysRules else "-") + rule.name
+      line = rule.name
       line += " " + "(" + ("enabled" if rule.enabled else "disabled") + ")"
       self.output.println(line)
   def printRules(self, rules):

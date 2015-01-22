@@ -23,11 +23,11 @@ class Fixture(object):
   def filePathOf(self, ruleName):
     return self.rulesDir.join(ruleName)
     
-  def _createReader(self):
+  def _createReader(self, prefix):
     return DirBasedRulesReader(str(self.rulesDir), str(self.enabledDir), 
-        self.factory)
-  def read(self):
-    ret = self._createReader().read()
+        self.factory, prefix)
+  def read(self, namePrefix=""):
+    ret = self._createReader(namePrefix).read()
     self.factory.checkExpectedCalls()
     return ret
     
@@ -40,7 +40,8 @@ def buildCall(matcher):
 def fixture(tmpdir):
   return Fixture(tmpdir)
   
-def test_shouldReadEachFileAsRuleAndConstructRulesWithFactory(fixture):
+def test_shouldReadEachFileAsARuleAndBuildThemWithFactoryWithPrefixedNames(
+    fixture):
   fixture.writeAnyRule("rule-1")
   fixture.writeAnyRule("rule-2")
 
@@ -48,12 +49,12 @@ def test_shouldReadEachFileAsRuleAndConstructRulesWithFactory(fixture):
   secondConstructedRule = object()
 
   fixture.factory.expectCallsInAnyOrder(
-      buildCallReturning(lambda args: args[0] == "rule-1", 
+      buildCallReturning(lambda args: args[0] == "a-rule-1", 
         firstConstructedRule),
-      buildCallReturning(lambda args: args[0] == "rule-2",
+      buildCallReturning(lambda args: args[0] == "a-rule-2",
         secondConstructedRule))
 
-  assert iterableContainsInAnyOrder(fixture.read(), 
+  assert iterableContainsInAnyOrder(fixture.read(namePrefix="a-"), 
       lambda x: x == firstConstructedRule,
       lambda x: x == secondConstructedRule)
 

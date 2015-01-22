@@ -13,7 +13,7 @@ def test_shouldBeAbleToRetainCommandLineWordsThatDetermineGlobalOptions(
     fixture):
   words1 = ["--config-dir", "foo"]
   words2 = ["--utc"]
-  args = fixture.parser.parseArgs(words1 + words2 + ["sync", "*"])
+  args = fixture.parser.parseArgs(words1 + words2 + ["schedule", "*"])
 
   assert len(args.globalOptionsArgs) == len(words1) + len(words2)
   assert args.globalOptionsArgs[args.globalOptionsArgs.

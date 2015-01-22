@@ -1,7 +1,7 @@
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from sibt.application.inifilesyntaxruleconfigprinter import \
     IniFileSyntaxRuleConfigPrinter
-from sibt.application import constructRulesValidator
+from sibt.domain import constructRulesValidator
 from sibt.infrastructure.coprocessrunner import \
     CoprocessRunner
 from sibt.infrastructure.fileobjoutput import FileObjOutput
@@ -21,6 +21,12 @@ import sys
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from sibt.domain import subvalidators
 from sibt.application.prefixingerrorlogger import PrefixingErrorLogger
+from sibt.domain.exceptions import ValidationException
+from sibt.application.rulesfinder import RulesFinder
+from sibt.application.exceptions import RuleNameMismatchException, \
+    RulePatternsMismatchException
+import functools
+from sibt.application.dryscheduler import DryScheduler
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, moduleLoader):
@@ -37,52 +43,50 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     readSysConf = userId != 0 and not args.options["no-sys-config"]
 
+    useDrySchedulers = args.options.get("dry", False)
+
     try:
       configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
-          moduleLoader, [sys.argv[0]] + args.globalOptionsArgs)
+          moduleLoader, [sys.argv[0]] + args.globalOptionsArgs,
+          functools.partial(wrapScheduler, useDrySchedulers, stdout))
     except (ConfigSyntaxException, ConfigConsistencyException) as ex:
       printKnownException(ex, errorLogger, 
           causeIsEssential=isinstance(ex, ConfigSyntaxException))
       return 1
 
-    if args.action in ["sync", "check"]:
-      matchingRules = configRepo.findSyncRulesByPatterns(
+    rulesFinder = RulesFinder(configRepo)
+    validator = subvalidators.AcceptingValidator() if \
+        args.options["no-checks"] else constructRulesValidator()
+
+    if args.action in ["schedule", "check"]:
+      matchingRuleSet = rulesFinder.findSyncRuleSetByPatterns(
           args.options["rule-patterns"])
-      if len(matchingRules) == 0:
-        errorLogger.log("no rule matching {0}", args.options["rule-patterns"])
-        return 1
     if args.action in ["sync-uncontrolled", "show"]:
-      rule = configRepo.findSyncRuleByName(args.options["rule-name"])
-      if rule is None:
-        errorLogger.log("no rule with name ‘{0}’", args.options["rule-name"])
-        return 1
+      rule = rulesFinder.findRuleByName(args.options["rule-name"],
+          args.action == "sync-uncontrolled")
 
     if args.action == "show":
       showRule(rule, stdout)
-    elif args.action in ["sync", "check"]:
-      validator = subvalidators.AcceptingValidator() if \
-          args.options["no-checks"] else constructRulesValidator(
-              configRepo.schedulers)
-      errors = validator.validate(matchingRules)
-      errorPrintFunc = errorLogger.log if args.action == "sync" else \
-          stdout.println
+
+    elif args.action == "check":
+      errors = validator.validate(matchingRuleSet)
+      printValidationErrors(stdout.println, matchingRuleSet, errors, False)
       if len(errors) > 0:
-        errorPrintFunc("errors in rules:")
-        for error in errors:
-          errorPrintFunc(error)
         return 1
 
-      if args.action == "sync":
-        for rule in matchingRules:
-          rule.schedule()
+    elif args.action == "schedule":
+      try:
+        matchingRuleSet.schedule(validator)
+      except ValidationException as ex:
+        printValidationErrors(errorLogger.log, matchingRuleSet, ex.errors, 
+            True)
+        return 1
 
-        for scheduler in configRepo.schedulers:
-          scheduler.executeSchedulings()
     elif args.action == "sync-uncontrolled":
       try:
         rule.sync()
       except Exception as ex:
-        errorLogger.log("syncing with rule ‘{0}’ failed ({1})", rule.name,
+        errorLogger.log("running rule ‘{0}’ failed ({1})", rule.name,
           str(ex.exitStatus) if isinstance(ex, ExternalFailureException) else
             "<unexpected error>")
         if not isinstance(ex, ExternalFailureException):
@@ -91,11 +95,12 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         return 1
     elif args.action == "list":
       listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
-          args.options["list-type"], configRepo.userRules, configRepo.sysRules, 
-          configRepo.interpreters, configRepo.schedulers)
+          args.options["list-type"], configRepo.userRules.getAll(), 
+          configRepo.sysRules.getAll(), configRepo.interpreters, 
+          configRepo.schedulers)
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
-      for rule in configRepo.allRules:
+      for rule in configRepo.getAllRules():
         for version in rule.versionsOf(args.options["file"]):
           string = version.strWithUTCW3C if args.options["utc"] else \
               version.strWithLocalW3C
@@ -134,8 +139,8 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
               stdout.println(fileName.replace("\n", r"\n"), lineSeparator="\n")
 
     return 0
-  except (ExternalFailureException, InterpreterFuncNotImplementedException) \
-      as ex:
+  except (ExternalFailureException, InterpreterFuncNotImplementedException,
+      RuleNameMismatchException, RulePatternsMismatchException) as ex:
     printKnownException(ex, errorLogger)
     return 1
 
@@ -183,6 +188,16 @@ def createNotExistingDirs(paths):
 def showRule(rule, output):
   output.println(rule.name + ":")
   IniFileSyntaxRuleConfigPrinter(output).show(rule)
+
+def printValidationErrors(printFunc, ruleSet, errors, printRuleNames):
+  if len(errors) > 0 and printRuleNames:
+    printFunc("validation of " + ", ".join("‘{0}’".format(rule.name) for \
+        rule in ruleSet) + " failed:")
+  for error in errors:
+    printFunc(error)
+
+def wrapScheduler(useDrySchedulers, stdout, sched):
+  return DryScheduler(sched, stdout) if useDrySchedulers else sched
 
 def main():
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 

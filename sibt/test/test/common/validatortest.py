@@ -1,9 +1,11 @@
 import pytest
+from test.common.builders import mockRuleSet, mockRule
 
 class Fixture(object):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
     self.dirCounter = 0
+    self.nameCounter = 0
 
   def validLocDir(self):
     self.dirCounter = self.dirCounter + 1
@@ -11,27 +13,22 @@ class Fixture(object):
     ret.join("file").write("")
     return ret
 
+  def mockRule(self, loc1, loc2, name=None, writeLocs=[2]):
+    self.nameCounter += 1
+    return mockRule(loc1=loc1, loc2=loc2, writeLocs=writeLocs,
+        name=name or "rule-" + str(self.nameCounter))
+
+  def validRule(self):
+    return self.mockRule(self.validLocDir(), self.validLocDir())
+
 @pytest.fixture
 def fix(tmpdir):
   return Fixture(tmpdir)
 
-def mockRule(loc1, loc2, name=None, writeLocs=[2]):
-  ret = lambda x:x
-  ret.locs = [str(loc1), str(loc2)]
-  ret.writeLocs = [str(loc1)] if 1 in writeLocs else [] + \
-      [str(loc2)] if 2 in writeLocs else []
-  ret.nonWriteLocs = [str(loc1)] if 1 not in writeLocs else [] + \
-      [str(loc2)] if 2 not in writeLocs else []
-  ret.checkScheduler = lambda *args: None
-  ret.name = name or str(hash(loc2))
-
-  return ret
-
-def validRule(fix):
-  return mockRule(fix.validLocDir(), fix.validLocDir())
-
 class ValidatorTest(object):
   def test_validatorShouldReturnNoErrorsIfTheRulesAreOk(self, fix):
     validator = self.construct()
-    rules = [validRule(fix), validRule(fix)]
-    assert validator.validate(rules) == []
+    ruleSet = mockRuleSet([fix.validRule(), fix.validRule()],
+        schedulerErrors=[])
+    assert validator.validate(ruleSet) == []
+

@@ -16,10 +16,11 @@ def makeException(file, message):
   return ConfigSyntaxException("rule", message, file)
 
 class DirBasedRulesReader(object):
-  def __init__(self, rulesDir, enabledDir, factory):
+  def __init__(self, rulesDir, enabledDir, factory, namePrefix):
     self.rulesDir = rulesDir
     self.enabledDir = enabledDir
     self.factory = factory
+    self.namePrefix = namePrefix
     
   def read(self):
     return collectFilesInDirs([self.rulesDir], self._readRuleFile)
@@ -79,7 +80,10 @@ class DirBasedRulesReader(object):
   def _readRuleFile(self, path, fileName):
     if "," in fileName or "@" in fileName or " " in fileName:
       raise makeException(path, 
-          "invalid character (, and @ and space) in rule name")
+          "invalid character (‘,’ or ‘@’ or space ‘ ’) in rule name")
+    if fileName.startswith("+"):
+      raise makeException(path, "rule name may not begin with ‘+’")
+
     if fileName.endswith(".inc"):
       return None
     
@@ -90,7 +94,8 @@ class DirBasedRulesReader(object):
           "exactly sections [Interpreter] and [Scheduler] are required")
 
     try:
-      ret = self.factory.build(fileName, dict(sections[SchedSec]), 
+      ret = self.factory.build(self.namePrefix + fileName, 
+          dict(sections[SchedSec]), 
           dict(sections[InterSec]), self._isEnabled(fileName))
     except ConfigConsistencyException as ex:
       ex.file = path

@@ -31,9 +31,9 @@ class Fixture(object):
 def fixture():
   return Fixture()
 
-def test_shouldPrintFormattedLogMessagesToOutputWithAPrefixOnEachLine(fixture):
+def test_shouldPrintFormattedLogMessagesWithAPrefixAndIndentation(fixture):
   fixture.assertExpectedOutput("foo {0} baz\nquux", ["bar"],
-      "sibt: foo bar baz\nsibt: quux")
+      "sibt: foo bar baz\n      quux")
 
 def test_shouldNotFormatIfNoFormatArgsAreGiven(fixture):
   logInput = "{0} /file{/bar"

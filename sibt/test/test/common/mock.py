@@ -47,8 +47,8 @@ def callMatchingTuple(funcName, matcher, **kwargs):
   return CallMatcher(funcName, lambda args, kwargs: matcher(args), 
       CallParams.construct(**kwargs))
 
-def mock():
-  return Mock()
+def mock(name="mock object"):
+  return Mock(name)
 
 class ExpectationGroup(object):
   def __init__(self, expectedCalls, inOrder):
@@ -60,9 +60,10 @@ class ExpectationGroup(object):
 
 
 class Mock(object):
-  def __init__(self):
+  def __init__(self, name):
     self._expectationGroups = []
     self.inOrder = True
+    self.__name = name
 
   def clearExpectedCalls(self):
     self._expectationGroups = []
@@ -130,6 +131,9 @@ class Mock(object):
       return returnValue
 
     return callHandler
+
+  def __repr__(self):
+    return "(mock object “{0}”)".format(self.__name)
 
 def partitionList(p, xs):
   return (list(filter(p, xs)), 

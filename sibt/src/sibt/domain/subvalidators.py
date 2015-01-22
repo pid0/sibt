@@ -3,24 +3,17 @@ from sibt.infrastructure.pathhelper import isPathWithinPath
 
 class Validator(object):
   def errMsg(self, message, *rules):
-    return "in " + ", ".join(rule.name for rule in rules) + ": " + message
+    return "in " + ", ".join("‘" + rule.name + "’" for rule in rules) + \
+        ": " + message
   
 class SchedulerCheckValidator(Validator):
-  def __init__(self, queuingSchedulers):
-    self.queuingScheduler = queuingSchedulers
-
-  def validate(self, rules):
-    errors = []
-    for rule in rules:
-      rule.checkScheduler()
-    for scheduler in self.queuingScheduler:
-      errors += scheduler.checkAll()
-
-    return [self.errMsg(error, *rules) for error in errors]
+  def validate(self, ruleSet):
+    return ["‘{0}’ reported error: {1}".format(*error) for error in 
+        ruleSet.schedulerErrors]
 
 class LocExistenceValidator(Validator):
-  def validate(self, rules):
-    for rule in rules:
+  def validate(self, ruleSet):
+    for rule in ruleSet:
       for loc in rule.locs:
         if os.path.isfile(loc):
           return [self.errMsg(loc + " is file, should be folder", rule)]
@@ -30,8 +23,8 @@ class LocExistenceValidator(Validator):
     return []
 
 class LocAbsoluteValidator(Validator):
-  def validate(self, rules):
-    for rule in rules:
+  def validate(self, ruleSet):
+    for rule in ruleSet:
       for loc in rule.locs:
         if not os.path.isabs(loc):
           return [self.errMsg(loc + " is not absolute", rule)]
@@ -39,21 +32,21 @@ class LocAbsoluteValidator(Validator):
     return []
 
 class AcceptingValidator(object):
-  def validate(self, rules):
+  def validate(self, ruleSet):
     return []
 
 class LocNotEmptyValidator(Validator):
-  def validate(self, rules):
-    for rule in rules:
+  def validate(self, ruleSet):
+    for rule in ruleSet:
       for loc in rule.locs:
         if len(os.listdir(loc)) == 0:
           return [self.errMsg(loc + " is empty", rule)]
     return []
 
 class NoOverlappingWritesValidator(Validator):
-  def validate(self, rules):
-    for rule in rules:
-      for rule2 in rules:
+  def validate(self, ruleSet):
+    for rule in ruleSet:
+      for rule2 in ruleSet:
         if rule is rule2:
           continue
         for writeLoc1 in rule.writeLocs:
@@ -65,8 +58,8 @@ class NoOverlappingWritesValidator(Validator):
     return []
 
 class NoSourceDirOverwriteValidator(Validator):
-  def validate(self, rules):
-    for rule in rules:
+  def validate(self, ruleSet):
+    for rule in ruleSet:
       for nonWriteLoc in rule.nonWriteLocs:
         for writeLoc in rule.writeLocs:
           if isPathWithinPath(nonWriteLoc, writeLoc):

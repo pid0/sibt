@@ -38,6 +38,8 @@ class SchedulerBuilder(ConfigObjectBuilder):
   def withCheckFunc(self, newCheckFunc):
     return self._withParams(checkFunc=newCheckFunc)
 
+  def withRunFunc(self, newRunFunc):
+    return self._withParams(runFunc=newRunFunc)
   def withRunFuncCode(self, runFuncCode):
     return self._withParams(runFuncCode=runFuncCode)
 
@@ -53,6 +55,7 @@ class SchedulerBuilder(ConfigObjectBuilder):
     self.path.write("")
     self.reRegister(mocked)
     return mocked, self
+
   def reRegister(self, mocked):
     self.mockRegistry[self.name] = mocked
 

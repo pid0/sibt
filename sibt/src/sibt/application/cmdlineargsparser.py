@@ -47,15 +47,16 @@ class CmdLineArgsParser(object):
       option.addToParser(parser)
 
     subs = parser.add_subparsers(title="actions", dest="action", 
-      metavar="list|sync|versions-of|restore|list-files|show")
+      metavar="list|schedule|versions-of|restore|list-files|show")
 
     listAction = subs.add_parser("list", aliases=["li"])
     listAction.add_argument("list-type", nargs="?",
         choices=["interpreters", "schedulers", "rules", "all"],
         default="all")
 
-    sync = subs.add_parser("sync")
-    sync.add_argument("rule-patterns", nargs="+", action="store")
+    schedule = subs.add_parser("schedule")
+    schedule.add_argument("rule-patterns", nargs="+", action="store")
+    schedule.add_argument("--dry", action="store_true")
 
     syncUncontrolled = subs.add_parser("sync-uncontrolled")
     syncUncontrolled.add_argument("rule-name", action="store")
