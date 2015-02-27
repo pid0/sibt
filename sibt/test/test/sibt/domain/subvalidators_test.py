@@ -1,10 +1,10 @@
 import os.path
 from sibt.domain.subvalidators import LocExistenceValidator, \
-    LocAbsoluteValidator, LocNotEmptyValidator, NoOverlappingWritesValidator, \
+    LocNotEmptyValidator, NoOverlappingWritesValidator, \
     NoSourceDirOverwriteValidator, SchedulerCheckValidator
 from test.common.validatortest import fix, ValidatorTest
 from test.common.builders import mockRuleSet
-from test.common.assertutil import iterableContainsInAnyOrder
+from test.common.assertutil import iterToTest, strToTest
 
 class Test_SchedulerCheckValidatorTest(ValidatorTest):
   def construct(self):
@@ -16,7 +16,7 @@ class Test_SchedulerCheckValidatorTest(ValidatorTest):
     ruleSet = mockRuleSet([], schedulerErrors=[("sched1", "foo"), 
       ("sched2", "bar")])
 
-    assert iterableContainsInAnyOrder(validator.validate(ruleSet),
+    iterToTest(validator.validate(ruleSet)).shouldIncludeMatching(
         lambda error: "sched1" in error and "reported error" in error and \
             "foo" in error,
         lambda error: "sched2" in error and "bar" in error)
@@ -25,7 +25,7 @@ class Test_LocExistenceValidatorTest(ValidatorTest):
   def construct(self):
     return LocExistenceValidator()
 
-  def test_shouldCheckIfLocsAreFolders(self, fix):
+  def test_shouldRecognizeAsAnErrorIfALocIsAFile(self, fix):
     validator = self.construct()
     aFile = fix.tmpdir.join("file")
     aFile.write("")
@@ -33,25 +33,14 @@ class Test_LocExistenceValidatorTest(ValidatorTest):
         aFile,
         fix.validLocDir())])[0]
 
+  def test_shouldReportErrorIfALocDoesNotExistAsADirectory(self, fix):
+    validator = self.construct()
     ruleName = "rulename"
     errors = validator.validate([fix.validRule(),
         fix.mockRule(fix.validLocDir(), "/does/not/exist", name=ruleName)])
     assert len(errors) == 1
     assert "does not exist" in errors[0]
     assert ruleName in errors[0]
-
-    assert len(validator.validate([fix.mockRule("", fix.validLocDir())])) == 1
-
-class Test_LocAbsoluteValidatorTest(ValidatorTest):
-  def construct(self):
-    return LocAbsoluteValidator()
-
-  def test_shouldReturnErrorsIfALocIsRelativeEvenIfItExists(self, fix):
-    validator = self.construct()
-
-    relativePath = os.path.relpath(str(fix.tmpdir))
-    assert "not absolute" in validator.validate([fix.mockRule(fix.validLocDir(),
-        relativePath)])[0]
 
 class Test_LocNotEmptyValidatorTest(ValidatorTest):
   def construct(self):
@@ -84,7 +73,10 @@ class Test_NoSourceDirOverwriteValidator(ValidatorTest):
   def test_shouldFindAnErrorInAWriteLocThatContainsANonWriteLoc(self, fix):
     validator = self.construct()
 
-    assert "foo within /mnt" in validator.validate([fix.validRule(),
-      fix.mockRule("/mnt/data/foo", "/mnt/data")])[0]
+    strToTest(validator.validate([fix.validRule(), 
+      fix.mockRule("/mnt/data/foo", "/mnt/data")])[0]).shouldIncludeInOrder(
+          "foo", "within",  "/mnt")
 
     assert len(validator.validate([fix.mockRule("/src", "/src")])) > 0
+
+    assert len(validator.validate([fix.mockRule("/", "/mnt/backup")])) == 0

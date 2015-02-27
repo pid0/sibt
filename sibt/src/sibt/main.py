@@ -27,6 +27,7 @@ from sibt.application.exceptions import RuleNameMismatchException, \
     RulePatternsMismatchException
 import functools
 from sibt.application.dryscheduler import DryScheduler
+from sibt.infrastructure.location import LocalLocation
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, moduleLoader):
@@ -101,7 +102,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
       for rule in configRepo.getAllRules():
-        for version in rule.versionsOf(args.options["file"]):
+        for version in rule.versionsOf(locationFromArg(args.options["file"])):
           string = version.strWithUTCW3C if args.options["utc"] else \
               version.strWithLocalW3C
           stringsToVersions[string] = version
@@ -127,11 +128,11 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         version = stringsToVersions[matchingVersions[0]]
 
         if args.action == "restore":
-          version.rule.restore(args.options["file"], version,
-              args.options.get("to", None))
+          version.rule.restore(locationFromArg(args.options["file"]), version,
+              locationFromArg(args.options.get("to", None)))
         if args.action == "list-files":
-          files = version.rule.listFiles(args.options["file"], version, 
-              args.options["recursive"])
+          files = version.rule.listFiles(locationFromArg(args.options["file"]), 
+              version, args.options["recursive"])
           for fileName in files:
             if args.options["null"]:
               stdout.println(fileName, lineSeparator="\0")
@@ -198,6 +199,9 @@ def printValidationErrors(printFunc, ruleSet, errors, printRuleNames):
 
 def wrapScheduler(useDrySchedulers, stdout, sched):
   return DryScheduler(sched, stdout) if useDrySchedulers else sched
+
+def locationFromArg(arg):
+  return LocalLocation(os.path.abspath(arg))
 
 def main():
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 

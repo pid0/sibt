@@ -24,11 +24,19 @@ class InterpreterBuilder(ConfigObjectBuilder):
 
   def _allowingWritesToCalls(self):
     return self.allowing(execmock.call(lambda args: args[0] == "writes-to"))
+  def _allowingOptionsCalls(self):
+    return self.allowing(execmock.call(lambda args: args[0] == 
+      "available-options"))
+  def writingToLoc2(self):
+    return self.allowing(execmock.call(lambda args: args[0] == "writes-to", 
+      ret=["2"]))
   def allowingSetupCallsExceptOptions(self):
     return self._allowingWritesToCalls()
+  def allowingSetupCallsExceptWritesTo(self):
+    return self._allowingOptionsCalls()
   def allowingSetupCalls(self):
-    return self.allowingSetupCallsExceptOptions().allowing(
-        execmock.call(lambda args: args[0] == "available-options"))
+    return self.allowingSetupCallsExceptOptions().\
+        allowingSetupCallsExceptWritesTo()
 
   def expectingListFiles(self, matcher):
     return self.expecting(execmock.call(lambda args: args[0] == "list-files" and

@@ -35,23 +35,58 @@ restore() {
     return
   fi
 
-  declare -a restoreCall=(rdiff-backup --force --restore-as-of $timestamp 
-      "$Loc2"/"$path")
-  if [ "$dest" = "" ]; then
-    "${restoreCall[@]}" "$Loc1"/"$path"
-  else
-    "${restoreCall[@]}" "$dest"
+  srcFileType=$(get-repo-file-type "$path" $timestamp)
+  src="$Loc2"/"$path"
+  srcFileName="$(basename "$src")"
+
+  restoringToSourceTree=0
+  if [ -z "$dest" ]; then
+    restoringToSourceTree=1
+    dest="$Loc1"/"$path"
   fi
+  destFileType=$(get-file-type "$dest" follow-links)
+
+  fileInDest="$dest"/"$srcFileName"
+  fileInDestType=$(get-file-type "$fileInDest")
+
+  if [ $restoringToSourceTree = 0 ]; then
+    if [ $destFileType = non-directory ]; then
+
+      if [ $srcFileType = directory ]; then
+        print-error "source is a directory; destination must be a directory, too"
+        return 1
+      fi
+
+    elif [ $destFileType = directory ]; then
+      dest="$fileInDest"
+
+      if [ $srcFileType = directory ] && \
+          [ $fileInDestType = non-directory ]; then
+        print-error "destination contains non-directory ‘$srcFileName’; "\
+"could not make way for source"
+        return 1
+      fi
+
+      if [ $srcFileType != directory ] && [ $fileInDestType = directory ]; then
+        print-error "destination contains directory ‘$srcFileName’; "\
+"could not make way for source"
+        return 1
+      fi
+
+    fi
+  fi
+
+  rdiff-backup --force --restore-as-of $timestamp "$src" "$dest"
 }
 
-get-file-type() {
+get-repo-file-type() {
   rdiff-backup --parsable-output --list-increments \
       "$Loc2"/"$1" | sed -n -e "/^${2}/p" | cut -d ' ' -f 2
 }
 
 append-slash-if-dir() {
   while read fileName; do
-    fileType=$(get-file-type "$fileName" $1)
+    fileType=$(get-repo-file-type "$fileName" $1)
     echo -n "$fileName"
 
     if [ $fileType = directory ]; then
@@ -79,7 +114,7 @@ list-files() {
     return
   fi
 
-  typeOfFile=$(get-file-type "$path" $timestamp)
+  typeOfFile=$(get-repo-file-type "$path" $timestamp)
   if [ $typeOfFile != directory ]; then
     echo -n "${path##*/}"
     echo -e -n '\0'

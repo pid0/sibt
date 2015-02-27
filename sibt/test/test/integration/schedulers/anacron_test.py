@@ -13,6 +13,7 @@ from test.common.execmock import ExecMock
 from test.common import execmock
 import sys
 from fnmatch import fnmatchcase
+from test.common import relativeToProjectRoot
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -22,7 +23,8 @@ class Fixture(object):
   def init(self, sibtCall=["/where/sibt/is"]):
     loader = PyModuleSchedulerLoader(PyModuleLoader("testpackage"))
     paths = existingPaths(pathsIn(self.tmpdir))
-    self.mod = loader.loadFromFile("sibt/schedulers/anacron", "anacron", 
+    self.mod = loader.loadFromFile(
+        relativeToProjectRoot("sibt/schedulers/anacron"), "anacron", 
         (sibtCall, paths))
     self.anaVarDir = local(paths.varDir) / "anacron"
     self.execs = ExecMock()

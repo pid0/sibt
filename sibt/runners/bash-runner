@@ -35,6 +35,25 @@ sync() {
   return $notImplStatus
 }
 
+
+get-file-type() {
+  local followLinks=${2:-0}
+  if ! [ -e "$1" ]; then
+    echo missing
+    return
+  fi
+
+  if [ -d "$1" ] && ( [ $followLinks = follow-links ] || ! [ -L "$1" ] ); then
+    echo directory
+  else
+    echo non-directory
+  fi
+}
+
+print-error() {
+  echo "$(basename "$fileToRun")"' synchronizer:' "$@" >&2
+}
+
 source "$fileToRun"
 
 setup-variables() {

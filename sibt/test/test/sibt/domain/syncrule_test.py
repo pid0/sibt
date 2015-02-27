@@ -2,6 +2,7 @@ import pytest
 from test.common import mock
 from sibt.domain.syncrule import SyncRule
 from datetime import datetime, timedelta, timezone
+from test.common.builders import location, version
 
 class Fixture(object):
   def ruleWith(self, name="some-rule", mockedInterpreter=None, 
@@ -9,15 +10,19 @@ class Fixture(object):
     if mockedInterpreter is None:
       mockedInterpreter = mock.mock()
       mockedInterpreter.writeLocIndices = []
-    schedOptions["Name"] = "sched"
-    interOptions["Name"] = "inter"
-    interOptions["Foo"] = "bar"
+
+    interOptions = dict(interOptions)
     if "Loc1" not in interOptions:
-      interOptions["Loc1"] = "/mnt"
+      interOptions["Loc1"] = location("/mnt")
     if "Loc2" not in interOptions:
-      interOptions["Loc2"] = "/etc"
+      interOptions["Loc2"] = location("/etc")
     return SyncRule(name, schedOptions, interOptions, False,
         None, mockedInterpreter)
+
+  def mockInter(self):
+    ret = mock.mock()
+    ret.writeLocIndices = [2]
+    return ret
 
 @pytest.fixture
 def fixture():
@@ -35,34 +40,31 @@ def test_shouldBeIdentifiedByItsName(fixture):
   assert hash(rule1) == hash(rule2)
 
 def test_shouldReturnVersionsGotFromInterpreterIfFileIsInALocOption(fixture):
-  inter = mock.mock()
-  inter.writeLocIndices = [2]
-  rule = fixture.ruleWith(mockedInterpreter=inter, 
-      interOptions={"Loc1": "/mnt/data/loc1", "Loc2": "/mnt/backup/loc2"})
+  inter = fixture.mockInter()
+  interOptions = {
+      "Loc1": location("/mnt/data/loc1"), 
+      "Loc2": location("/mnt/backup/loc2")}
+  rule = fixture.ruleWith(mockedInterpreter=inter, interOptions=interOptions)
 
-  ret = [datetime.now(timezone.utc), datetime.now(timezone.utc) + 
-      timedelta(days=1)]
+  ret = [datetime.now(timezone.utc), 
+      datetime.now(timezone.utc) + timedelta(days=1)]
   def check(path, expectedRelativePath, expectedLoc):
     inter.expectCallsInOrder(mock.callMatching("versionsOf", 
         lambda path, locNumber, options: path == expectedRelativePath and 
-        locNumber == expectedLoc and options == rule.interpreterOptions, 
+        locNumber == expectedLoc and options == interOptions,
         ret=ret))
-    versions = rule.versionsOf(path)
-    assert len(versions) == 2
-    assert versions[0].rule == rule
-    assert versions[0].time == ret[0]
-    assert versions[1].time == ret[1]
-    assert versions[1].rule == rule
+    assert set(rule.versionsOf(path)) == { version(rule, ret[0]),
+        version(rule, ret[1]) }
     inter.checkExpectedCalls()
 
-  check("/mnt/data/loc1/blah", "blah", 1)
-  check("/mnt/backup/loc2/one/two/", "one/two", 2)
-  assert len(rule.versionsOf("/mnt/data/quux")) == 0
+  check(location("/mnt/data/loc1/blah"), "blah", 1)
+  check(location("/mnt/backup/loc2/one/two/"), "one/two", 2)
+  assert len(rule.versionsOf(location("/mnt/data/quux"))) == 0
 
 def test_shouldProvideAListOfWriteAndNonWriteLocsWithIndicesGivenByInterpreter(
     fixture):
-  loc1 = "/loc1"
-  loc2 = "/loc2"
+  loc1 = location("/loc1")
+  loc2 = location("/loc2")
 
   def checkWriteLocs(indices, expectedWriteLocs, expectedNonWriteLocs, 
       loc2=loc2):

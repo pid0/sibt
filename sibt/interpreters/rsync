@@ -10,14 +10,15 @@ EOF
 
 run-rsync() {
   local srcPath="$1"
-  if [[ "$srcPath" =~ [^/]$ && -d "$srcPath" ]]; then
+  if [ $3 = 1 ]; then
     srcPath+=/
   fi
-  rsync -a --acls --xattrs --delete "$srcPath" "$2" $AdditionalSyncOpts
+  # use --protect-args
+  rsync -a --acls --xattrs "${@:4:20}" "$srcPath" "$2" $AdditionalSyncOpts
 }
 
 sync() {
-  run-rsync "$Loc1" "$Loc2"
+  run-rsync "$Loc1" "$Loc2" 1 --delete
 }
 
 versions-of() {
@@ -38,12 +39,54 @@ restore() {
   path="$1"
   locNumber="$2"
   dest="$5"
+  restoringToSourceTree=0
+
+  src="$Loc2"/"$path"
+  srcFileType=$(get-file-type "$src")
 
   if [ -z "$dest" ]; then
+    restoringToSourceTree=1
     dest="$Loc1"/"$path"
   fi
+
+  restoringEntireLoc=0
+  if [ -z "$path" ]; then
+    restoringEntireLoc=1
+  fi
+
+  declare -a options=()
+  withSlash=0
+
+  if [ $restoringToSourceTree = 1 ]; then
+
+    options+=(--delete)
+
+    if [ $restoringEntireLoc = 1 ]; then
+      withSlash=1
+    else
+      dest=$(dirname "$dest")
+      withSlash=0
+    fi
+
+  else
+
+    if ! [ -e "$dest" ] && [ $srcFileType = directory ]; then
+      withSlash=1
+    fi
+
+    destFileType=$(get-file-type "$dest" follow-links)
+    if [ $destFileType = directory ] && [ $srcFileType = directory ]; then
+      fileInDest="$dest"/"$(basename "$src")"
+      if [ $(get-file-type "$fileInDest") = non-directory ]; then
+        print-error "destination contains non-directory "\
+"‘$(basename "$src")’, could not make way for source"
+        return 1
+      fi
+    fi
+
+  fi
   
-  run-rsync "$Loc2"/"$path" "$dest"
+  run-rsync "$src" "$dest" $withSlash "${options[@]:+${options[@]}}"
 }
 
 list-files() {

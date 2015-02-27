@@ -62,7 +62,6 @@ class ExpectationGroup(object):
 class Mock(object):
   def __init__(self, name):
     self._expectationGroups = []
-    self.inOrder = True
     self.__name = name
 
   def clearExpectedCalls(self):
@@ -82,14 +81,11 @@ class Mock(object):
     self.expectCalls(*expectedCalls, inAnyOrder=True)
 
   def checkExpectedCalls(self):
-    for group in self._expectationGroups:
-      expectedCalls = group.expectedCalls
-      remainingCalls = [call for call in expectedCalls if 
-          not call.params.anyNumber]
-
-      descriptions = [repr(call) for call in remainingCalls]
-      assert len(remainingCalls) == 0, "{0} expected calls remain: {1}".format(
-          len(remainingCalls), descriptions)
+    remainingCalls = [call for group in self._expectationGroups for call in
+        group.expectedCalls if not call.params.anyNumber]
+    descriptions = [repr(call) for call in remainingCalls]
+    assert len(remainingCalls) == 0, "{0} expected calls remain: {1}".format(
+        len(remainingCalls), descriptions)
 
   def __getattribute__(self, name):
     expectationGroups = object.__getattribute__(self, "_expectationGroups")

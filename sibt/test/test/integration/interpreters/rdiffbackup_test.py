@@ -20,6 +20,9 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
   @property
   def supportsNewlinesInFileNames(self):
     return False
+  @property
+  def supportsRecursiveCopying(self):
+    return False
 
   def test_shouldUseRemoveOlderThanFeatureAfterSyncingIfSpecified(self, 
       fixture):

@@ -5,9 +5,11 @@ from sibt.infrastructure.executablefileruleinterpreter import \
 from sibt.application.configrepo import createHashbangAwareProcessRunner
 from sibt.infrastructure.coprocessrunner import \
     CoprocessRunner
+from test.common import relativeToProjectRoot
 
 def loadInterpreter(absolutePath):
-  processRunner = createHashbangAwareProcessRunner("sibt/runners",
+  processRunner = createHashbangAwareProcessRunner(
+      relativeToProjectRoot("sibt/runners"),
       CoprocessRunner())
   return DefaultValueInterpreter(
       ExecutableFileRuleInterpreter(absolutePath, 

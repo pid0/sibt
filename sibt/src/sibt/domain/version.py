@@ -11,10 +11,11 @@ class Version(CaseClassEqualityHashCode):
     self.ruleName = rule.name
     self.time = time
 
+  @property
   def strWithUTCW3C(self):
     return self.ruleName + "," + self.time.astimezone(
         timezone.utc).strftime(TimeFormat)
-  strWithUTCW3C = property(strWithUTCW3C)
+
+  @property
   def strWithLocalW3C(self):
     return self.ruleName + "," + self.time.astimezone().strftime(TimeFormat)
-  strWithLocalW3C = property(strWithLocalW3C)

@@ -5,7 +5,6 @@ from sibt.domain import subvalidators
 def constructRulesValidator():
   return ValidatorCollectionValidator([
         subvalidators.LocExistenceValidator(),
-        subvalidators.LocAbsoluteValidator(),
         subvalidators.LocNotEmptyValidator(),
         subvalidators.NoOverlappingWritesValidator(),
         subvalidators.NoSourceDirOverwriteValidator(),

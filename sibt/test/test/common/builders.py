@@ -4,6 +4,8 @@ from datetime import datetime, timezone, timedelta
 from random import random
 import os.path
 from test.common import mock
+from sibt.infrastructure.location import LocalLocation
+from sibt.domain.version import Version
 
 def randstring():
   return str(random())[2:] 
@@ -37,6 +39,12 @@ def existingRunner(tmpdir, name):
 def anyUTCDateTime():
   return datetime.now(timezone.utc) - timedelta(days=330)
 
+def location(path="/any"):
+  return LocalLocation(path)
+
+def version(rule, time=anyUTCDateTime()):
+  return Version(rule, time)
+
 def mockRuleSet(rules, schedulerErrors=[]):
   class Ret(object):
     def __iter__(self):
@@ -48,14 +56,14 @@ def mockRuleSet(rules, schedulerErrors=[]):
 
   return ret
 
-def mockRule(name, scheduler=None, loc1="", loc2="", writeLocs=[2]):
+def mockRule(name, scheduler=None, loc1="/tmp/1", loc2="/tmp/2", writeLocs=[2]):
   ret = mock.mock(name)
   ret.name = name
   ret.scheduler = scheduler
   ret.scheduling = object()
-  ret.locs = [str(loc1), str(loc2)]
-  ret.writeLocs = [str(loc1)] if 1 in writeLocs else [] + \
-      [str(loc2)] if 2 in writeLocs else []
-  ret.nonWriteLocs = [str(loc1)] if 1 not in writeLocs else [] + \
-      [str(loc2)] if 2 not in writeLocs else []
+  ret.locs = [location(str(loc1)), location(str(loc2))]
+  ret.writeLocs = [location(str(loc1))] if 1 in writeLocs else [] + \
+      [location(str(loc2))] if 2 in writeLocs else []
+  ret.nonWriteLocs = [location(str(loc1))] if 1 not in writeLocs else [] + \
+      [location(str(loc2))] if 2 not in writeLocs else []
   return ret

@@ -14,11 +14,6 @@ def fixture(tmpdir):
   return Fixture(tmpdir)
 
 class Test_RsyncTest(MirrorInterpreterTest):
-  def rewriteLoc1PathForMirrorTest(self, path):
-    if path.endswith("/"):
-      return path[:-1]
-    return path
-
   def test_shouldSimplyUseTheFilesModificationTimeAsVersion(self, fixture):
     someFile = fixture.loc1.join("file")
     someFile.write("")
@@ -50,13 +45,12 @@ class Test_RsyncTest(MirrorInterpreterTest):
     loc1Folder = fixture.loc1.mkdir("net")
     loc2Folder = fixture.loc2.mkdir("net")
     loc2File = loc2Folder.join(fileName)
-    loc2File.write("")
+
+    loc2File.write("bar")
     fixture.changeMTime(loc2File, 20)
 
     fixture.inter.restore("net", 1, anyUTCDateTime(), None, fixture.optsWith({
         "AdditionalSyncOpts": "--no-t"}))
     assert os.stat(str(loc1Folder / fileName)).st_mtime != 20
+    assert (loc1Folder / fileName).read() == "bar"
 
-    fixture.inter.restore("net/" + fileName, 1, anyUTCDateTime(), 
-        str(fixture.tmpdir), fixture.optsWith({}))
-    assert os.stat(str(fixture.tmpdir / fileName)).st_mtime == 20

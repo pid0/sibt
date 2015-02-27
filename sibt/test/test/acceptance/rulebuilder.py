@@ -52,11 +52,11 @@ class RuleBuilder(ConfigObjectBuilder):
 
   def write(self):
     format = self.kwParams.get("content", RuleFormat)
-    fileContents = format if "{sched}" not in format else format.format(
+    fileContents = format.format(
         loc1=self.loc1,
         loc2=self.loc2,
-        sched=self.kwParams["schedulerName"],
-        inter=self.kwParams["interpreterName"],
+        sched=self.kwParams.get("schedulerName", ""),
+        inter=self.kwParams.get("interpreterName", ""),
         schedOpts=iniFileFormatted(self.kwParams.get("schedOpts", dict())),
         interOpts=iniFileFormatted(self.kwParams.get("interOpts", dict())))
 

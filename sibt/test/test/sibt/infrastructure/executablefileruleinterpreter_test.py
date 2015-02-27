@@ -12,6 +12,7 @@ from sibt.infrastructure.externalfailureexception import \
     ExternalFailureException
 from datetime import datetime, timezone
 from functools import partial
+from test.common.builders import anyUTCDateTime, location
 
 EpochPlus93Sec = datetime(1970, 1, 1, 0, 1, 33, tzinfo=timezone.utc)
 EpochPlus93SecW3C = "1970-01-01T00:01:33+00:00"
@@ -97,24 +98,28 @@ def test_shouldCallRestoreWithAW3CDateAndAUnixTimestamp(fixture):
   inter, execs = fixture.createWithExecutable()
 
   path = "path/to/file"
-  expectedArgs = ("restore", path, "1", EpochPlus93SecW3C, "93")
+  expectedArgs = ("restore", path, "1", EpochPlus93SecW3C, "93", "")
   time = EpochPlus93Sec
 
-  options = {"Foo": "Bar"}
-  optionArg = "Foo=Bar"
+  execs.expect(fixture.interpreterPath, execmock.call(
+      lambda args: args[0:6] == expectedArgs and args[6] == "Foo=Bar", []))
 
-  def expectRestoreCall(expectedDestination):
-    execs.expect(fixture.interpreterPath, execmock.call(
-        lambda args: args[0:5] == expectedArgs and 
-        args[5] == expectedDestination and 
-        args[6] == optionArg, ""))
-
-  expectRestoreCall("")
-  inter.restore(path, 1, time, None, options)
+  inter.restore(path, 1, time, None, {"Foo": "Bar"})
   execs.check()
 
-  expectRestoreCall("the-dest")
-  inter.restore(path, 1, time, "the-dest", options)
+def test_shouldConvertLocationsToNormalizedPlainStrings(fixture):
+  inter, execs = fixture.createWithExecutable()
+
+  options = {
+      "SomePlace": location("/home//foo/"),
+      "Loc1": location("/tmp")}
+
+  execs.expect(fixture.interpreterPath, execmock.call(
+      lambda args: args[5] == "/media/foo" and
+        "SomePlace=/home/foo" in args and 
+        "Loc1=/tmp" in args, []))
+
+  inter.restore("/foo/", 1, anyUTCDateTime(), location("/media/foo/"), options)
   execs.check()
 
 def test_shouldReturnIterableOfFilesSplitAtNullWhenAskedForListing(fixture):

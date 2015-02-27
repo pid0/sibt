@@ -6,7 +6,7 @@ class ConfigConsistencyException(Exception):
     self.file = file
 
   def __str__(self):
-    return "{0} ‘{1}’ ({2}) inconsistent: {3}".format(self.unitType,
+    return "{0} ‘{1}’ (‘{2}’) inconsistent: {3}".format(self.unitType,
         self.unitName, self.file, self.message)
 
 class ConfigSyntaxException(Exception):
@@ -16,5 +16,5 @@ class ConfigSyntaxException(Exception):
     self.file = file
 
   def __str__(self):
-    return "syntax error in configuration of a {0} ({1}): {2}".format(
+    return "syntax error in configuration of a {0} (‘{1}’): {2}".format(
         self.unitType, self.file, self.message)

@@ -55,5 +55,5 @@ if [[ $1 = versions-of && $2 = {0} && $4 =~ ^Loc.*= ]]; then
 fi""".format(forRelativeFile, bashEchoLines(ifWithinLoc1), 
   bashEchoLines(ifWithinLoc2)))
 
-  def ruleWithEmptyLocs(self, name):
-    return self.ruleWithSchedAndInter(name).withLoc1("").withLoc2("")
+  def ruleWithNonExistentLocs(self, name):
+    return self.ruleWithSchedAndInter(name).withLoc1("/abc").withLoc2("/efg")

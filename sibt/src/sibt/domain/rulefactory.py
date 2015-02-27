@@ -1,5 +1,7 @@
 from sibt.domain.syncrule import SyncRule
+from sibt.domain.exceptions import LocationInvalidException
 from sibt.configuration.exceptions import ConfigConsistencyException
+from sibt.infrastructure.location import LocalLocation
 
 def makeException(ruleName, message):
   return ConfigConsistencyException("rule", ruleName, message)
@@ -26,8 +28,9 @@ class RuleFactory(object):
     self._throwIfUnsupported(interpreter, interpreterOptions, 
         ["Loc1", "Loc2"], "interpreter", name)
 
-    return SyncRule(name, schedulerOptions, interpreterOptions, enabled, 
-        scheduler, interpreter)
+    return SyncRule(name, schedulerOptions, 
+        self._wrapLocs(name, interpreterOptions), enabled, scheduler, 
+        interpreter)
 
   def _throwIfOptionsNotPresent(self, options, expectedOptions, 
       minimumOptsDescription, ruleName):
@@ -38,6 +41,15 @@ class RuleFactory(object):
     return "Name" in options
   def _interpreterMinimumMet(self, interpreter, options):
     return "Name" in options and "Loc1" in options and "Loc2" in options
+
+  def _wrapLocs(self, ruleName, interOpts):
+    ret = dict(interOpts)
+    try:
+      for loc in ["Loc1", "Loc2"]:
+        ret[loc] = LocalLocation(ret[loc])
+    except LocationInvalidException as ex:
+      raise makeException(ruleName, str(ex))
+    return ret
 
   def _unsupportedOptions(self, configurable, options, predefinedOptions):
     supported = configurable.availableOptions + predefinedOptions

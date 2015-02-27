@@ -26,10 +26,10 @@ class ExecutableFileRuleInterpreter(object):
       str(locNumber), *self._keyValueEncode(options)))
     return [self._parseTime(time) for time in times]
 
-  def restore(self, path, locNumber, version, dest, options):
+  def restore(self, path, locNumber, version, destLocation, options):
     w3c, timestamp = self._encodeTime(version)
     self._execute("restore", path, str(locNumber), w3c, 
-        str(timestamp), dest or "", *self._keyValueEncode(options))
+        str(timestamp), str(destLocation or ""), *self._keyValueEncode(options))
 
   def listFiles(self, path, locNumber, version, recursively, options):
     w3c, timestamp = self._encodeTime(version)
