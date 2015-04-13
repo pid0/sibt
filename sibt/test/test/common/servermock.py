@@ -36,7 +36,3 @@ class ServerMock(object):
   def __exit__(self, exceptionType, ex, traceback):
     self.closing = True
     self.thread.join()
-
-  def println(self, x):
-    self.newFile.write(x + os.linesep)
-

@@ -11,7 +11,7 @@ shift 1
 action="$1"
 shift 1
 
-writes-to() {
+info-of-port() {
   return $notImplStatus
 }
 
@@ -71,6 +71,6 @@ case $action in
   versions-of) setup-variables "${@:3:$#}"; versions-of "$@";;
   restore) setup-variables "${@:6:$#}"; restore "$@";;
   list-files) setup-variables "${@:6:$#}"; list-files "$@";;
-  writes-to) writes-to;;
+  info-of-port) info-of-port "$@";;
 esac
 

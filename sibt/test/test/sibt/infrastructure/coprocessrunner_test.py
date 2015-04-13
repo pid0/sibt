@@ -1,8 +1,7 @@
 import pytest
 from sibt.infrastructure.coprocessrunner import \
     CoprocessRunner
-from sibt.infrastructure.externalfailureexception import \
-    ExternalFailureException
+from sibt.infrastructure.exceptions import ExternalFailureException
 
 class Fixture(object):
   def __init__(self, tmpdir):

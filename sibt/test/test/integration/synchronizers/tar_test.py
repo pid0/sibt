@@ -1,11 +1,11 @@
 import pytest
-from test.integration.interpreters.interpretertest import \
-    InterpreterTestFixture, IncrementalInterpreterTest
+from test.integration.synchronizers.synchronizertest import \
+    SynchronizerTestFixture, IncrementalSynchronizerTest
 import tarfile
 from test.common.assertutil import iterableContainsInAnyOrder
 import os
 
-class Fixture(InterpreterTestFixture):
+class Fixture(SynchronizerTestFixture):
   def __init__(self, tmpdir):
     self.load("tar", tmpdir)
 
@@ -26,17 +26,17 @@ def archiveFileHasContents(archivePath, name, expectedContents):
 class Test_TarTest(object):
   def test_shouldKeepAsManyArchivesAsSpecifiedAndCycleThroughThem(self, 
       fixture):
-    assert "KeepCopies" in fixture.inter.availableOptions
+    assert "KeepCopies" in fixture.syncer.availableOptions
 
     options = fixture.optsWith({ "KeepCopies": "3" })
 
     fixture.loc1.join(".file").write("foo")
     for _ in range(4):
-      fixture.inter.sync(options)
+      fixture.syncer.sync(options)
 
     carrollQuote = "in a wonderland they lie"
     fixture.loc1.join("carroll").write(carrollQuote)
-    fixture.inter.sync(options)
+    fixture.syncer.sync(options)
 
     assert archiveContains(fixture.loc2 / "ar0",
         lambda info: info.name == ".file")
@@ -51,7 +51,7 @@ class Test_TarTest(object):
     assert archiveFileHasContents(fixture.loc2 / "ar1", "carroll", carrollQuote)
 
   def test_shouldTellThatItWritesToLoc2(self, fixture):
-    assert fixture.inter.writeLocIndices == [2]
+    assert fixture.syncer.ports[1].isWrittenTo 
 
 
 

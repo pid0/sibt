@@ -8,11 +8,11 @@ class EachOwnLineConfigPrinter(object):
     for obj in objects:
       self.output.println(obj.name)
 
-  def printInterpreters(self, interpreters):
-    self._printNames(interpreters)
+  def printSynchronizers(self, synchronizers):
+    self._printNames(synchronizers)
 
-  def printSchedulers(self, interpreters):
-    self._printNames(interpreters)
+  def printSchedulers(self, synchronizers):
+    self._printNames(synchronizers)
 
   def _printRules(self, rules, areSysRules):
     for rule in rules:

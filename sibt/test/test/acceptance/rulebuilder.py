@@ -3,10 +3,10 @@ from py.path import local
 
 RuleFormat = """
     [Interpreter]
-    Name = {inter}
+    Name = {syncer}
     Loc1={loc1}
     Loc2={loc2}
-    {interOpts}
+    {syncerOpts}
 
     [Scheduler]
     Name={sched}
@@ -26,12 +26,12 @@ class RuleBuilder(ConfigObjectBuilder):
     (folder / "file").write("")
     return str(folder)
 
-  def withInterpreter(self, inter):
-    return self._withParams(interpreterName=inter.name)
+  def withSynchronizer(self, syncer):
+    return self._withParams(synchronizerName=syncer.name)
   def withScheduler(self, sched):
     return self._withParams(schedulerName=sched.name)
-  def withInterpreterName(self, interName):
-    return self._withParams(interpreterName=interName)
+  def withSynchronizerName(self, syncerName):
+    return self._withParams(synchronizerName=syncerName)
   def withSchedulerName(self, schedName):
     return self._withParams(schedulerName=schedName)
 
@@ -39,6 +39,14 @@ class RuleBuilder(ConfigObjectBuilder):
     return self._withParams(loc1=loc1)
   def withLoc2(self, loc2):
     return self._withParams(loc2=loc2)
+  def withLoc3(self, loc3):
+    newOpts = dict(self.syncerOpts)
+    newOpts["Loc3"] = loc3
+    return self.withSyncerOpts(**newOpts)
+  def withLoc4(self, loc4):
+    newOpts = dict(self.syncerOpts)
+    newOpts["Loc4"] = loc4
+    return self.withSyncerOpts(**newOpts)
 
   def enabled(self):
     return self._withParams(linkWithOwnName=True)
@@ -47,8 +55,8 @@ class RuleBuilder(ConfigObjectBuilder):
 
   def withSchedOpts(self, **newOpts):
     return self._withParams(schedOpts=newOpts)
-  def withInterOpts(self, **newOpts):
-    return self._withParams(interOpts=newOpts)
+  def withSyncerOpts(self, **newOpts):
+    return self._withParams(syncerOpts=newOpts)
 
   def write(self):
     format = self.kwParams.get("content", RuleFormat)
@@ -56,9 +64,9 @@ class RuleBuilder(ConfigObjectBuilder):
         loc1=self.loc1,
         loc2=self.loc2,
         sched=self.kwParams.get("schedulerName", ""),
-        inter=self.kwParams.get("interpreterName", ""),
-        schedOpts=iniFileFormatted(self.kwParams.get("schedOpts", dict())),
-        interOpts=iniFileFormatted(self.kwParams.get("interOpts", dict())))
+        syncer=self.kwParams.get("synchronizerName", ""),
+        schedOpts=iniFileFormatted(self.schedOpts),
+        syncerOpts=iniFileFormatted(self.syncerOpts))
 
     self.ruleFilePath.write(fileContents)
 
@@ -83,6 +91,12 @@ class RuleBuilder(ConfigObjectBuilder):
     if "loc2" not in self.kwParams:
       self.kwParams["loc2"] = self._validLoc()
     return self.kwParams["loc2"]
+  @property
+  def schedOpts(self):
+    return self.kwParams.get("schedOpts", dict())
+  @property
+  def syncerOpts(self):
+    return self.kwParams.get("syncerOpts", dict())
   @property
   def ruleFilePath(self):
     return local(self.configuredPaths.rulesDir).join(self.name)

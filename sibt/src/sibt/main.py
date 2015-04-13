@@ -11,23 +11,22 @@ from sibt.infrastructure.userbasepaths import UserBasePaths
 from sibt.application.eachownlineconfigprinter import EachOwnLineConfigPrinter
 from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException
-from sibt.infrastructure.externalfailureexception import \
-    ExternalFailureException
-from sibt.infrastructure.interpreterfuncnotimplementedexception import \
-    InterpreterFuncNotImplementedException
+from sibt.infrastructure.exceptions import ExternalFailureException, \
+    SynchronizerFuncNotImplementedException
 from sibt.application.cmdlineargsparser import CmdLineArgsParser
 from sibt.application.configrepo import ConfigRepo
 import sys
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from sibt.domain import subvalidators
 from sibt.application.prefixingerrorlogger import PrefixingErrorLogger
-from sibt.domain.exceptions import ValidationException
+from sibt.domain.exceptions import ValidationException, \
+    UnsupportedProtocolException
 from sibt.application.rulesfinder import RulesFinder
 from sibt.application.exceptions import RuleNameMismatchException, \
     RulePatternsMismatchException
 import functools
 from sibt.application.dryscheduler import DryScheduler
-from sibt.infrastructure.location import LocalLocation
+from sibt.configuration.optionvaluesparser import parseLocation
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, moduleLoader):
@@ -97,7 +96,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     elif args.action == "list":
       listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
           args.options["list-type"], configRepo.userRules.getAll(), 
-          configRepo.sysRules.getAll(), configRepo.interpreters, 
+          configRepo.sysRules.getAll(), configRepo.synchronizers, 
           configRepo.schedulers)
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
@@ -140,8 +139,9 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
               stdout.println(fileName.replace("\n", r"\n"), lineSeparator="\n")
 
     return 0
-  except (ExternalFailureException, InterpreterFuncNotImplementedException,
-      RuleNameMismatchException, RulePatternsMismatchException) as ex:
+  except (ExternalFailureException, SynchronizerFuncNotImplementedException,
+      RuleNameMismatchException, RulePatternsMismatchException,
+      UnsupportedProtocolException) as ex:
     printKnownException(ex, errorLogger)
     return 1
 
@@ -151,10 +151,10 @@ def printKnownException(ex, errorLogger, baseVerbosity=0,
   errorLogger.log("cause: {0}", str(ex.__cause__), verbosity=baseVerbosity + (
     0 if causeIsEssential else 1))
 
-def listConfiguration(printer, output, listType, rules, sysRules, interpreters, 
-    schedulers):
-  if listType == "interpreters":
-    printer.printInterpreters(interpreters)
+def listConfiguration(printer, output, listType, rules, sysRules, 
+    synchronizers, schedulers):
+  if listType == "synchronizers":
+    printer.printSynchronizers(synchronizers)
   elif listType == "schedulers":
     printer.printSchedulers(schedulers)
   elif listType == "rules":
@@ -164,8 +164,8 @@ def listConfiguration(printer, output, listType, rules, sysRules, interpreters,
     output.println("schedulers:")
     printer.printSchedulers(schedulers)
     output.println("")
-    output.println("interpreters:")
-    printer.printInterpreters(interpreters)
+    output.println("synchronizers:")
+    printer.printSynchronizers(synchronizers)
     output.println("")
     output.println("rules:")
     printer.printSysRules(sysRules)
@@ -201,7 +201,8 @@ def wrapScheduler(useDrySchedulers, stdout, sched):
   return DryScheduler(sched, stdout) if useDrySchedulers else sched
 
 def locationFromArg(arg):
-  return LocalLocation(os.path.abspath(arg))
+  return parseLocation(os.path.abspath(arg) + 
+      ("/" if arg.endswith("/") else ""))
 
 def main():
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 

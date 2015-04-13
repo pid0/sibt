@@ -51,7 +51,7 @@ class CmdLineArgsParser(object):
 
     listAction = subs.add_parser("list", aliases=["li"])
     listAction.add_argument("list-type", nargs="?",
-        choices=["interpreters", "schedulers", "rules", "all"],
+        choices=["synchronizers", "schedulers", "rules", "all"],
         default="all")
 
     schedule = subs.add_parser("schedule")

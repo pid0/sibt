@@ -3,11 +3,10 @@ import time
 import pytest
 from test.common.assertutil import iterToTest, strToTest
 import os
-from test.integration.interpreters import loadInterpreter
-from sibt.infrastructure.externalfailureexception import \
-    ExternalFailureException
-import re
+from test.integration.synchronizers import loadSynchronizer
+from sibt.infrastructure.exceptions import ExternalFailureException
 from test.common import relativeToProjectRoot
+from test.common.builders import writeFileTree
 
 def makeNonEmptyDir(container, name, innerFileName="file"):
   ret = container.mkdir(name)
@@ -15,10 +14,10 @@ def makeNonEmptyDir(container, name, innerFileName="file"):
   return ret
 
 
-class InterpreterTestFixture(object):
-  def load(self, interpreterName, tmpdir):
-    path = relativeToProjectRoot("sibt/interpreters/" + interpreterName)
-    self.inter = loadInterpreter(path)
+class SynchronizerTestFixture(object):
+  def load(self, synchronizerName, tmpdir):
+    path = relativeToProjectRoot("sibt/synchronizers/" + synchronizerName)
+    self.syncer = loadSynchronizer(path)
 
     self.loc1 = tmpdir.mkdir("Loc1")
     self.loc2 = tmpdir.mkdir("Loc2")
@@ -32,17 +31,17 @@ class InterpreterTestFixture(object):
 
   def restorePort1File(self, fileName, version, dest, additionalOptions=dict()):
     options = self.optsWith(additionalOptions)
-    self.inter.restore(fileName, 1, version, 
+    self.syncer.restore(fileName, 1, version, 
         None if dest is None else str(dest), options)
 
   def versionsOf(self, fileName, portNumber, additionalOptions=dict()):
-    return self.inter.versionsOf(fileName, portNumber, 
+    return self.syncer.versionsOf(fileName, portNumber, 
         self.optsWith(additionalOptions))
 
   def changeMTime(self, path, newModiticationTime):
     os.utime(str(path), (0, newModiticationTime))
 
-class InterpreterTest(object):
+class SynchronizerTest(object):
   @property
   def minimumDelayBetweenTestsInS(self):
     return 0
@@ -60,57 +59,22 @@ class InterpreterTest(object):
 
   def getSingleVersion(self, fixture, additionalOptions=dict()):
     options = fixture.optsWith(additionalOptions)
-    fixture.inter.sync(options)
-    versions = fixture.inter.versionsOf(".", 1, options)
+    fixture.syncer.sync(options)
+    versions = fixture.syncer.versionsOf(".", 1, options)
     assert len(versions) == 1
     return versions[0]
 
-  def writeFileTree(self, folder, fileList):
-    createdFileList = []
-
-    def doWriteFileTree(folder, fileList, createdFileList):
-      def assignIndex(createdFileList, index, createdFile):
-        createdFileList.extend((index - (len(createdFileList) - 1)) * [None])
-        createdFileList[index] = createdFile
-
-      def makeFile(isFolder, folder, fileDesc):
-        nameAndIndex = re.search(r"^(.*)( \[(\d+)\])$", fileDesc)
-        fileName = nameAndIndex.group(1) if nameAndIndex else fileDesc
-        if isFolder:
-          ret = folder.mkdir(fileName) if fileName != "." else folder
-        elif " -> " in fileName:
-          symlinkName, symlinkDest = fileName.split(" -> ")
-          ret = folder.join(symlinkName)
-          ret.mksymlinkto(symlinkDest)
-        else:
-          ret = folder.join(fileName)
-          ret.write("")
-
-        if nameAndIndex:
-          assignIndex(createdFileList, int(nameAndIndex.group(3)) - 1, ret)
-        return ret
-
-      newFolder = makeFile(True, folder, fileList[0])
-      for subFile in fileList[1:]:
-        if isinstance(subFile, list):
-          doWriteFileTree(newFolder, subFile, createdFileList)
-        else:
-          makeFile(False, newFolder, subFile)
-
-    doWriteFileTree(folder, fileList, createdFileList)
-    return createdFileList
-
   def setUpTestTreeSyncAndDeleteIt(self, fixture, fileName1, options):
-    self.writeFileTree(fixture.loc1,
+    writeFileTree(fixture.loc1,
         ["[folder],",
           fileName1,
           ".file2",
           ["sub",
             "file3 -> /home"]])
 
-    fixture.inter.sync(options)
+    fixture.syncer.sync(options)
     fixture.loc1.join("[folder],").remove()
-    return fixture.inter.versionsOf("[folder],", 1, options)[0]
+    return fixture.syncer.versionsOf("[folder],", 1, options)[0]
 
   def test_shouldBeAbleToListDirsInLoc1AsTheyWereInThePastWithoutRecursion(
       self, fixture):
@@ -119,18 +83,18 @@ class InterpreterTest(object):
     version = self.setUpTestTreeSyncAndDeleteIt(fixture, 
         self.fileNameWithNewline, options)
 
-    iterToTest(fixture.inter.listFiles(
+    iterToTest(fixture.syncer.listFiles(
       "[folder],", 1, version, False, options)).shouldContainInAnyOrder(
         self.fileNameWithNewline, ".file2", "sub/")
 
-    assert list(fixture.inter.listFiles("[folder],/" + 
+    assert list(fixture.syncer.listFiles("[folder],/" + 
       self.fileNameWithNewline, 1, version, False, options)) == \
           [self.fileNameWithNewline]
 
-    assert list(fixture.inter.listFiles(".", 1, version, False, options)) == \
+    assert list(fixture.syncer.listFiles(".", 1, version, False, options)) == \
         ["[folder],/"]
 
-    assert list(fixture.inter.listFiles(".", 2, version, False, options)) == []
+    assert list(fixture.syncer.listFiles(".", 2, version, False, options)) == []
 
   def test_shouldBeAbleToGiveARecursiveFileListing(self, fixture):
     options = fixture.optsWith(dict())
@@ -140,7 +104,7 @@ class InterpreterTest(object):
 
     recursively = True
 
-    iterToTest(fixture.inter.listFiles(".", 1, version, 
+    iterToTest(fixture.syncer.listFiles(".", 1, version, 
       recursively, options)).shouldContainInAnyOrder(
         "[folder],/",
         "[folder],/" + self.fileNameWithNewline,
@@ -148,14 +112,14 @@ class InterpreterTest(object):
         "[folder],/sub/",
         "[folder],/sub/file3")
 
-    iterToTest(fixture.inter.listFiles("[folder],", 1, 
+    iterToTest(fixture.syncer.listFiles("[folder],", 1, 
       version, recursively, options)).shouldContainInAnyOrder(
         self.fileNameWithNewline,
         ".file2",
         "sub/",
         "sub/file3")
 
-    assert list(fixture.inter.listFiles("[folder],/sub/file3", 1,
+    assert list(fixture.syncer.listFiles("[folder],/sub/file3", 1,
       version, recursively, options)) == ["file3"]
 
   def runFileRestoreTest(self, fixture, mTime, testFileName, testFunc):
@@ -306,7 +270,7 @@ class InterpreterTest(object):
 
     self.runFoldersRestoreTest(fixture, 423, testFolderName, test)
 
-class MirrorInterpreterTest(InterpreterTest):
+class MirrorSynchronizerTest(SynchronizerTest):
   def test_shouldMirrorLoc1InRepoAtLoc2WhenToldToSync(self, fixture):
     content = "... the raven “Nevermore.”"
     fixture.loc1.join("poe").write(content)
@@ -317,32 +281,32 @@ class MirrorInterpreterTest(InterpreterTest):
 
     toBeRemoved = folder.join("to-be-removed")
     toBeRemoved.write("")
-    fixture.inter.sync(options)
+    fixture.syncer.sync(options)
 
     time.sleep(self.minimumDelayBetweenTestsInS)
     toBeRemoved.remove()
-    fixture.inter.sync(options)
+    fixture.syncer.sync(options)
 
     assert os.listdir(str(fixture.loc2 / "folder")) == ["file"]
     assert fixture.loc2.join("poe").read() == content
 
-class IncrementalInterpreterTest(InterpreterTest):
+class IncrementalSynchronizerTest(SynchronizerTest):
   def getOlderVersionFromTwoSyncs(self, fixture, doBetweenSyncs=lambda: None,
       additionalOptions=dict()):
     options = fixture.optsWith(additionalOptions)
 
-    fixture.inter.sync(options)
+    fixture.syncer.sync(options)
     time.sleep(self.minimumDelayBetweenTestsInS)
 
     doBetweenSyncs()
-    fixture.inter.sync(options)
+    fixture.syncer.sync(options)
 
-    versions = fixture.inter.versionsOf(".", 1, options)
+    versions = fixture.syncer.versionsOf(".", 1, options)
 
     return sorted(versions)[0]
 
   def test_shouldUseTheIncrementsAsVersions(self, fixture):
-    topFile, folder, fileCreatedLater = self.writeFileTree(fixture.loc1,
+    topFile, folder, fileCreatedLater = writeFileTree(fixture.loc1,
         [".",
           "top [1]",
           ["poe [2]",

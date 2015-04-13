@@ -11,7 +11,7 @@ NumberOfPositionalArgs = { "availableOptions": 0,
     "versionsOf": 2,
     "restore": 5,
     "listFiles": 5,
-    "writesTo": 0 }
+    "infoOfPort": 1 }
 
 def parseKeyValuePairs(pairs):
   def parsePair(string):
@@ -44,7 +44,7 @@ def printOutput(lines):
     print(line)
 
 if __name__ == "__main__":
-  loader = PyModuleLoader("interpreternamespace")
+  loader = PyModuleLoader("synchronizersnamespace")
   mod = loader.loadFromFile(sys.argv[1], os.path.basename(sys.argv[1]))
 
   action = transformActionName(sys.argv[2])

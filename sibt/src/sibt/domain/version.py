@@ -19,3 +19,6 @@ class Version(CaseClassEqualityHashCode):
   @property
   def strWithLocalW3C(self):
     return self.ruleName + "," + self.time.astimezone().strftime(TimeFormat)
+
+  def __repr__(self):
+    return "Version{0}".format((self.rule, self.time.strftime(TimeFormat)))

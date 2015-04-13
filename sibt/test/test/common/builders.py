@@ -4,8 +4,10 @@ from datetime import datetime, timezone, timedelta
 from random import random
 import os.path
 from test.common import mock
-from sibt.infrastructure.location import LocalLocation
+from sibt.infrastructure.location import LocalLocation, RemoteLocation
 from sibt.domain.version import Version
+import re
+from sibt.domain.port import Port
 
 def randstring():
   return str(random())[2:] 
@@ -39,8 +41,27 @@ def existingRunner(tmpdir, name):
 def anyUTCDateTime():
   return datetime.now(timezone.utc) - timedelta(days=330)
 
+def port(supportedProtocols=["file"], isWrittenTo=False):
+  return Port(supportedProtocols, isWrittenTo)
+
 def location(path="/any"):
+  return localLocation(path)
+def localLocation(path="/any"):
   return LocalLocation(path)
+def remoteLocation(protocol="rsync", login="", host="host", port="", 
+    path="/"):
+  return RemoteLocation(protocol, login, host, port, path)
+
+def fakeConfigurable(*args, **kwargs):
+  return mockSyncer(*args, **kwargs)
+def mockSyncer(name="foo", availableOptions=[],
+    ports=[port(["file"], isWrittenTo=False), 
+      port(["file"], isWrittenTo=True)]):
+  ret = mock.mock(name)
+  ret.name = name
+  ret.availableOptions = list(availableOptions)
+  ret.ports = ports
+  return ret
 
 def version(rule, time=anyUTCDateTime()):
   return Version(rule, time)
@@ -67,3 +88,39 @@ def mockRule(name, scheduler=None, loc1="/tmp/1", loc2="/tmp/2", writeLocs=[2]):
   ret.nonWriteLocs = [location(str(loc1))] if 1 not in writeLocs else [] + \
       [location(str(loc2))] if 2 not in writeLocs else []
   return ret
+
+def writeFileTree(folder, fileList):
+  createdFileList = []
+
+  def doWriteFileTree(folder, fileList, createdFileList):
+    def assignIndex(createdFileList, index, createdFile):
+      createdFileList.extend((index - (len(createdFileList) - 1)) * [None])
+      createdFileList[index] = createdFile
+
+    def makeFile(isFolder, folder, fileDesc):
+      nameAndIndex = re.search(r"^(.*)( \[(\d+)\])$", fileDesc)
+      fileName = nameAndIndex.group(1) if nameAndIndex else fileDesc
+      if isFolder:
+        ret = folder.mkdir(fileName) if fileName != "." else folder
+      elif " -> " in fileName:
+        symlinkName, symlinkDest = fileName.split(" -> ")
+        ret = folder.join(symlinkName)
+        ret.mksymlinkto(symlinkDest)
+      else:
+        ret = folder.join(fileName)
+        ret.write("")
+
+      if nameAndIndex:
+        assignIndex(createdFileList, int(nameAndIndex.group(3)) - 1, ret)
+      return ret
+
+    newFolder = makeFile(True, folder, fileList[0])
+    for subFile in fileList[1:]:
+      if isinstance(subFile, list):
+        doWriteFileTree(newFolder, subFile, createdFileList)
+      else:
+        makeFile(False, newFolder, subFile)
+
+  doWriteFileTree(folder, fileList, createdFileList)
+  return createdFileList
+

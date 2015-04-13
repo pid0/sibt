@@ -10,8 +10,8 @@ class Paths(object):
   def rulesDir(self):
     return os.path.join(self.configDir, "rules")
   @property
-  def interpretersDir(self):
-    return os.path.join(self.configDir, "interpreters")
+  def synchronizersDir(self):
+    return os.path.join(self.configDir, "synchronizers")
   @property
   def schedulersDir(self):
     return os.path.join(self.configDir, "schedulers")
@@ -22,8 +22,8 @@ class Paths(object):
   def readonlySchedulersDir(self):
     return os.path.join(self.readonlyDir, "schedulers")
   @property
-  def readonlyInterpretersDir(self):
-    return os.path.join(self.readonlyDir, "interpreters")
+  def readonlySynchronizersDir(self):
+    return os.path.join(self.readonlyDir, "synchronizers")
   @property
   def runnersDir(self):
     return os.path.join(self.readonlyDir, "runners")

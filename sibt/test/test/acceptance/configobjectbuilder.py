@@ -24,7 +24,7 @@ class ConfigObjectBuilder(object):
 
   def withName(self, newName):
     return self.newBasic(self.paths, self.sysPaths, self.foldersWriter, 
-        newName, self.kwParams)
+        newName, dict(self.kwParams))
 
   def asSysConfig(self, isSysConfig=True):
     return self._withParams(isSysConfig=isSysConfig)

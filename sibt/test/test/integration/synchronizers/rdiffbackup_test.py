@@ -1,11 +1,11 @@
 import time
 import pytest
-from test.common.assertutil import iterableContainsInAnyOrder
+from test.common.assertutil import iterToTest
 import os
-from test.integration.interpreters.interpretertest import \
-    InterpreterTestFixture, MirrorInterpreterTest, IncrementalInterpreterTest
+from test.integration.synchronizers.synchronizertest import \
+    SynchronizerTestFixture, MirrorSynchronizerTest, IncrementalSynchronizerTest
 
-class Fixture(InterpreterTestFixture):
+class Fixture(SynchronizerTestFixture):
   def __init__(self, tmpdir):
     self.load("rdiff-backup", tmpdir)
 
@@ -13,7 +13,7 @@ class Fixture(InterpreterTestFixture):
 def fixture(tmpdir):
   return Fixture(tmpdir)
 
-class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
+class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest):
   @property
   def minimumDelayBetweenTestsInS(self):
     return 1
@@ -26,8 +26,8 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
 
   def test_shouldUseRemoveOlderThanFeatureAfterSyncingIfSpecified(self, 
       fixture):
-    assert "RemoveOlderThan" in fixture.inter.availableOptions
-    assert "AdditionalSyncOpts" in fixture.inter.availableOptions
+    assert "RemoveOlderThan" in fixture.syncer.availableOptions
+    assert "AdditionalSyncOpts" in fixture.syncer.availableOptions
 
     def withTime(unixTime, andAlso=dict()):
       in2037 = oneDay * 366 * 67
@@ -41,14 +41,14 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
     oneDay = 86400
 
     firstFile.write("")
-    fixture.inter.sync(withTime(0))
+    fixture.syncer.sync(withTime(0))
     firstFile.remove()
 
     secondFile.write("")
-    fixture.inter.sync(withTime(1 * oneDay))
+    fixture.syncer.sync(withTime(1 * oneDay))
 
     thirdFile.write("")
-    fixture.inter.sync(withTime(2 * oneDay + 1, 
+    fixture.syncer.sync(withTime(2 * oneDay + 1, 
         andAlso={"RemoveOlderThan": "2D"}))
 
     files = os.listdir(str(fixture.loc2)) 
@@ -56,7 +56,9 @@ class Test_RdiffBackupTest(MirrorInterpreterTest, IncrementalInterpreterTest):
     assert "second" in files
     assert "third" in files
 
-  def test_shouldReturn2IfAskedForTheLocationsItWritesTo(self, fixture):
-    assert fixture.inter.writeLocIndices == [2]
+  def test_shouldAcknowledgeWritingToPort2(self, fixture):
+    iterToTest(fixture.syncer.ports).shouldContainMatching(
+        lambda port: port.isWrittenTo == False,
+        lambda port: port.isWrittenTo == True)
 
 

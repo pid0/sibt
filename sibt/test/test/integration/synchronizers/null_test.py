@@ -1,9 +1,9 @@
 import pytest
 from datetime import datetime
-from test.integration.interpreters.interpretertest import \
-    InterpreterTestFixture 
+from test.integration.synchronizers.synchronizertest import \
+    SynchronizerTestFixture 
 
-class Fixture(InterpreterTestFixture):
+class Fixture(SynchronizerTestFixture):
   def __init__(self, tmpdir):
     self.load("null", tmpdir)
 
@@ -12,7 +12,7 @@ def fixture(tmpdir):
   return Fixture(tmpdir)
 
 def test_shouldOutputTheCurrentDateWhenToldToSync(fixture, capfd):
-  fixture.inter.sync(fixture.optsWith({}))
+  fixture.syncer.sync(fixture.optsWith({}))
   stdout, _ = capfd.readouterr()
 
   assert str(datetime.today().year) in stdout

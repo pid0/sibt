@@ -2,6 +2,7 @@ import pytest
 from sibt.configuration.exceptions import ConfigConsistencyException
 from sibt.domain.rulefactory import RuleFactory
 from test.common import mock
+from test.common.builders import fakeConfigurable, port
 
 class Fixture(object):
   def __init__(self):
@@ -19,65 +20,56 @@ def outRaises():
       pass
   return Ret()
 
-def fakeConfigurable(name, availableOptions=[]):
-  ret = lambda x:x
-  ret.name = name
-  ret.writeLocIndices = []
-  ret.availableOptions = list(availableOptions)
-  return ret
-
-def withLocOptions(options):
-  ret = dict(options)
-  ret["Loc1"] = "/some-place"
-  ret["Loc2"] = "/some-other-place"
-  return ret
-
-def test_shouldThrowExceptionIfInterpreterOrSchedulerDoesNotExist(fixture):
+def test_shouldThrowExceptionIfSynchronizerOrSchedulerDoesNotExist(fixture):
   existingScheduler = fakeConfigurable("the-sched")
-  existingInterpreter = fakeConfigurable("the-inter")
+  existingSynchronizer = fakeConfigurable("the-syncer", ports=[])
 
-  factory = RuleFactory([existingScheduler], [existingInterpreter])
+  factory = RuleFactory([existingScheduler], [existingSynchronizer])
   with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {"Name": "no"}, 
-        withLocOptions({"Name": "the-inter"}), False)
+    factory.build("name", {"Name": "no"}, {"Name": "the-syncer"}, False)
   with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {"Name": "the-sched"}, 
-        withLocOptions({"Name": "no"}), False)
+    factory.build("name", {"Name": "the-sched"}, {"Name": "no"}, False)
 
   with outRaises():
-    factory.build("works", {"Name": "the-sched"}, 
-        withLocOptions({"Name": "the-inter"}), False)
+    factory.build("works", {"Name": "the-sched"}, {"Name": "the-syncer"}, False)
 
 def test_shouldThrowExceptionIfAnOptionIsNotSupported(fixture):
   scheduler = fakeConfigurable("sched", availableOptions=["sched-supported"])
-  interpreter = fakeConfigurable("inter", availableOptions=["inter-supported"])
+  synchronizer = fakeConfigurable("syncer", ports=[],
+      availableOptions=["syncer-supported"])
 
-  factory = RuleFactory([scheduler], [interpreter])
+  factory = RuleFactory([scheduler], [synchronizer])
 
-  def callBuild(schedulerOptions, interpreterOptions):
+  def callBuild(schedulerOptions, synchronizerOptions):
     schedulerOptions["Name"] = "sched"
-    interpreterOptions["Name"] = "inter"
-    factory.build("rule", schedulerOptions, withLocOptions(interpreterOptions), 
-        True)
+    synchronizerOptions["Name"] = "syncer"
+    factory.build("rule", schedulerOptions, synchronizerOptions, True)
 
   with pytest.raises(ConfigConsistencyException):
     callBuild({"sched-supported": 1}, {"not": 1})
   with pytest.raises(ConfigConsistencyException):
-    callBuild({"not": 1}, {"inter-supported": 1})
+    callBuild({"not": 1}, {"syncer-supported": 1})
 
   with outRaises():
-    callBuild({"sched-supported": 1}, {"inter-supported": 1})
+    callBuild({"sched-supported": 1}, {"syncer-supported": 1})
 
-def test_shouldThrowExceptionIfMinimumOptionsSuchAsLoc1OrLoc2AreNotPresent(
-    fixture):
+#TODO Name is not an option when rulefactory gets passed real syncer/scheds
+#TODO locations must be true locations
+def test_shouldTreatLocsCorrespondingToPortsAndNameAsMinimumOptions(fixture):
   scheduler = fakeConfigurable("scheduler")
-  interpreter = fakeConfigurable("interpreter")
+  synchronizer = fakeConfigurable("synchronizer",
+      ports=[port(), port(), port(), port()])
 
-  factory = RuleFactory([scheduler], [interpreter])
+  factory = RuleFactory([scheduler], [synchronizer])
   with pytest.raises(ConfigConsistencyException):
-    factory.build("rule name", {"Name": "scheduler"}, {"Name": "interpreter",
-        "Loc1": "/some-place"}, True)
+    factory.build("rule name", {"Name": "scheduler"}, {"Name": "synchronizer",
+      "Loc1": "/some-place", "Loc2": "/foo", "Loc3": "/bar"}, True)
 
   with pytest.raises(ConfigConsistencyException):
-    factory.build("rule", {}, {"Name": "interpreter",
-        "Loc1": "/some-place", "Loc2": "/place"}, True)
+    factory.build("rule", {}, {"Name": "synchronizer",
+      "Loc1": "/some-place", "Loc2": "/place", "Loc3": "/bar"}, True)
+
+  with outRaises():
+    factory.build("rule", {"Name": "scheduler"}, {"Name": "synchronizer",
+      "Loc1": "/some-place", "Loc2": "/place", "Loc3": "/bar",
+      "Loc4": "/fourth"}, True)

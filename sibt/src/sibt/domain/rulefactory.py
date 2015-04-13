@@ -1,59 +1,59 @@
 from sibt.domain.syncrule import SyncRule
 from sibt.domain.exceptions import LocationInvalidException
 from sibt.configuration.exceptions import ConfigConsistencyException
-from sibt.infrastructure.location import LocalLocation
+from sibt.configuration.optionvaluesparser import parseLocation
 
 def makeException(ruleName, message):
   return ConfigConsistencyException("rule", ruleName, message)
 
 class RuleFactory(object):
-  def __init__(self, schedulers, interpreters):
+  def __init__(self, schedulers, synchronizers):
     self.schedulers = schedulers
-    self.interpreters = interpreters
+    self.synchronizers = synchronizers
 
-  def build(self, name, schedulerOptions, interpreterOptions, enabled):
+  def build(self, name, schedulerOptions, synchronizerOptions, enabled):
     self._throwIfOptionsNotPresent(schedulerOptions, ["Name"], "scheduler", 
         name)
-    self._throwIfOptionsNotPresent(interpreterOptions, 
-        ["Name", "Loc1", "Loc2"], "interpreter (Loc1, Loc2, Name)", name)
+    self._throwIfOptionsNotPresent(synchronizerOptions, 
+        ["Name"], "synchronizer", name)
 
     scheduler = self._findName(self.schedulers, schedulerOptions["Name"], 
         "scheduler", name)
-    interpreter = self._findName(self.interpreters, interpreterOptions["Name"], 
-        "interpreter", name)
+    synchronizer = self._findName(self.synchronizers, 
+        synchronizerOptions["Name"], "synchronizer", name)
     del schedulerOptions["Name"]
-    del interpreterOptions["Name"]
+    del synchronizerOptions["Name"]
+
+    locOptions = self._locOptionsCorrespondingToPorts(synchronizer.ports)
+    self._throwIfOptionsNotPresent(synchronizerOptions, locOptions, 
+        "synchronizer", name)
 
     self._throwIfUnsupported(scheduler, schedulerOptions, [], "scheduler", name)
-    self._throwIfUnsupported(interpreter, interpreterOptions, 
-        ["Loc1", "Loc2"], "interpreter", name)
+    self._throwIfUnsupported(synchronizer, synchronizerOptions, 
+        locOptions, "synchronizer", name)
 
     return SyncRule(name, schedulerOptions, 
-        self._wrapLocs(name, interpreterOptions), enabled, scheduler, 
-        interpreter)
+        self._wrapLocs(name, locOptions, synchronizerOptions), 
+        enabled, scheduler, synchronizer)
 
   def _throwIfOptionsNotPresent(self, options, expectedOptions, 
-      minimumOptsDescription, ruleName):
+      unitName, ruleName):
     if not all(option in options for option in expectedOptions):
-      raise makeException(ruleName, "does not have minimum options for {0}".
-          format(minimumOptsDescription))
-  def _schedulerMinimumMet(self, interpreter, options):
-    return "Name" in options
-  def _interpreterMinimumMet(self, interpreter, options):
-    return "Name" in options and "Loc1" in options and "Loc2" in options
+      raise makeException(ruleName, 
+          "does not have minimum options for {0} ({1})".format(
+            unitName, ",".join(expectedOptions)))
 
-  def _wrapLocs(self, ruleName, interOpts):
-    ret = dict(interOpts)
+  def _locOptionsCorrespondingToPorts(self, ports):
+    return ["Loc" + str(i + 1) for i in range(len(ports))]
+
+  def _wrapLocs(self, ruleName, locOptionNames, syncerOpts):
+    ret = dict(syncerOpts)
     try:
-      for loc in ["Loc1", "Loc2"]:
-        ret[loc] = LocalLocation(ret[loc])
+      for loc in locOptionNames:
+        ret[loc] = parseLocation(ret[loc])
     except LocationInvalidException as ex:
       raise makeException(ruleName, str(ex))
     return ret
-
-  def _unsupportedOptions(self, configurable, options, predefinedOptions):
-    supported = configurable.availableOptions + predefinedOptions
-    return [key for key in options.keys() if key not in supported]
 
   def _throwIfUnsupported(self, configurable, options, predefinedOptions, 
       description, ruleName):
@@ -62,6 +62,10 @@ class RuleFactory(object):
     if len(unsupportedOptions) > 0:
       raise makeException(ruleName, "unsupported {0} options: {1}".format(
           description, ", ".join(unsupportedOptions)))
+
+  def _unsupportedOptions(self, configurable, options, predefinedOptions):
+    supported = configurable.availableOptions + predefinedOptions
+    return [key for key in options.keys() if key not in supported]
 
   def _findName(self, objects, expectedName, searchDescription, ruleName):
     matching = [obj for obj in objects if obj.name == expectedName]

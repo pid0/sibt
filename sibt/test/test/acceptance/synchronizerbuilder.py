@@ -2,7 +2,7 @@ from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 from test.common import execmock
 
-class InterpreterBuilder(ConfigObjectBuilder):
+class SynchronizerBuilder(ConfigObjectBuilder):
   def __init__(self, paths, sysPaths, foldersWriter, name, 
       execChecker, kwParams):
     super().__init__(paths, sysPaths, foldersWriter, name, kwParams)
@@ -13,8 +13,9 @@ class InterpreterBuilder(ConfigObjectBuilder):
   def withCode(self, code):
     return self.withContent(code)
   def withTestOptionsCode(self):
-    return self.withBashCode("""echo KeepCopies
-      echo AddFlags""")
+    return self.withBashCode("""if [ $1 = available-options ]; then 
+      echo KeepCopies
+      echo AddFlags; else exit 200; fi""")
 
   def expecting(self, *execExpectations):
     return self._withParams(expectations=self.expectations + 
@@ -22,21 +23,26 @@ class InterpreterBuilder(ConfigObjectBuilder):
   def allowing(self, *calls):
     return self._withParams(allowances=self.allowances + list(calls))
 
-  def _allowingWritesToCalls(self):
-    return self.allowing(execmock.call(lambda args: args[0] == "writes-to"))
+  def _allowingPortCalls(self):
+    return self.allowing(execmock.call(lambda args: args[0] == "info-of-port",
+      returningNotImplementedStatus=True))
   def _allowingOptionsCalls(self):
     return self.allowing(execmock.call(lambda args: args[0] == 
-      "available-options"))
+      "available-options", returningNotImplementedStatus=True))
   def writingToLoc2(self):
-    return self.allowing(execmock.call(lambda args: args[0] == "writes-to", 
-      ret=["2"]))
+    return self.allowing(execmock.call(lambda args: 
+      args[0] == "info-of-port" and args[1] == "1", ret=["0", "file"])).\
+      allowing(execmock.call(lambda args: 
+      args[0] == "info-of-port" and args[1] == "2", ret=["1", "file"])).\
+      allowing(execmock.call(lambda args: 
+      args[0] == "info-of-port" and int(args[1]) > 2, ret=[]))
   def allowingSetupCallsExceptOptions(self):
-    return self._allowingWritesToCalls()
-  def allowingSetupCallsExceptWritesTo(self):
+    return self._allowingPortCalls()
+  def allowingSetupCallsExceptPorts(self):
     return self._allowingOptionsCalls()
   def allowingSetupCalls(self):
-    return self.allowingSetupCallsExceptOptions().\
-        allowingSetupCallsExceptWritesTo()
+    return self._allowingPortCalls().\
+        _allowingOptionsCalls()
 
   def expectingListFiles(self, matcher):
     return self.expecting(execmock.call(lambda args: args[0] == "list-files" and
@@ -52,17 +58,17 @@ class InterpreterBuilder(ConfigObjectBuilder):
     return self
 
   def write(self, toReadonlyDir=False):
-    path = local(self.configuredPaths.readonlyInterpretersDir).join(
+    path = local(self.configuredPaths.readonlySynchronizersDir).join(
         self.name) if toReadonlyDir else self.path
 
     path.write(self.kwParams.get(
-      "content", "#!/usr/bin/env bash\necho foo"))
+      "content", "#!/usr/bin/env bash\necho foo\nexit 200"))
     path.chmod(0o700)
     self.reMakeExpectations()
     return self
 
   def newBasic(self, paths, sysPaths, foldersWriter, name, kwParams):
-    return InterpreterBuilder(paths, sysPaths, foldersWriter, name,
+    return SynchronizerBuilder(paths, sysPaths, foldersWriter, name,
         self.execChecker, kwParams)
 
   @property
@@ -73,4 +79,4 @@ class InterpreterBuilder(ConfigObjectBuilder):
     return self.kwParams.get("allowances", [])
   @property
   def path(self):
-    return local(self.configuredPaths.interpretersDir).join(self.name)
+    return local(self.configuredPaths.synchronizersDir).join(self.name)

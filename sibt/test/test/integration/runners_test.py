@@ -1,50 +1,52 @@
 import pytest
-from test.integration.interpreters import loadInterpreter
-from sibt.infrastructure.interpreterfuncnotimplementedexception \
-    import InterpreterFuncNotImplementedException
-from sibt.infrastructure.externalfailureexception \
-    import ExternalFailureException
+from test.integration.synchronizers import loadSynchronizer
+from sibt.infrastructure.exceptions import ExternalFailureException, \
+    SynchronizerFuncNotImplementedException
 from test.common.builders import anyUTCDateTime
+from test.common.assertutil import iterToTest
 
 class Fixture(object):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
-    self.interpreterCounter = 0
+    self.synchronizerCounter = 0
 
-  def loadInterpreterWithCode(self, code):
-    path = self.tmpdir.join("inter-" + str(self.interpreterCounter))
+  def loadSynchronizerWithCode(self, code):
+    path = self.tmpdir.join("syncer-" + str(self.synchronizerCounter))
     path.write(code)
     path.chmod(0o700)
-    return loadInterpreter(str(path))
+    return loadSynchronizer(str(path))
 
 @pytest.fixture
 def fixture(tmpdir):
   return Fixture(tmpdir)
 
 class RunnerTest(object):
-  def loadInterpreterWithCode(self, code, fixture):
-    return fixture.loadInterpreterWithCode(
+  def loadSynchronizerWithCode(self, code, fixture):
+    return fixture.loadSynchronizerWithCode(
         "#!{0}\n".format(self.runnerName) + code)
 
   def assertFailureWithSyncCode(self, code, fixture):
-    inter = self.loadInterpreterWithCode(code, fixture)
+    syncer = self.loadSynchronizerWithCode(code, fixture)
     with pytest.raises(ExternalFailureException) as ex:
-      inter.sync(dict())
+      syncer.sync(dict())
     return ex.value
 
   def test_shouldNotFailForFunctionsThatHaveAReasonableDefault(self, fixture):
-    inter = self.loadInterpreterWithCode("", fixture)
-    assert inter.availableOptions == []
-    assert inter.writeLocIndices == [2]
-    assert inter.versionsOf("/mnt/data/bar", 1, dict()) == []
+    syncer = self.loadSynchronizerWithCode("", fixture)
+    assert syncer.availableOptions == []
+    iterToTest(syncer.ports).shouldContainMatching(
+        lambda port: port.supportedProtocols == ["file"] and \
+            not port.isWrittenTo,
+        lambda port: port.supportedProtocols == ["file"] and port.isWrittenTo)
+    assert syncer.versionsOf("/mnt/data/bar", 1, dict()) == []
 
   def test_shouldThrowExceptionForNonTrivialNotImplementedFunctions(self, 
       fixture):
-    inter = self.loadInterpreterWithCode("", fixture)
-    with pytest.raises(InterpreterFuncNotImplementedException):
-      inter.listFiles("/tmp/file", 1, anyUTCDateTime(), False, dict())
-    with pytest.raises(InterpreterFuncNotImplementedException):
-      inter.sync(dict())
+    syncer = self.loadSynchronizerWithCode("", fixture)
+    with pytest.raises(SynchronizerFuncNotImplementedException):
+      syncer.listFiles("/tmp/file", 1, anyUTCDateTime(), False, dict())
+    with pytest.raises(SynchronizerFuncNotImplementedException):
+      syncer.sync(dict())
 
   def test_shouldFailIndicatingCorrectExitStatusIfSomeSubcommandFails(self,
       fixture):

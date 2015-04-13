@@ -1,5 +1,4 @@
 import os.path
-from sibt.infrastructure.pathhelper import isPathWithinPath
 
 def formatLoc(loc):
   return "‘{0}’".format(loc)
@@ -46,7 +45,7 @@ class NoOverlappingWritesValidator(Validator):
           continue
         for writeLoc1 in rule.writeLocs:
           for writeLoc2 in rule2.writeLocs:
-            if isPathWithinPath(str(writeLoc1), str(writeLoc2)):
+            if writeLoc2.contains(writeLoc1):
               return [self.errMsg(formatLoc(writeLoc1) + ", " + 
                 formatLoc(writeLoc2) + ": overlapping writes", rule, rule2)]
 
@@ -57,7 +56,7 @@ class NoSourceDirOverwriteValidator(Validator):
     for rule in ruleSet:
       for nonWriteLoc in rule.nonWriteLocs:
         for writeLoc in rule.writeLocs:
-          if isPathWithinPath(str(nonWriteLoc), str(writeLoc)):
+          if writeLoc.contains(nonWriteLoc):
             return [self.errMsg(formatLoc(nonWriteLoc) + 
               " is within " + formatLoc(writeLoc), rule)]
 

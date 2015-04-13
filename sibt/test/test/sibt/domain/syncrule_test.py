@@ -2,27 +2,23 @@ import pytest
 from test.common import mock
 from sibt.domain.syncrule import SyncRule
 from datetime import datetime, timedelta, timezone
-from test.common.builders import location, version
+from test.common.builders import remoteLocation, location, version, port, \
+  mockSyncer
+from sibt.domain.exceptions import UnsupportedProtocolException
 
 class Fixture(object):
-  def ruleWith(self, name="some-rule", mockedInterpreter=None, 
-      schedOptions={}, interOptions={}):
-    if mockedInterpreter is None:
-      mockedInterpreter = mock.mock()
-      mockedInterpreter.writeLocIndices = []
+  def ruleWith(self, name="some-rule", mockedSynchronizer=None, 
+      schedOptions={}, syncerOptions={}):
+    if mockedSynchronizer is None:
+      mockedSynchronizer = mockSyncer()
 
-    interOptions = dict(interOptions)
-    if "Loc1" not in interOptions:
-      interOptions["Loc1"] = location("/mnt")
-    if "Loc2" not in interOptions:
-      interOptions["Loc2"] = location("/etc")
-    return SyncRule(name, schedOptions, interOptions, False,
-        None, mockedInterpreter)
-
-  def mockInter(self):
-    ret = mock.mock()
-    ret.writeLocIndices = [2]
-    return ret
+    syncerOptions = dict(syncerOptions)
+    if "Loc1" not in syncerOptions:
+      syncerOptions["Loc1"] = location("/mnt")
+    if "Loc2" not in syncerOptions:
+      syncerOptions["Loc2"] = location("/etc")
+    return SyncRule(name, schedOptions, syncerOptions, False,
+        None, mockedSynchronizer)
 
 @pytest.fixture
 def fixture():
@@ -39,45 +35,65 @@ def test_shouldBeIdentifiedByItsName(fixture):
 
   assert hash(rule1) == hash(rule2)
 
-def test_shouldReturnVersionsGotFromInterpreterIfFileIsInALocOption(fixture):
-  inter = fixture.mockInter()
-  interOptions = {
+def test_shouldReturnVersionsGotFromSynchronizerIfFileIsWithinAPort(fixture):
+  syncer = mockSyncer(ports=[port(), port(), port()])
+  syncerOptions = {
       "Loc1": location("/mnt/data/loc1"), 
-      "Loc2": location("/mnt/backup/loc2")}
-  rule = fixture.ruleWith(mockedInterpreter=inter, interOptions=interOptions)
+      "Loc2": location("/mnt/backup/loc2"),
+      "Loc3": location("/mnt/foo/loc3") }
+  rule = fixture.ruleWith(mockedSynchronizer=syncer, 
+      syncerOptions=syncerOptions)
 
   ret = [datetime.now(timezone.utc), 
       datetime.now(timezone.utc) + timedelta(days=1)]
   def check(path, expectedRelativePath, expectedLoc):
-    inter.expectCallsInOrder(mock.callMatching("versionsOf", 
+    syncer.expectCalls(mock.callMatching("versionsOf", 
         lambda path, locNumber, options: path == expectedRelativePath and 
-        locNumber == expectedLoc and options == interOptions,
+        locNumber == expectedLoc and options == syncerOptions,
         ret=ret))
     assert set(rule.versionsOf(path)) == { version(rule, ret[0]),
         version(rule, ret[1]) }
-    inter.checkExpectedCalls()
+    syncer.checkExpectedCalls()
 
   check(location("/mnt/data/loc1/blah"), "blah", 1)
   check(location("/mnt/backup/loc2/one/two/"), "one/two", 2)
+  check(location("/mnt/foo/loc3/bar/../"), ".", 3)
   assert len(rule.versionsOf(location("/mnt/data/quux"))) == 0
 
-def test_shouldProvideAListOfWriteAndNonWriteLocsWithIndicesGivenByInterpreter(
+def test_shouldDistinguishLocOptionsCorrespondingToPortsThatAreWrittenTo(
     fixture):
   loc1 = location("/loc1")
   loc2 = location("/loc2")
 
-  def checkWriteLocs(indices, expectedWriteLocs, expectedNonWriteLocs, 
+  def checkWriteLocs(writtenToFlags, expectedWriteLocs, expectedNonWriteLocs, 
       loc2=loc2):
-    inter = lambda x:x
-    inter.writeLocIndices = indices
+    syncer = mockSyncer()
+    syncer.ports = [port(isWrittenTo=flag) for flag in writtenToFlags]
 
-    rule = fixture.ruleWith(mockedInterpreter=inter, interOptions={"Loc1": loc1,
-        "Loc2": loc2})
+    rule = fixture.ruleWith(mockedSynchronizer=syncer, 
+        syncerOptions={"Loc1": loc1, "Loc2": loc2})
 
     assert set(rule.writeLocs) == set(expectedWriteLocs)
     assert set(rule.nonWriteLocs) == set(expectedNonWriteLocs)
 
-  checkWriteLocs([1], [loc1], [loc2])
-  checkWriteLocs([2], [loc1], [loc1], loc2=loc1)
-  checkWriteLocs([1, 2], [loc1, loc2], [])
+  checkWriteLocs([True, False], [loc1], [loc2])
+  checkWriteLocs([False, True], [loc1], [loc1], loc2=loc1)
+  checkWriteLocs([True, True], [loc1, loc2], [])
+
+def test_shouldThrowAnExceptionIfLocOptionsHaveProtocolsNotSupportedBySyncer(
+    fixture):
+  syncer = mockSyncer()
+  syncer.ports = [port(["a", "b"]), port(["c"])]
+
+  fixture.ruleWith(mockedSynchronizer=syncer, 
+      syncerOptions={ "Loc1": remoteLocation(protocol="b"),
+        "Loc2": remoteLocation(protocol="c") })
+
+  with pytest.raises(UnsupportedProtocolException) as ex:
+    fixture.ruleWith(mockedSynchronizer=syncer, 
+        syncerOptions={ "Loc1": remoteLocation(protocol="b"),
+          "Loc2": remoteLocation(protocol="d") })
+  assert ex.value.optionName == "Loc2"
+  assert ex.value.protocol == "d"
+  assert ex.value.supportedProtocols == ["c"]
 

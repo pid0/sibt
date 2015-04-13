@@ -193,7 +193,7 @@ def test_shouldSupportSysloggingSibtOutput(fixture):
 
   syslog = syslogMock.receivedBytes.decode("utf-8")
 
-  assert "sibt: " in syslog
+  assert "sibt" in syslog
   assert message1 in syslog
   assert message2 in syslog
   assert message1 in logFile.read()

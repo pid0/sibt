@@ -1,34 +1,28 @@
 from test.common import mock
-
-class OutputIterator(object):
-  def __init__(self, lines):
-    self.lines = lines
-    self.counter = -1
-
-  @property
-  def finished(self):
-    return self.counter >= len(self.lines)
-  def __iter__(self):
-    return self
-  def __next__(self):
-    self.counter += 1
-    if self.finished:
-      raise StopIteration()
-    return self.lines[self.counter]
+from sibt.infrastructure.exceptions import ExternalFailureException
 
 def call(*args, **kwargs):
   return (args, kwargs)
 
+def matcherThrowingNotImplementedFailure(predicate):
+  def ret(program, args, delimiter="\n"):
+    if predicate(program, args, delimiter):
+      raise ExternalFailureException("", (), 200)
+    return False
+  return ret
+
 def makeMockCall(program, predicateOrTuple, ret=[], delimiter="\n", 
-    **otherKwargs):
+    returningNotImplementedStatus=False, **otherKwargs):
   expectedDelimiter = delimiter
   matcher = (lambda calledProgram, args, delimiter="\n": 
       calledProgram == program and
       (predicateOrTuple(args) if callable(predicateOrTuple) else 
         args == predicateOrTuple) and delimiter == expectedDelimiter) 
 
-  return mock.callMatching("getOutput", matcher, ret=ret,
-      **otherKwargs)
+  return mock.callMatching("getOutput", 
+      matcherThrowingNotImplementedFailure(matcher) if \
+          returningNotImplementedStatus else matcher, 
+          ret=ret, **otherKwargs)
 
 def withAnyNumberIsTrue(kwargs):
   ret = dict(kwargs)
@@ -39,15 +33,9 @@ class ExecMock(object):
   def __init__(self):
     self.reset()
 
-  def _asIterator(self, output):
-    ret = OutputIterator(output)
-    self.iterators.append(ret)
-    return ret
-
   def reset(self):
     self.mockedExec = mock.mock()
-    self.iterators = []
-    self.ignoring = False
+    self.returningNotImplementedStatuses = False
 
   def expect(self, program, *calls, anyOrder=False):
     self.mockedExec.expectCalls(*[makeMockCall(program, *call[0], **call[1]) 
@@ -59,14 +47,9 @@ class ExecMock(object):
   def execute(self, program, *arguments):
     self.getOutput(program, *arguments)
   def getOutput(self, program, *arguments, delimiter="\n"):
-    if self.ignoring:
-      return []
-    return self._asIterator(self.mockedExec.getOutput(
-      program, arguments, delimiter=delimiter))
+    if self.returningNotImplementedStatuses:
+      raise ExternalFailureException("", (), 200)
+    return self.mockedExec.getOutput(program, arguments, delimiter=delimiter)
 
-  def check(self, callsMustHaveFinished=False):
+  def check(self):
     self.mockedExec.checkExpectedCalls()
-    if callsMustHaveFinished:
-      for iterator in self.iterators:
-        assert iterator.finished, "unfinished call with output {0}".format(
-            iterator.lines)

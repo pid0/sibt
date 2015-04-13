@@ -5,6 +5,9 @@ class FakeException(Exception):
   def __init__(self, *args):
     super().__init__(*args)
 
+def dictIncludes(dictToTest, expectedItems):
+  return all(dictToTest[key] == value for key, value in expectedItems.items())
+
 def iterToTest(iterable):
   return TestIterable(iterable)
 def strToTest(string):
@@ -17,6 +20,13 @@ class TestIterable(object):
 
   def shouldContainMatchingInAnyOrder(self, *predicates):
     assert iterableContainsInAnyOrder(self.iterable, *predicates)
+    return self
+  def shouldContainMatching(self, *predicates):
+    predicateList = list(predicates)
+    items = list(self.iterable)
+    assert len(items) == len(predicateList)
+    for i in range(len(items)):
+      assert predicateList[i](items[i])
     return self
   def shouldContainInAnyOrder(self, *items):
     assert iterableContainsInAnyOrder(self.iterable, *map(equalsPred, items))

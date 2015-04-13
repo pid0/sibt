@@ -15,7 +15,7 @@ class ConfigFoldersWriter(object):
     self.testDirNumber += 1
     return self.tmpdir.mkdir("loc-" + str(self.testDirNumber))
 
-  def validInterpreterLoc(self, name):
+  def validSynchronizerLoc(self, name):
     ret = self.tmpdir.join(name)
     if not os.path.isdir(str(ret)):
       os.makedirs(str(ret))
@@ -26,7 +26,7 @@ class ConfigFoldersWriter(object):
     self.sysPaths = existingPaths(self.sysPaths)
   def createReadonlyFolders(self):
     for folder in [self.paths.readonlySchedulersDir, 
-        self.paths.readonlyInterpretersDir]:
+        self.paths.readonlySynchronizersDir]:
       os.makedirs(folder)
 
   def deleteConfigAndVarFolders(self):

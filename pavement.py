@@ -82,7 +82,12 @@ def integration_test():
 @needs(["setup_testing"])
 @consume_args
 def test_only(args):
-  runPyTest([str(PreviousCwd / arg) for arg in args])
+  testFiles = [str(PreviousCwd / arg) for arg in args]
+  if args[0] == "--pdb":
+    import pdb
+    pdb.runcall(runPyTest, testFiles[1:])
+  else:
+    runPyTest(testFiles)
 
 @task
 @consume_args

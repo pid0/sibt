@@ -1,25 +1,32 @@
 from sibt.domain.scheduling import Scheduling
-from sibt.infrastructure.pathhelper import removeCommonPrefix, isPathWithinPath
 from sibt.domain.version import Version
-
-LocKeys = ["Loc1", "Loc2"]
+from sibt.domain.exceptions import UnsupportedProtocolException
 
 class SyncRule(object):
-  def __init__(self, name, schedulerOptions, interpreterOptions, enabled, 
-      scheduler, interpreter):
+  def __init__(self, name, schedulerOptions, synchronizerOptions, enabled, 
+      scheduler, synchronizer):
     self.name = name
     self.schedulerOptions = schedulerOptions
     self.enabled = enabled
     self.scheduler = scheduler
-    self.interpreter = interpreter
+    self.synchronizer = synchronizer
+    self.ports = synchronizer.ports
 
-    self.locs = [interpreterOptions[key] for key in LocKeys]
-    self.interpreterOptions = interpreterOptions
+    locKeys = ["Loc" + str(i + 1) for i in range(len(self.ports))]
+    self.locs = [synchronizerOptions[key] for key in locKeys]
 
-    writeLocIndices = list(interpreter.writeLocIndices)
-    self.writeLocs = [self._loc(i) for i in writeLocIndices]
-    self.nonWriteLocs = [self._loc(i) for i in range(1, 3) if i not in 
-        writeLocIndices]
+    for i in range(len(self.locs)):
+      if not self.ports[i].canBeAssignedLocation(self.locs[i]):
+        raise UnsupportedProtocolException(name,
+            "Loc" + str(i + 1), self.locs[i].protocol,
+            self.ports[i].supportedProtocols)
+
+    self.writeLocs = [loc for loc, port in zip(self.locs, self.ports) if \
+        port.isWrittenTo]
+    self.nonWriteLocs = [loc for loc, port in zip(self.locs, self.ports) if \
+        not port.isWrittenTo]
+
+    self.synchronizerOptions = synchronizerOptions
 
   def _loc(self, index):
     return self.locs[index - 1]
@@ -29,38 +36,39 @@ class SyncRule(object):
     return Scheduling(self.name, self.schedulerOptions)
 
   def sync(self):
-    self.interpreter.sync(self.interpreterOptions)
+    self.synchronizer.sync(self.synchronizerOptions)
 
   def versionsOf(self, location):
     locNumber = self._getLocNumber(location)
     if locNumber is None:
       return []
     return [Version(self, time) for time in 
-        self.interpreter.versionsOf(
-            removeCommonPrefix(str(location), str(self._loc(locNumber))), 
-            locNumber, self.interpreterOptions)]
+        self.synchronizer.versionsOf(
+          self._loc(locNumber).relativePathTo(location), 
+          locNumber, self.synchronizerOptions)]
 
   def restore(self, location, version, destinationLocation):
     locNumber = self._getLocNumber(location)
-    self.interpreter.restore(removeCommonPrefix(
-      str(location), str(self._loc(locNumber))),
+    self.synchronizer.restore(self._loc(locNumber).relativePathTo(location), 
         locNumber, version.time, str(destinationLocation), 
-        self.interpreterOptions)
+        self.synchronizerOptions)
 
   def listFiles(self, location, version, recursively):
     locNumber = self._getLocNumber(location)
-    return self.interpreter.listFiles(
-        removeCommonPrefix(str(location), str(self._loc(locNumber))),
-        locNumber, version.time, recursively, self.interpreterOptions)
+    return self.synchronizer.listFiles(
+        self._loc(locNumber).relativePathTo(location), 
+        locNumber, version.time, recursively, self.synchronizerOptions)
 
   def _getLocNumber(self, path):
-    return 1 if isPathWithinPath(str(path), str(self._loc(1))) else 2 if \
-        isPathWithinPath(str(path), str(self._loc(2))) else None
+    for i in range(1, len(self.ports) + 1):
+      if self._loc(i).contains(path):
+        return i
+    return None
 
   def __repr__(self):
     return "SyncRule{0}".format((self.name, self.schedulerOptions, 
-      self.interpreterOptions, self.enabled, self.scheduler, 
-      self.interpreter))
+      self.synchronizerOptions, self.enabled, self.scheduler, 
+      self.synchronizer))
 
   def __eq__(self, other):
     return self.name == other.name

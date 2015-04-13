@@ -7,8 +7,8 @@ class IniFileSyntaxRuleConfigPrinter(object):
     self._printOptions(rule.schedulerOptions)
 
     self.output.println("")
-    self.output.println("[Interpreter]")
-    self._printOptions(rule.interpreterOptions)
+    self.output.println("[Synchronizer]")
+    self._printOptions(rule.synchronizerOptions)
 
   def _printOptions(self, options):
     for optionKey, optionValue in options.items():

@@ -18,7 +18,7 @@ from test.common.assertutil import iterableContainsInAnyOrder, \
     FakeException
 from test.common.pathsbuilder import existingPaths, pathsIn
 from test.acceptance.configfolderswriter import ConfigFoldersWriter
-from test.acceptance.interpreterbuilder import InterpreterBuilder
+from test.acceptance.synchronizerbuilder import SynchronizerBuilder
 from test.acceptance.schedulerbuilder import SchedulerBuilder
 from test.acceptance.rulebuilder import RuleBuilder
 from test.acceptance.configscenarioconstructor import ConfigScenarioConstructor
@@ -40,13 +40,13 @@ class SibtSpecFixture(object):
     self.capfd = capfd
 
     self.confFolders = ConfigFoldersWriter(self.sysPaths, self.paths, tmpdir)
-    self.aScheduler = SchedulerBuilder(self.paths, self.sysPaths, 
+    self.aScheduler = SchedulerBuilder(self.paths, self.sysPaths,
         self.confFolders, "sched", self.mockedSchedulers, dict())
-    self.anInterpreter = InterpreterBuilder(self.paths, self.sysPaths, 
-        self.confFolders, "inter", self.execs, dict())
-    self.aRule = RuleBuilder(self.paths, self.sysPaths, self.confFolders, 
+    self.aSyncerpreter = SynchronizerBuilder(self.paths, self.sysPaths,
+        self.confFolders, "syncer", self.execs, dict())
+    self.aRule = RuleBuilder(self.paths, self.sysPaths, self.confFolders,
         "rule", dict())
-    self.conf = ConfigScenarioConstructor(self.confFolders, self.anInterpreter,
+    self.conf = ConfigScenarioConstructor(self.confFolders, self.aSyncerpreter,
         self.aScheduler, self.aRule)
 
   @property
@@ -58,27 +58,27 @@ class SibtSpecFixture(object):
 
   def shouldHaveExitedWithStatus(self, expectedStatus):
     assert self.result.exitStatus == expectedStatus
-    
+
   def setNormalUserId(self):
     self.userId = 25
   def setRootUserId(self):
     self.userId = 0
-  
+
   def runSibtWithRealStreamsAndExec(self, *arguments):
     exitStatus = 1
     try:
-      exitStatus = self._runSibt(FileObjOutput(sys.stdout), 
+      exitStatus = self._runSibt(FileObjOutput(sys.stdout),
           FileObjOutput(sys.stderr), CoprocessRunner(), arguments)
     finally:
       stdout, stderr = self.capfd.readouterr()
       self.result = RunResult(strToTest(stdout), strToTest(stderr), exitStatus)
 
   def runSibtCheckingExecs(self, *arguments):
-    self.execs.ignoring = False
+    self.execs.returningNotImplementedStatuses = False
     self._runSibtMockingExecAndStreams(self.execs, arguments)
-  
+
   def runSibt(self, *arguments):
-    self.execs.ignoring = True
+    self.execs.returningNotImplementedStatuses = True
     self._runSibtMockingExecAndStreams(self.execs, arguments)
 
   def _runSibtMockingExecAndStreams(self, execs, arguments):
@@ -88,9 +88,13 @@ class SibtSpecFixture(object):
     try:
       exitStatus = self._runSibt(stdout, stderr, self.execs, arguments)
     finally:
-      self.result = RunResult(strToTest(stdout.stringBuffer), 
+      self.result = RunResult(strToTest(stdout.stringBuffer),
           strToTest(stderr.stringBuffer), exitStatus)
-    self.execs.check()
+    try:
+      self.execs.check()
+    except:
+      print(stderr.stringBuffer)
+      raise
     self.execs.reset()
 
   def _runSibt(self, stdout, stderr, processRunner, arguments):
@@ -101,37 +105,40 @@ class SibtSpecFixture(object):
       self.paths, self.sysPaths, self.userId, moduleLoader)
 
     if len(self.mockedSchedulers) > 0:
-      for mockedSched in self.mockedSchedulers.values():
-        mockedSched.checkExpectedCalls()
-    
+      try:
+        for mockedSched in self.mockedSchedulers.values():
+          mockedSched.checkExpectedCalls()
+      except:
+        print(stderr.stringBuffer)
+        raise
+
     return exitStatus
-    
+
 @pytest.fixture
 def fixture(tmpdir, capfd):
   return SibtSpecFixture(tmpdir, capfd)
-    
-def test_shouldInvokeTheCorrectConfiguredSchedulersAndInterpreters(fixture):
+
+def test_shouldInvokeTheCorrectConfiguredSchedulersAndSynchronizers(fixture):
   sched = fixture.conf.aSched().withRunFuncCode("""
 def run(args): print("scheduled rule '" + args[0].ruleName + "'")
     """).write()
 
-  inter1 = fixture.conf.anInter().withBashCode("""
+  syncer1 = fixture.conf.aSyncer().withBashCode("""
   if [ $1 = available-options ]; then
     echo Option
-  elif [ $1 = sync ]; then  
-    echo one 
-  fi""").write()
+  elif [ $1 = sync ]; then
+    echo one
+  else exit 200; fi""").write()
 
-  inter2 = fixture.conf.anInter().withBashCode("""
-  if [ $1 = sync ]; then  
+  syncer2 = fixture.conf.aSyncer().withBashCode("""
+  if [ $1 = sync ]; then
     echo two
-  fi
-  """).write()
+  else exit 200; fi""").write()
 
   rule = fixture.conf.aRule("foo-rule").withScheduler(sched).\
-      withInterpreter(inter1).withContent("""
+      withSynchronizer(syncer1).withContent("""
 [Interpreter]
-Name = {inter}
+Name = {syncer}
 Option=1
 Loc1={loc1}
 Loc2={loc2}
@@ -140,35 +147,35 @@ Loc2={loc2}
 Name = {sched}""").write()
 
   ignoredRule = fixture.conf.aRule().withScheduler(sched).\
-      withInterpreter(inter2).withContent("""
+      withSynchronizer(syncer2).withContent("""
   [Scheduler]
   Name = {sched}
 [Interpreter]
-Name = {inter}
+Name = {syncer}
 Loc1={loc1}
 Loc2={loc2}
 """).write()
 
   fixture.runSibtWithRealStreamsAndExec("schedule", "foo-rule")
   fixture.stdout.shouldBe("scheduled rule 'foo-rule'\n")
-      
+
   fixture.runSibtWithRealStreamsAndExec("sync-uncontrolled", "foo-rule")
   fixture.stdout.shouldBe("one\n")
 
 def test_shouldBeAbleToListOnlyRootUsersConfigurationOptionsToStdout(fixture):
   fixture.confFolders.createSysFolders()
 
-  fixture.conf.writeAnyRule("rule-1", "sched-1", "inter-1")
-  fixture.conf.writeAnyRule("test-rule-2", "sched-2", "inter-1")
+  fixture.conf.writeAnyRule("rule-1", "sched-1", "syncer-1")
+  fixture.conf.writeAnyRule("test-rule-2", "sched-2", "syncer-1")
   fixture.conf.writeAnyScheduler("sched-1")
   fixture.conf.writeAnyScheduler("sched-2")
-  fixture.conf.writeAnyInterpreter("inter-1")
-  fixture.conf.writeAnyInterpreter("where-is-this?", sysConfig=True)
+  fixture.conf.writeAnySynchronizer("syncer-1")
+  fixture.conf.writeAnySynchronizer("where-is-this?", sysConfig=True)
 
   fixture.setRootUserId()
 
-  fixture.runSibt("list", "interpreters")
-  fixture.stdout.shouldContainLinePatterns("*inter-1*")
+  fixture.runSibt("list", "synchronizers")
+  fixture.stdout.shouldContainLinePatterns("*syncer-1*")
 
   fixture.runSibt("list", "schedulers")
   fixture.stdout.shouldContainLinePatterns("*sched-1*", 
@@ -179,7 +186,7 @@ def test_shouldBeAbleToListOnlyRootUsersConfigurationOptionsToStdout(fixture):
       "*test-rule-2*")
 
   fixture.runSibt("list")
-  fixture.stdout.shouldIncludeInOrder("interpreters", "inter-1")
+  fixture.stdout.shouldIncludeInOrder("synchronizers", "syncer-1")
   fixture.stdout.shouldInclude("rule-1", "test-rule-2", "sched-1", "sched-2")
 
 def test_shouldAutomaticallyCreateFoldersIfTheyDontExist(fixture):
@@ -187,17 +194,17 @@ def test_shouldAutomaticallyCreateFoldersIfTheyDontExist(fixture):
   fixture.runSibt()
 
   for path in [fixture.paths.rulesDir, fixture.paths.schedulersDir,
-      fixture.paths.interpretersDir, fixture.paths.varDir]:
+      fixture.paths.synchronizersDir, fixture.paths.varDir]:
     assert os.path.isdir(path)
 
 def test_ifInvokedAsNormalUserItShouldListSystemConfigAsWellAsTheOwn(fixture):
   fixture.confFolders.createSysFolders()
 
-  fixture.conf.writeAnyRule("normal-user-rule", "user-sched", "user-inter")
-  fixture.conf.writeAnyRule("system-rule", "system-sched", "system-inter", 
+  fixture.conf.writeAnyRule("normal-user-rule", "user-sched", "user-syncer")
+  fixture.conf.writeAnyRule("system-rule", "system-sched", "system-syncer", 
       sysConfig=True)
-  fixture.conf.writeAnyInterpreter("user-inter")
-  fixture.conf.writeAnyInterpreter("system-inter", sysConfig=True)
+  fixture.conf.writeAnySynchronizer("user-syncer")
+  fixture.conf.writeAnySynchronizer("system-syncer", sysConfig=True)
   fixture.conf.writeAnyScheduler("user-sched")
   fixture.conf.writeAnyScheduler("system-sched", sysConfig=True)
 
@@ -206,14 +213,14 @@ def test_ifInvokedAsNormalUserItShouldListSystemConfigAsWellAsTheOwn(fixture):
   fixture.stdout.shouldIncludeLinePatterns(
       "*normal-user-rule*",
       "+*system-rule*",
-      "*user-inter*",
-      "*system-inter*",
+      "*user-syncer*",
+      "*system-syncer*",
       "*user-sched*",
       "*system-sched*")
 
 def test_shouldExitWithErrorMessageIfInvalidSyntaxIsFound(fixture):
   fixture.conf.aRule("suspect-rule").withContent("sdafsdaf").write()
-  fixture.conf.ruleWithSchedAndInter("some-valid-rule").write()
+  fixture.conf.ruleWithSchedAndSyncer("some-valid-rule").write()
 
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
@@ -221,54 +228,55 @@ def test_shouldExitWithErrorMessageIfInvalidSyntaxIsFound(fixture):
   fixture.stderr.shouldInclude("syntax error", "suspect-rule")
 
 def test_shouldDistinguishBetweenDisabledAndSymlinkedToEnabledRules(fixture):
-  fixture.conf.ruleWithSchedAndInter("is-on").enabled().write()
-  fixture.conf.ruleWithSchedAndInter("is-off").write()
+  fixture.conf.ruleWithSchedAndSyncer("is-on").enabled().write()
+  fixture.conf.ruleWithSchedAndSyncer("is-off").write()
 
   fixture.runSibt("list", "rules")
   fixture.stdout.shouldContainLinePatterns(
       "*is-on*enabled*",
       "*is-off*disabled*")
 
-def test_shouldFailIfConfiguredSchedulerOrInterpreterDoesNotExist(fixture):
+def test_shouldFailIfConfiguredSchedulerOrSynchronizerDoesNotExist(fixture):
   fixture.conf.ruleWithSched("invalid-rule").\
-      withInterpreterName("is-not-there").write()
-  fixture.conf.ruleWithSchedAndInter("valid-rule").write()
+      withSynchronizerName("is-not-there").write()
+  fixture.conf.ruleWithSchedAndSyncer("valid-rule").write()
 
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("interpreter", "is-not-there", "not found")
+  fixture.stderr.shouldInclude("synchronizer", "is-not-there", "not found")
 
-def test_shouldPassOptionsAsIsToCorrectSchedulersAndInterpreters(fixture):
-  inter = fixture.conf.anInter().allowingSetupCallsExceptOptions().\
+def test_shouldPassOptionsAsIsToCorrectSchedulersAndSynchronizers(fixture):
+  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptOptions().\
       withTestOptions().write()
   schedMock, sched = fixture.conf.aSched().withTestOptions().mock()
 
   rule = fixture.conf.aRule().\
       withSchedOpts(Interval="2w").\
-      withInterOpts(AddFlags="-X -A").\
+      withSyncerOpts(AddFlags="-X -A").\
       withScheduler(sched).\
-      withInterpreter(inter).write()
+      withSynchronizer(syncer).write()
 
   schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
       len(schedulings) == 1 and
-      schedulings[0].ruleName == rule.name and 
+      schedulings[0].ruleName == rule.name and
       schedulings[0].options == { "Interval": "2w" }))
 
   fixture.runSibtCheckingExecs("schedule", rule.name)
 
-  inter.expecting(execmock.call(lambda args: args[0] == "sync" and 
-    set(args[1:]) == {"AddFlags=-X -A", "Loc1=" + rule.loc1, 
-      "Loc2=" + rule.loc2})).reMakeExpectations()
+  syncer.expecting(execmock.call(lambda args: args[0] == "sync" and
+    set(args[1:]) == {"AddFlags=-X -A", "Loc1=" + rule.loc1,
+      "Loc2=" + rule.loc2, "Loc1Protocol=file", "Loc1Path=" + rule.loc1,
+      "Loc2Protocol=file", "Loc2Path=" + rule.loc2})).reMakeExpectations()
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
 
 def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
     fixture):
   sched = fixture.conf.aSched().withTestOptions().write()
-  inter = fixture.conf.anInter().withTestOptionsCode().write()
+  syncer = fixture.conf.aSyncer().withTestOptionsCode().write()
 
-  fixture.conf.aRule().withScheduler(sched).withInterpreter(inter).\
-      withInterOpts(AddFlags="foo", DoesNotExist="abc").\
+  fixture.conf.aRule().withScheduler(sched).withSynchronizer(syncer).\
+      withSyncerOpts(AddFlags="foo", DoesNotExist="abc").\
       withSchedOpts(Interval="bar").write()
 
   fixture.runSibtWithRealStreamsAndExec()
@@ -277,35 +285,47 @@ def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
   fixture.stderr.shouldInclude("unsupported", "options", "DoesNotExist")
   fixture.stderr.shouldNotInclude("AddFlags", "Interval")
 
+def test_shouldConsiderNameAndLocsAsMinimumAndAlreadyAvailableOptions(
+    fixture):
+  fixture.conf.ruleWithSchedAndSyncer("invalid-rule").withContent(
+      """[Interpreter]
+      Name={syncer}
+      [Scheduler]
+      Name={sched}""").write()
+
+  fixture.runSibt()
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("invalid-rule", "minimum", "Loc1")
+
 def test_shouldIssureErrorMessageIfARuleFileNameContainsAComma(fixture):
-  fixture.conf.ruleWithSchedAndInter("no,comma").write()
+  fixture.conf.ruleWithSchedAndSyncer("no,comma").write()
 
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
   fixture.stderr.shouldInclude("invalid character", "no,comma")
 def test_shouldIssureErrorMessageIfARuleFileNameContainsAnAt(fixture):
-  fixture.conf.ruleWithSchedAndInter("no@at").write()
+  fixture.conf.ruleWithSchedAndSyncer("no@at").write()
 
   fixture.runSibt()
   fixture.stderr.shouldInclude("invalid character")
 def test_shouldIssureErrorMessageIfARuleFileNameContainsASpace(fixture):
-  fixture.conf.ruleWithSchedAndInter("no space").write()
+  fixture.conf.ruleWithSchedAndSyncer("no space").write()
 
   fixture.runSibt()
   fixture.stderr.shouldInclude("invalid character", "no space")
 def test_shouldIssureErrorMessageIfARuleFileNameBeginsWithAPlus(fixture):
-  fixture.conf.ruleWithSchedAndInter("-+").write()
+  fixture.conf.ruleWithSchedAndSyncer("-+").write()
 
   fixture.runSibt()
   fixture.shouldHaveExitedWithStatus(0)
   fixture.stderr.shouldBeEmpty()
 
-  fixture.conf.ruleWithSchedAndInter("+-").write()
+  fixture.conf.ruleWithSchedAndSyncer("+-").write()
   fixture.runSibt()
   fixture.stderr.shouldInclude("begin with", "+-")
 
 def test_shouldFailWhenReadingARuleConfiguredWithARelativeLocPath(fixture):
-  fixture.conf.ruleWithSchedAndInter().withLoc1("this-is-relative").write()
+  fixture.conf.ruleWithSchedAndSyncer().withLoc1("this-is-relative").write()
 
   fixture.runSibt()
   fixture.shouldHaveExitedWithStatus(1)
@@ -319,7 +339,7 @@ def test_shouldInitSchedulersCorrectlyIncludingSibtInvocationWithGlobalOpts(
 
   newReadonlyDir = str(fixture.tmpdir)
 
-  fixture.runSibtWithRealStreamsAndExec("--readonly-dir", newReadonlyDir, 
+  fixture.runSibtWithRealStreamsAndExec("--readonly-dir", newReadonlyDir,
       "list", "schedulers")
   fixture.stdout.shouldInclude("{0} --readonly-dir {1}".format(sys.argv[0],
       newReadonlyDir) + "," +
@@ -330,7 +350,7 @@ def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
   schedMock, sched = fixture.conf.aSched().mock()
 
   disabledRule = fixture.conf.aRule().withScheduler(sched).\
-      withInterpreter(fixture.conf.anInter().write())
+      withSynchronizer(fixture.conf.aSyncer().write())
   enabledRule = disabledRule.enabled()
 
   for name in ["rule-a1", "rule-a2", "rule-b"]:
@@ -339,29 +359,29 @@ def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
     disabledRule.withName(name).write()
 
   schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
-      iterableContainsPropertiesInAnyOrder(schedulings, 
+      iterableContainsPropertiesInAnyOrder(schedulings,
         lambda scheduling: scheduling.ruleName,
-        equalsPred("rule-a1"), equalsPred("rule-a2"), 
+        equalsPred("rule-a1"), equalsPred("rule-a2"),
         equalsPred("disabled-2"))))
 
   fixture.runSibt("schedule", "*a[0-9]", "disabled-2")
 
 def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
-  fixture.conf.ruleWithSchedAndInter("rule").write()
+  fixture.conf.ruleWithSchedAndSyncer("rule").write()
 
   fixture.runSibt("schedule", "foo")
   fixture.stderr.shouldInclude("no rule matching", "foo")
   fixture.shouldHaveExitedWithStatus(1)
 
 def test_shouldRequireAnExactRuleNameMatchWhenSyncingUncontrolledly(fixture):
-  inter = fixture.conf.anInter().allowingSetupCalls()
-  rule = fixture.conf.ruleWithSched("[rule]a*b").withInterpreter(inter).\
+  syncer = fixture.conf.aSyncer().allowingSetupCalls()
+  rule = fixture.conf.ruleWithSched("[rule]a*b").withSynchronizer(syncer).\
     enabled().write()
 
-  inter.expecting(execmock.call(lambda args: args[0] == "sync")).write()
+  syncer.expecting(execmock.call(lambda args: args[0] == "sync")).write()
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
 
-  inter.reMakeExpectations()
+  syncer.reMakeExpectations()
   fixture.runSibtCheckingExecs("sync-uncontrolled", "*")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("no rule")
@@ -370,7 +390,7 @@ def test_shouldDistinguishSysRulesFromNormalRulesByPuttingAPlusInFront(fixture):
   fixture.confFolders.createSysFolders()
   fixture.setNormalUserId()
 
-  fixture.conf.ruleWithSchedAndInter("system-wide", isSysConfig=True).\
+  fixture.conf.ruleWithSchedAndSyncer("system-wide", isSysConfig=True).\
       withLoc1("/boot/grub").write()
 
   fixture.runSibt("show", "+system-wide")
@@ -380,8 +400,7 @@ def test_shouldIgnoreSysRulesWhenSchedulingAndSyncing(fixture):
   fixture.confFolders.createSysFolders()
   fixture.setNormalUserId()
 
-  fixture.conf.ruleWithSchedAndInter("sys-rule", isSysConfig=True).write()
-
+  fixture.conf.ruleWithSchedAndSyncer("sys-rule", isSysConfig=True).write()
 
   fixture.runSibt("schedule", "*sys-rule")
   fixture.stderr.shouldInclude("no rule", "sys-rule")
@@ -394,9 +413,9 @@ def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
 
   fixture.conf.aSched("own-sched").write()
   sched = fixture.conf.aSysSched().withName("systemd").write()
-  inter = fixture.conf.aSysInter().withName("tar").write()
+  syncer = fixture.conf.aSysSyncer().withName("tar").write()
   fixture.conf.aSysRule().withName("os-backup").\
-      withScheduler(sched).withInterpreter(inter).write()
+      withScheduler(sched).withSynchronizer(syncer).write()
 
   fixture.setNormalUserId()
 
@@ -404,17 +423,17 @@ def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
   fixture.stdout.shouldInclude("own-sched")
   fixture.stdout.shouldNotInclude("systemd", "tar", "os-backup")
 
-def test_shouldAdditionallyReadInterpretersAndSchedulersFromReadonlyDir(
+def test_shouldAdditionallyReadSynchronizersAndSchedulersFromReadonlyDir(
     fixture):
   fixture.confFolders.createReadonlyFolders()
 
   fixture.conf.aSched("included-scheduler").write(toReadonlyDir=True)
-  fixture.conf.anInter("included-interpreter").write(
+  fixture.conf.aSyncer("included-synchronizer").write(
       toReadonlyDir=True)
 
   fixture.runSibt()
   fixture.stdout.shouldIncludeLinePatterns(
-      "*included-interpreter*", "*included-scheduler*")
+      "*included-synchronizer*", "*included-scheduler*")
 
 def test_shouldBeAbleToOverrideDefaultPathsWithCommandLineOptions(fixture):
   newConfigDir = fixture.tmpdir.mkdir("foo")
@@ -425,29 +444,17 @@ def test_shouldBeAbleToOverrideDefaultPathsWithCommandLineOptions(fixture):
   fixture.runSibt("--config-dir=" + str(newConfigDir), "list", "schedulers")
   fixture.stdout.shouldInclude("jct-scheduler")
 
-def test_shouldConsiderNameLoc1AndLoc2AsMinimumAndAlreadyAvailableOptions(
-    fixture):
-  fixture.conf.ruleWithSchedAndInter("invalid-rule").withContent(
-      """[Interpreter]
-      Name={inter}
-      [Scheduler]
-      Name={sched}""").write()
-
-  fixture.runSibt()
-  fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("invalid-rule", "minimum", "Loc1")
-
 def test_shouldProvideAWayToImportRuleConfigsAndANamingSchemeForIncludeFiles(
     fixture):
   sched = fixture.conf.aSched().withTestOptions().write()
 
-  fixture.conf.ruleWithInter("header.inc").withScheduler(sched).\
+  fixture.conf.ruleWithSyncer("header.inc").withScheduler(sched).\
       withContent("""
 [Scheduler]
 Name = {sched}
 Interval = 3w
 [Interpreter]
-Name = {inter}
+Name = {syncer}
 """).write()
 
   fixture.conf.aRule("[actual]-rule").withContent("""
@@ -480,7 +487,7 @@ def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
 
   _, permissiveSched = fixture.conf.aSched("content-sched").mock()
 
-  enabledRule = fixture.conf.ruleWithInter().enabled()
+  enabledRule = fixture.conf.ruleWithSyncer().enabled()
   enabledRule.withName("badly-confd-rule").withScheduler(errorSched).write()
   enabledRule.withName("another-bad-rule").withScheduler(errorSched).write()
   enabledRule.withName("correctly-confd-rule").withScheduler(permissiveSched).\
@@ -497,43 +504,43 @@ def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
   fixture.stderr.shouldNotInclude("correctly-confd")
 
 def test_shouldFailAndPrintErrorIfExternalProgramReturnsErrorCode(fixture):
-  inter = fixture.conf.anInter("failing-inter").withBashCode("""
+  syncer = fixture.conf.aSyncer("failing-syncer").withBashCode("""
       if [ $1 = available-options ]; then exit 4; else exit 200; fi""").write()
-  fixture.conf.ruleWithSched().withInterpreter(inter).write()
+  fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
   fixture.runSibtWithRealStreamsAndExec()
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stdout.shouldBeEmpty()
-  fixture.stderr.shouldInclude("failing-inter", "error", "calling", "(4)", 
+  fixture.stderr.shouldInclude("failing-syncer", "error", "calling", "(4)",
       "arguments", "available-options")
 
 def test_shouldPrintRuleNameIfSyncFailsAndAlsoNormalErrorMessageIfVerboseIsOn(
     fixture):
-  failingInter = fixture.conf.anInter().withBashCode(
-      "if [ $1 = sync ]; then exit 23; fi").write()
-  rule = fixture.conf.ruleWithSched().withInterpreter(failingInter).write()
+  failingSyncer = fixture.conf.aSyncer().withBashCode(
+      "if [ $1 = sync ]; then exit 23; else exit 200; fi").write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(failingSyncer).write()
 
   fixture.runSibtWithRealStreamsAndExec("sync-uncontrolled", rule.name)
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("running", "rule", rule.name, "failed", "(23)")
-  fixture.stderr.shouldNotInclude(str(failingInter.path))
+  fixture.stderr.shouldNotInclude(str(failingSyncer.path))
 
-  fixture.runSibtWithRealStreamsAndExec("--verbose", "sync-uncontrolled", 
+  fixture.runSibtWithRealStreamsAndExec("--verbose", "sync-uncontrolled",
       rule.name)
-  fixture.stderr.shouldInclude(str(failingInter.path))
+  fixture.stderr.shouldInclude(str(failingSyncer.path))
 
   def failSyncing(args):
     if args[0] == "sync":
       raise FakeException()
-  failingInter.allowing(execmock.call(failSyncing)).allowingSetupCalls().\
+  failingSyncer.allowing(execmock.call(failSyncing)).allowingSetupCalls().\
       reMakeExpectations()
   with pytest.raises(FakeException):
     fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
   fixture.stderr.shouldInclude(rule.name, "failed", "unexpected error")
 
-def test_shouldFailAndReportItIfAnInterpreterDoesntSupportAFunction(fixture):
-  inter = fixture.conf.anInter("not-impld").withBashCode("exit 200").write()
-  rule = fixture.conf.ruleWithSched().withInterpreter(inter).write()
+def test_shouldFailAndReportItIfAnSynchronizerDoesntSupportAFunction(fixture):
+  syncer = fixture.conf.aSyncer("not-impld").withBashCode("exit 200").write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
   fixture.runSibtWithRealStreamsAndExec("sync-uncontrolled", rule.name)
   fixture.shouldHaveExitedWithStatus(1)
@@ -556,12 +563,12 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
   fileName = "folder/some-file"
   fileInDataDir = os.path.join(dataDir, fileName)
 
-  inter = fixture.conf.interReturningVersions(
+  syncer = fixture.conf.syncerReturningVersions(
       forRelativeFile=fileName,
       ifWithinLoc1=[utcMarch3rdInDifferentZone, "0"],
       ifWithinLoc2=["123"]).asSysConfig().write()
 
-  baseRule = fixture.conf.ruleWithSched().withInterpreter(inter)
+  baseRule = fixture.conf.ruleWithSched().withSynchronizer(syncer)
   baseRule.withName("rule-1").\
       withLoc1(dataDir).\
       withLoc2(backupDir).asSysConfig().write()
@@ -571,8 +578,8 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
 
   fixture.tmpdir.join("link").mksymlinkto(fileInDataDir)
   with fixture.tmpdir.as_cwd():
-    fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of", 
-        "link")
+    fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of",
+        "link/")
     fixture.stdout.shouldContainLinePatterns(
         "*rule-1," + utcThirdOfMarch + "*",
         "*rule-1," + utc0 + "*")
@@ -597,8 +604,8 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   dataDir = "/mnt/data/"
   backupDir = "/mnt/backup/"
   fileName = "file-to-restore"
-  inter = fixture.conf.anInter().allowingSetupCalls()
-  baseRule = fixture.conf.ruleWithSched().withInterpreter(inter).\
+  syncer = fixture.conf.aSyncer().allowingSetupCalls()
+  baseRule = fixture.conf.ruleWithSched().withSynchronizer(syncer).\
       withLoc1(dataDir)
   baseRule.withName("total-backup").withLoc2(backupDir).write()
   baseRule.withName("other-rule").withLoc2("/mnt/quux").write()
@@ -607,114 +614,115 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   march3rd = "2014-03-30T21:43:12+00:00"
   april5thTimestamp = "1396704934"
 
-  inter = inter.allowing(execmock.call(lambda args: args[0] == "versions-of",
+  syncer = syncer.allowing(execmock.call(lambda args: args[0] == "versions-of",
     [april5th, march3rd])).write()
 
   callRestore(dataDir + fileName, "2014", "3:")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("patterns", "ambiguous")
 
-  inter.reMakeExpectations()
+  syncer.reMakeExpectations()
   callRestore(dataDir + fileName, "this-is-not-a-substring")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("patterns", "no match")
 
-  inter.expecting(execmock.call(lambda args: args[0] == "restore" and 
-    "Loc2=" + backupDir[:-1] in args and 
-    args[1:6] == (fileName, "1", april5th, april5thTimestamp, 
+  syncer.expecting(execmock.call(lambda args: args[0] == "restore" and
+    "Loc2=" + backupDir[:-1] in args and
+    args[1:6] == (fileName, "1", april5th, april5thTimestamp,
       str(fixture.tmpdir) + "/dest.backup"))).reMakeExpectations()
   with fixture.tmpdir.as_cwd():
     callRestore(dataDir + fileName, "tota", "04", "--to=dest.backup")
 
 def test_shouldGetANullSeparatedFileListingWithACallSimilarToRestore(fixture):
-  inter = fixture.conf.anInter().withBashCode(r"""
+  syncer = fixture.conf.aSyncer().withBashCode(r"""
   if [ $1 = versions-of ]; then
     echo '1970-01-01T00:00:50+00:00'
     echo 100000000
-  fi
-  if [[ $1 = list-files && $2 = container/folder && $3 = 2 && $5 = 50 ]]; then
+  elif [[ $1 = list-files && $2 = container/folder && $3 = 2 && $5 = 50 ]]; then
     echo -n -e 'some\n-file'
     echo -n -e '\0'
     echo -n 'and-a-dir/'
     echo -n -e '\0'
-  fi""").write()
-  fixture.conf.ruleWithSched().withInterpreter(inter).\
+  else exit 200; fi""").write()
+  fixture.conf.ruleWithSched().withSynchronizer(syncer).\
       withLoc2("/var/spool").write()
 
   folder = "/var/spool/container/folder"
-  fixture.runSibtWithRealStreamsAndExec("list-files", 
+  fixture.runSibtWithRealStreamsAndExec("list-files",
     folder, "1970")
   fixture.stderr.shouldBeEmpty()
-  fixture.stdout.shouldContainLinePatterns("some\\n-file", 
+  fixture.stdout.shouldContainLinePatterns("some\\n-file",
       "and-a-dir/")
 
-  fixture.runSibtWithRealStreamsAndExec("list-files", "--null", folder, 
+  fixture.runSibtWithRealStreamsAndExec("list-files", "--null", folder,
       "1970")
   fixture.stdout.shouldInclude("some\n-file\0", "and-a-dir/\0")
 
 def test_shouldHaveAnOptionForARecursiveFileListing(fixture):
-  inter = fixture.conf.anInter().write()
-  inter = inter.allowingSetupCalls().allowing(execmock.call(
+  syncer = fixture.conf.aSyncer().write()
+  syncer = syncer.allowingSetupCalls().allowing(execmock.call(
     lambda args: args[0] == "versions-of", ret=["20"]))
-  fixture.conf.ruleWithSched().withLoc1("/dir").withInterpreter(inter).write()
-  
-  inter.expectingListFiles(lambda args: args[5] == "0").reMakeExpectations()
+  fixture.conf.ruleWithSched().withLoc1("/dir").withSynchronizer(syncer).write()
+
+  syncer.expectingListFiles(lambda args: args[5] == "0").reMakeExpectations()
   fixture.runSibtCheckingExecs("list-files", "/dir/file", "1970")
 
-  inter.expectingListFiles(lambda args: args[5] == "1").reMakeExpectations()
+  syncer.expectingListFiles(lambda args: args[5] == "1").reMakeExpectations()
   fixture.runSibtCheckingExecs("list-files", "-r", "/dir/file", "1970")
 
-def test_shouldCallRunnerNamedInHashbangLineOfInterpretersIfItExists(fixture):
+def test_shouldCallRunnerNamedInHashbangLineOfSynchronizersIfItExists(fixture):
   runnerPath = fixture.confFolders.writeRunner("faith")
-  inter = fixture.conf.anInter().withCode("#!faith").write()
-  fixture.conf.ruleWithSched().withInterpreter(inter).write()
+  syncer = fixture.conf.aSyncer().withCode("#!faith").write()
+  fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
   anyCallsExceptOptions = execmock.call(
-      lambda args: args[1] != "available-options")
+      lambda args: args[1] != "available-options",
+      returningNotImplementedStatus=True)
   fixture.execs.allow(runnerPath, anyCallsExceptOptions)
 
   fixture.execs.expect(runnerPath, execmock.call(
-      (str(inter.path), "available-options")))
-  fixture.runSibtCheckingExecs("list", "interpreters")
+      (str(syncer.path), "available-options")))
+  fixture.runSibtCheckingExecs("list", "synchronizers")
   fixture.shouldHaveExitedWithStatus(0)
 
 def test_shouldPerformSanityChecksOnRulesBeforeSchedulingExceptWhenDisabled(
     fixture):
-  containerDir = fixture.confFolders.validInterpreterLoc("container")
-  subDir = fixture.confFolders.validInterpreterLoc("container/sub-dir")
+  containerDir = fixture.confFolders.validSynchronizerLoc("container")
+  subDir = fixture.confFolders.validSynchronizerLoc("container/sub-dir")
 
-  inter = fixture.conf.anInter().allowingSetupCallsExceptWritesTo().\
+  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptPorts().\
       writingToLoc2().write()
-  fixture.conf.ruleWithSched("self-destruction").withInterpreter(inter).\
+  fixture.conf.ruleWithSched("self-destruction").withSynchronizer(syncer).\
       withLoc1(str(subDir)).withLoc2(str(containerDir)).write()
 
   fixture.runSibtCheckingExecs("schedule", "self-destruction")
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldIncludeInOrder("self-destruction", "within", 
+  fixture.stderr.shouldIncludeInOrder("self-destruction", "within",
       str(containerDir))
 
-  inter.reMakeExpectations()
+  syncer.reMakeExpectations()
   fixture.runSibtCheckingExecs("--no-checks", "schedule", "self-destruction")
   fixture.shouldHaveExitedWithStatus(0)
 
 def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
-  bidirectional = fixture.conf.anInter().withBashCode("""
-  if [ $1 = writes-to ]; then
-    echo 1
-    echo 2
-  fi""").write()
-  unidirectional = fixture.conf.anInter().withBashCode("""
-  if [ $1 = writes-to ]; then
+  bidirectional = fixture.conf.aSyncer().withBashCode("""
+  if [ $1 = info-of-port ]; then
+    if [ $2 -lt 3 ]; then
+      echo 1
+      echo file
+    fi
+  else exit 200; fi""").write()
+  unidirectional = fixture.conf.aSyncer().withBashCode("""
     notImplementedCode=200
     exit $notImplementedCode
-  fi""").write()
+  """).write()
 
-  fixture.conf.ruleWithSched("uni").withInterpreter(unidirectional).\
-      withLoc1(fixture.confFolders.validInterpreterLoc("src/1")).\
-      withLoc2(fixture.confFolders.validInterpreterLoc("dest/1")).write()
-  fixture.conf.ruleWithSched("bi").withInterpreter(bidirectional).\
-      withLoc1(fixture.confFolders.validInterpreterLoc("dest/1")).\
-      withLoc2(fixture.confFolders.validInterpreterLoc("dest/2")).write()
+  fixture.conf.ruleWithSched("uni").withSynchronizer(unidirectional).\
+      withLoc1(fixture.confFolders.validSynchronizerLoc("src/1")).\
+      withLoc2(fixture.confFolders.validSynchronizerLoc("dest/1")).write()
+  fixture.conf.ruleWithSched("bi").withSynchronizer(bidirectional).\
+      withLoc1(fixture.confFolders.validSynchronizerLoc("dest/1")).\
+      withLoc2(fixture.confFolders.validSynchronizerLoc("dest/2")).write()
 
   fixture.runSibtWithRealStreamsAndExec("schedule", "uni", "bi")
   fixture.shouldHaveExitedWithStatus(1)
@@ -722,7 +730,7 @@ def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
 
 def test_shouldHaveACheckActionThatDoesTheSameChecksAsScheduleButDoesntSchedule(
     fixture):
-  fixture.conf.ruleWithSchedAndInter("valid-rule").write()
+  fixture.conf.ruleWithSchedAndSyncer("valid-rule").write()
 
   fixture.runSibt("check", "valid-rule")
   fixture.stdout.shouldBeEmpty()
@@ -742,8 +750,8 @@ def test_shouldBeAbleToSimulateSchedulingsAndPrintThemToStdout(fixture):
   _, sched1 = basicSched.withName("sched-1").mock()
   _, sched2 = basicSched.withName("sched-2").mock()
 
-  rule1 = fixture.conf.ruleWithInter("rule-1").withScheduler(sched1).write()
-  rule2 = fixture.conf.ruleWithInter("rule-2").withScheduler(sched2).write()
+  rule1 = fixture.conf.ruleWithSyncer("rule-1").withScheduler(sched1).write()
+  rule2 = fixture.conf.ruleWithSyncer("rule-2").withScheduler(sched2).write()
 
   fixture.runSibt("schedule", "--dry", "rule-1", "rule-2")
   fixture.stdout.shouldContainLinePatterns(
@@ -759,15 +767,80 @@ def test_shouldBeAbleToSimulateSchedulingsAndPrintThemToStdout(fixture):
 
 # TODO check slash removed
 # remote loc test (with versions-of; change to ip later)
-#def test_shouldInterpreterAColonSeparatedFormatForRemoteLocations(fixture):
+#def test_shouldSynchronizerAColonSeparatedFormatForRemoteLocations(fixture):
 #  utc12 = "*1970-01-01T00:00:12*"
 #
-#  inter = fixture.conf.interReturningVersions(forRelativeFile="raven",
+#  syncer = fixture.conf.syncerReturningVersions(forRelativeFile="raven",
 #      ifWithinLoc1=["12"], ifWithinLoc2=[]).write()
 ##TODO scramble path
-#  rule = fixture.conf.ruleWithSched().withInterpreter(inter).\
+#  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).\
 #      withLoc1("other-host:/mnt/data").write()
 #  
 #  fixture.runSibtWithRealStreamsAndExec("versions-of", 
 #      "other-host:/mnt/data/raven")
 #  fixture.stdout.shouldContainLinePatterns(utc12)
+
+def test_shouldDissectRemoteLocationsWrittenAsUrlsForSyncers(fixture):
+# TODO refactor to functionmodule; check allLocalRule 
+#   (with file:/// and without; syntactic sugar test)
+# TODO use ssh syntactic sugar somewhere else in a test
+  rule = fixture.conf.ruleWithSched().\
+      withLoc1("protocol1://bar@somehost/usr//share/").\
+      withLoc2("http://foo:123/~/downloads").\
+      withLoc3("/local-folder").\
+      withLoc4("user@host-of-syntactic-sugar:foo")
+
+  syncer = fixture.conf.aSyncer().expecting(execmock.call(
+    lambda args: args[0] == "sync" and
+      all(option in args for option in [
+        "Loc1Protocol=protocol1",
+        "Loc1Login=bar",
+        "Loc1Host=somehost",
+        "Loc1Port=",
+        "Loc1Path=/usr/share",
+
+        "Loc2Protocol=http",
+        "Loc2Login=",
+        "Loc2Host=foo",
+        "Loc2Port=123",
+        "Loc2Path=downloads",
+        
+        "Loc3Protocol=file",
+        "Loc3Path=/local-folder",
+
+        "Loc4Protocol=ssh",
+        "Loc4Login=user",
+        "Loc4Host=host-of-syntactic-sugar",
+        "Loc4Port=",
+        "Loc4Path=foo"]))).allowingSetupCallsExceptPorts().\
+    allowing(execmock.call(lambda args: args[0] == "info-of-port" and
+      args[1] in ["1", "2", "3", "4"], 
+      ret=["0", "protocol1", "ssh", "http", "file"])).\
+    allowing(execmock.call(lambda args: args[0] == "info-of-port" and
+      args[1] == "5", ret=[])).write()
+
+  rule = rule.withSynchronizer(syncer).write()
+
+  fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
+
+def test_shouldComplainAboutUnsupportedRemoteProtocols(fixture):
+  rule = fixture.conf.ruleWithSched().\
+      withLoc1("foo://host/").\
+      withLoc2("bar://host/")
+
+  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptPorts().\
+      allowing(execmock.call(lambda args: args == ("info-of-port", "1"),
+        ret=["0", "foo", "bar"])).\
+      allowing(execmock.call(lambda args: args == ("info-of-port", "2"),
+        ret=["0", "alternative", "blah"])).\
+      allowing(execmock.call(lambda args: args == ("info-of-port", "3"),
+        ret=[])).write()
+
+  rule = rule.withSynchronizer(syncer).write()
+
+  fixture.runSibtCheckingExecs("show", rule.name)
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldIncludeInOrder("Loc2", "can't", "bar", "choose",
+      "alternative", "blah").andAlso.shouldInclude(rule.name)
+
+#TODO 1. re-write rule with extra option; 2. re-write correct rule with extra option

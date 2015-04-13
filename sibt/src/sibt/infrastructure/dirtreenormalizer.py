@@ -11,7 +11,7 @@ class DirTreeNormalizer(object):
 
   def createNotExistingDirs(self):
     for path in [self.paths.rulesDir,
-        self.paths.interpretersDir,
+        self.paths.synchronizersDir,
         self.paths.schedulersDir,
         self.paths.enabledDir,
         self.paths.varDir]:

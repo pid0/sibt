@@ -1,6 +1,5 @@
 import subprocess
-from sibt.infrastructure.externalfailureexception import \
-    ExternalFailureException
+from sibt.infrastructure.exceptions import ExternalFailureException
 
 ChunkSize = 2048
 
