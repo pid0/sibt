@@ -23,6 +23,20 @@ class SynchronizerBuilder(ConfigObjectBuilder):
   def allowing(self, *calls):
     return self._withParams(allowances=self.allowances + list(calls))
 
+  def allowingPortSpecialsCalls(self, output=[]):
+    return self.allowing(execmock.call(lambda args: 
+      args[0] == "info-of-port" and args[1] == "specials", 
+      returningNotImplementedStatus=output == [], ret=output))
+  def supportingProtocols(self, protocolsLists):
+    def allowing(indexString, protocols):
+      return ret.allowing(execmock.call(
+        lambda args: args == ("info-of-port", indexString), ret=retValue))
+    ret = self
+    for i in range(len(protocolsLists) + 1):
+      retValue = (["0"] + protocolsLists[i]) if i < len(protocolsLists) else []
+      ret = allowing(str(i + 1), ret)
+    return ret
+
   def _allowingPortCalls(self):
     return self.allowing(execmock.call(lambda args: args[0] == "info-of-port",
       returningNotImplementedStatus=True))
@@ -31,11 +45,11 @@ class SynchronizerBuilder(ConfigObjectBuilder):
       "available-options", returningNotImplementedStatus=True))
   def writingToLoc2(self):
     return self.allowing(execmock.call(lambda args: 
-      args[0] == "info-of-port" and args[1] == "1", ret=["0", "file"])).\
+      args[0] == "info-of-port" and args[1] == "1", ret=["0", "file", "ssh"])).\
       allowing(execmock.call(lambda args: 
-      args[0] == "info-of-port" and args[1] == "2", ret=["1", "file"])).\
+      args[0] == "info-of-port" and args[1] == "2", ret=["1", "file", "ssh"])).\
       allowing(execmock.call(lambda args: 
-      args[0] == "info-of-port" and int(args[1]) > 2, ret=[]))
+      args[0] == "info-of-port" and args[1] in ["3", "specials"], ret=[]))
   def allowingSetupCallsExceptOptions(self):
     return self._allowingPortCalls()
   def allowingSetupCallsExceptPorts(self):

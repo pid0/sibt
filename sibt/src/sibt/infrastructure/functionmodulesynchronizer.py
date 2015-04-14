@@ -51,6 +51,11 @@ class FunctionModuleSynchronizer(object):
         lazyPortsOutput())
     return [Port(info[1:], info[0] == "1") for info in infos]
 
+  @property
+  def onePortMustHaveFileProtocol(self):
+    return "one-must-be-file" in self._callFunction(self.functions.callFuzzy,
+        "info-of-port", dict(), "specials")
+
   def _callFunction(self, func, funcName, options=dict(), *positionalArgs):
     try:
       formattedOptions = dict(options)

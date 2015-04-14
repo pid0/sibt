@@ -16,5 +16,6 @@ def test_shouldExactlyRecognizeSyntacticSugarForSSHLocations():
   loc = parseLocation("/foo:bar")
   assert loc.protocol == "file"
 
-  loc = parseLocation("user@host-of-syntactic-sugar:foo")
+  loc = parseLocation("user@host-of-syntactic-sugar:")
   assert loc.protocol == "ssh"
+  assert loc.path == "."

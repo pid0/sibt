@@ -35,6 +35,8 @@ def test_shouldProperlyParseThePartsOfARemoteUrl():
 def test_shouldParsePathsStartingWithATildeAsRelative():
   assertIsRemote("foo://where?/~/.kde4/share/apps/",
       "foo", "", "where?", "", ".kde4/share/apps")
+  assertIsRemote("a://b/~/",
+      "a", "", "b", "", ".")
 
 def test_shouldRaiseExceptionIfUrlHasAWrongFormat():
   with pytest.raises(LocationInvalidException):

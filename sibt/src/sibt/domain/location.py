@@ -20,6 +20,8 @@ def buildLocationFromUrl(string):
   path = regexMatch.group("path") or ""
   if path.startswith("/~/"):
     path = path[3:]
+    if path == "":
+      path = "."
 
   return RemoteLocation(regexMatch.group("protocol"),
       regexMatch.group("login") or "",

@@ -7,13 +7,6 @@ class DefaultValueSynchronizer(object):
     self.wrapped = wrapped
 
   @property
-  def writeLocIndices(self):
-    try:
-      return self.wrapped.writeLocIndices
-    except SynchronizerFuncNotImplementedException:
-      return [2]
-
-  @property
   def availableOptions(self):
     try:
       return self.wrapped.availableOptions
@@ -32,6 +25,13 @@ class DefaultValueSynchronizer(object):
       return self.wrapped.ports
     except SynchronizerFuncNotImplementedException:
       return [Port(["file"], False), Port(["file"], True)]
+
+  @property
+  def onePortMustHaveFileProtocol(self):
+    try:
+      return self.wrapped.onePortMustHaveFileProtocol
+    except SynchronizerFuncNotImplementedException:
+      return False
 
   def __getattr__(self, name):
     return getattr(self.wrapped, name)

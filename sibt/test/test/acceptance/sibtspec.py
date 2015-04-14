@@ -23,6 +23,8 @@ from test.acceptance.schedulerbuilder import SchedulerBuilder
 from test.acceptance.rulebuilder import RuleBuilder
 from test.acceptance.configscenarioconstructor import ConfigScenarioConstructor
 
+Utc0 = "1970-01-01T00:00:00"
+
 class SibtSpecFixture(object):
   def __init__(self, tmpdir, capfd):
     self.tmpdir = tmpdir
@@ -555,7 +557,6 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
   utcThirdOfMarch = "2014-01-03T18:35:00"
   utcMarch3rdInDifferentZone = "2014-01-03T20:35:00+02:00"
   utc123 = "1970-01-01T00:02:03"
-  utc0 = "1970-01-01T00:00:00"
 
   testDir = fixture.tmpdir.mkdir("versions-test")
   dataDir = str(testDir) + "/home/foo/data"
@@ -578,11 +579,10 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
 
   fixture.tmpdir.join("link").mksymlinkto(fileInDataDir)
   with fixture.tmpdir.as_cwd():
-    fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of",
-        "link/")
+    fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of", "link/")
     fixture.stdout.shouldContainLinePatterns(
         "*rule-1," + utcThirdOfMarch + "*",
-        "*rule-1," + utc0 + "*")
+        "*rule-1," + Utc0 + "*")
 
   with testDir.as_cwd():
     fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of",
@@ -590,7 +590,7 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
     fixture.stdout.shouldContainLinePatterns(
         "*rule-1," + utc123 + "*",
         "*rule-2," + utcThirdOfMarch + "*",
-        "*rule-2," + utc0 + "*")
+        "*rule-2," + Utc0 + "*")
 
   fixture.runSibtWithRealStreamsAndExec("versions-of", "/does-not-exist")
   fixture.shouldHaveExitedWithStatus(1)
@@ -710,6 +710,7 @@ def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
     if [ $2 -lt 3 ]; then
       echo 1
       echo file
+      echo ssh
     fi
   else exit 200; fi""").write()
   unidirectional = fixture.conf.aSyncer().withBashCode("""
@@ -722,7 +723,7 @@ def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
       withLoc2(fixture.confFolders.validSynchronizerLoc("dest/1")).write()
   fixture.conf.ruleWithSched("bi").withSynchronizer(bidirectional).\
       withLoc1(fixture.confFolders.validSynchronizerLoc("dest/1")).\
-      withLoc2(fixture.confFolders.validSynchronizerLoc("dest/2")).write()
+      withLoc2("ssh://somewhere/dest/2").write()
 
   fixture.runSibtWithRealStreamsAndExec("schedule", "uni", "bi")
   fixture.shouldHaveExitedWithStatus(1)
@@ -759,10 +760,10 @@ def test_shouldBeAbleToSimulateSchedulingsAndPrintThemToStdout(fixture):
       "*rule-2*sched-2*")
   fixture.shouldHaveExitedWithStatus(0)
 
-  rule1.withLoc1("/foo").write()
+  rule1.withLoc1("/doesn't-exist").write()
   sched1.mock(); sched2.mock()
   fixture.runSibt("schedule", "--dry", "rule-1", "rule-2")
-  fixture.stderr.shouldInclude("/foo")
+  fixture.stderr.shouldInclude("/doesn't-exist")
   fixture.stdout.shouldBeEmpty()
 
 # TODO check slash removed
@@ -817,30 +818,78 @@ def test_shouldDissectRemoteLocationsWrittenAsUrlsForSyncers(fixture):
       args[1] in ["1", "2", "3", "4"], 
       ret=["0", "protocol1", "ssh", "http", "file"])).\
     allowing(execmock.call(lambda args: args[0] == "info-of-port" and
-      args[1] == "5", ret=[])).write()
+      args[1] in ["5", "specials"], ret=[])).write()
 
   rule = rule.withSynchronizer(syncer).write()
 
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
 
 def test_shouldComplainAboutUnsupportedRemoteProtocols(fixture):
-  rule = fixture.conf.ruleWithSched().\
-      withLoc1("foo://host/").\
-      withLoc2("bar://host/")
-
   syncer = fixture.conf.aSyncer().allowingSetupCallsExceptPorts().\
-      allowing(execmock.call(lambda args: args == ("info-of-port", "1"),
-        ret=["0", "foo", "bar"])).\
-      allowing(execmock.call(lambda args: args == ("info-of-port", "2"),
-        ret=["0", "alternative", "blah"])).\
-      allowing(execmock.call(lambda args: args == ("info-of-port", "3"),
-        ret=[])).write()
+      supportingProtocols([["foo", "bar", "file"],
+        ["alternative", "blah", "file"]]).\
+      allowing(execmock.call(lambda args: args == ("info-of-port", "specials"),
+        ret=["one-must-be-file"])).write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer)
 
-  rule = rule.withSynchronizer(syncer).write()
+  rule.withLoc1("file:///folder/").withLoc2("bar://host/").write()
 
   fixture.runSibtCheckingExecs("show", rule.name)
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldIncludeInOrder("Loc2", "can't", "bar", "choose",
-      "alternative", "blah").andAlso.shouldInclude(rule.name)
+      "alternative", "blah", "file").andAlso.shouldInclude(rule.name)
 
-#TODO 1. re-write rule with extra option; 2. re-write correct rule with extra option
+  syncer.reMakeExpectations()
+  rule.withLoc1("foo://host/").withLoc2("blah://host/").write()
+  fixture.runSibtCheckingExecs("show", rule.name)
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude(rule.name, "one", "local path")
+
+  syncer.reMakeExpectations()
+  rule.withLoc1("file:///folder/").withLoc2("blah://host/").write()
+  fixture.runSibtCheckingExecs("show", rule.name)
+  fixture.shouldHaveExitedWithStatus(0)
+
+def test_shouldBeAbleToMakeContainsCheckForRemoteLocationsToo(fixture):
+  syncer = fixture.conf.syncerReturningVersions("folder/file", ifWithinLoc1=
+      ["48"], ifWithinLoc2=["0"]).allowingSetupCallsExceptPorts().write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).\
+      withLoc1("/foo").withLoc2("ssh://foo@host/foo/").write()
+
+  fixture.runSibtWithRealStreamsAndExec("--utc", "versions-of",
+      "foo@host:/foo/folder/file/")
+  fixture.stdout.shouldContainLinePatterns("*" + rule.name + "," + Utc0 + "*")
+
+  syncer.reMakeExpectations()
+
+def test_shouldAllowRemoteLocationsForTheRestoreTarget(fixture):
+  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptPorts().\
+      allowingPortSpecialsCalls(["one-must-be-file"]).\
+      allowing(execmock.call(lambda args: args[0] == "versions-of" and \
+          args[2] == "1", ret=["0"])).\
+      supportingProtocols([
+        ["first", "second", "file"],
+        ["third", "fourth", "file"]]).write()
+
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer)
+  rule.withLoc1("/foo").withLoc2("third://h/").write()
+
+  fixture.runSibtCheckingExecs("restore", "/foo/file", ":",
+      "--to=first://h/the/dest")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("restore target", "one", "local")
+
+  rule.withLoc1("/foo").withLoc2("/bar").write()
+
+  syncer.reMakeExpectations()
+  fixture.runSibtCheckingExecs("restore", "/foo/file", ":",
+      "--to=fourth://h/the/dest")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("restore target", "can't have", "fourth")
+
+  syncer.expecting(execmock.call(lambda args: args[0] == "restore" and
+    "RestoreProtocol=first" in args and 
+    "RestorePath=/the/dest" in args)).reMakeExpectations()
+  fixture.runSibtCheckingExecs("restore", "/foo/file", ":",
+      "--to=first://h/the/dest")
+

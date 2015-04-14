@@ -8,6 +8,7 @@ from sibt.infrastructure.location import LocalLocation, RemoteLocation
 from sibt.domain.version import Version
 import re
 from sibt.domain.port import Port
+from sibt.configuration.optionvaluesparser import parseLocation
 
 def randstring():
   return str(random())[2:] 
@@ -61,6 +62,7 @@ def mockSyncer(name="foo", availableOptions=[],
   ret.name = name
   ret.availableOptions = list(availableOptions)
   ret.ports = ports
+  ret.onePortMustHaveFileProtocol = False
   return ret
 
 def version(rule, time=anyUTCDateTime()):
@@ -82,11 +84,11 @@ def mockRule(name, scheduler=None, loc1="/tmp/1", loc2="/tmp/2", writeLocs=[2]):
   ret.name = name
   ret.scheduler = scheduler
   ret.scheduling = object()
-  ret.locs = [location(str(loc1)), location(str(loc2))]
-  ret.writeLocs = [location(str(loc1))] if 1 in writeLocs else [] + \
-      [location(str(loc2))] if 2 in writeLocs else []
-  ret.nonWriteLocs = [location(str(loc1))] if 1 not in writeLocs else [] + \
-      [location(str(loc2))] if 2 not in writeLocs else []
+  ret.locs = [parseLocation(str(loc1)), parseLocation(str(loc2))]
+  ret.writeLocs = [parseLocation(str(loc1))] if 1 in writeLocs else [] + \
+      [parseLocation(str(loc2))] if 2 in writeLocs else []
+  ret.nonWriteLocs = [parseLocation(str(loc1))] if 1 not in writeLocs else \
+      [] + [parseLocation(str(loc2))] if 2 not in writeLocs else []
   return ret
 
 def writeFileTree(folder, fileList):

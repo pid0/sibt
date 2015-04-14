@@ -33,7 +33,7 @@ class LocNotEmptyValidator(Validator):
   def validate(self, ruleSet):
     for rule in ruleSet:
       for loc in rule.locs:
-        if len(os.listdir(str(loc))) == 0:
+        if loc.isEmpty:
           return [self.errMsg(formatLoc(loc) + " is empty", rule)]
     return []
 

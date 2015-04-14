@@ -20,7 +20,8 @@ from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from sibt.domain import subvalidators
 from sibt.application.prefixingerrorlogger import PrefixingErrorLogger
 from sibt.domain.exceptions import ValidationException, \
-    UnsupportedProtocolException
+    UnsupportedProtocolException, LocationInvalidException, \
+    LocationNotAbsoluteException
 from sibt.application.rulesfinder import RulesFinder
 from sibt.application.exceptions import RuleNameMismatchException, \
     RulePatternsMismatchException
@@ -141,7 +142,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     return 0
   except (ExternalFailureException, SynchronizerFuncNotImplementedException,
       RuleNameMismatchException, RulePatternsMismatchException,
-      UnsupportedProtocolException) as ex:
+      UnsupportedProtocolException, LocationInvalidException) as ex:
     printKnownException(ex, errorLogger)
     return 1
 
@@ -201,8 +202,11 @@ def wrapScheduler(useDrySchedulers, stdout, sched):
   return DryScheduler(sched, stdout) if useDrySchedulers else sched
 
 def locationFromArg(arg):
-  return parseLocation(os.path.abspath(arg) + 
-      ("/" if arg.endswith("/") else ""))
+  try:
+    return parseLocation(arg)
+  except LocationNotAbsoluteException:
+    return parseLocation(os.path.abspath(arg) + 
+        ("/" if arg.endswith("/") else ""))
 
 def main():
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 

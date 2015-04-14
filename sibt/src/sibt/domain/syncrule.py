@@ -11,15 +11,16 @@ class SyncRule(object):
     self.scheduler = scheduler
     self.synchronizer = synchronizer
     self.ports = synchronizer.ports
+    self._onePortMustHaveFileProtocol = synchronizer.onePortMustHaveFileProtocol
 
-    locKeys = ["Loc" + str(i + 1) for i in range(len(self.ports))]
+    locKeys = ["Loc" + str(i + 1) for i, _ in enumerate(self.ports)]
     self.locs = [synchronizerOptions[key] for key in locKeys]
 
-    for i in range(len(self.locs)):
-      if not self.ports[i].canBeAssignedLocation(self.locs[i]):
-        raise UnsupportedProtocolException(name,
-            "Loc" + str(i + 1), self.locs[i].protocol,
-            self.ports[i].supportedProtocols)
+    for i, (loc, port) in enumerate(zip(self.locs, self.ports)):
+      self._throwIfPortCantUseLoc(port, loc, "Loc" + str(i + 1))
+
+    if self._onePortMustHaveFileProtocol:
+      self._throwIfNotAtLeastOneIsLocal(self.locs, locKeys)
 
     self.writeLocs = [loc for loc, port in zip(self.locs, self.ports) if \
         port.isWrittenTo]
@@ -49,8 +50,16 @@ class SyncRule(object):
 
   def restore(self, location, version, destinationLocation):
     locNumber = self._getLocNumber(location)
+    locIndex = locNumber - 1
+    if self._onePortMustHaveFileProtocol:
+      self._throwIfNotAtLeastOneIsLocal(self.locs[:locIndex] + 
+          [destinationLocation] + self.locs[locIndex+1:], ["restore target"])
+
+    self._throwIfPortCantUseLoc(self.ports[locIndex], destinationLocation,
+        "restore target")
+
     self.synchronizer.restore(self._loc(locNumber).relativePathTo(location), 
-        locNumber, version.time, str(destinationLocation), 
+        locNumber, version.time, destinationLocation, 
         self.synchronizerOptions)
 
   def listFiles(self, location, version, recursively):
@@ -60,10 +69,20 @@ class SyncRule(object):
         locNumber, version.time, recursively, self.synchronizerOptions)
 
   def _getLocNumber(self, path):
-    for i in range(1, len(self.ports) + 1):
-      if self._loc(i).contains(path):
-        return i
+    for i, loc in enumerate(self.locs):
+      if loc.contains(path):
+        return i + 1
     return None
+
+  def _throwIfNotAtLeastOneIsLocal(self, locations, affectedOptions):
+    if all(loc.protocol != "file" for loc in locations):
+      raise UnsupportedProtocolException(self.name, "/".join(affectedOptions),
+          "a remote", explanation="at least one location must be a local path")
+
+  def _throwIfPortCantUseLoc(self, port, loc, optionName):
+    if not port.canBeAssignedLocation(loc):
+      raise UnsupportedProtocolException(self.name, optionName,
+          loc.protocol, port.supportedProtocols)
 
   def __repr__(self):
     return "SyncRule{0}".format((self.name, self.schedulerOptions, 

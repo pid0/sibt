@@ -46,7 +46,13 @@ class ConfigScenarioConstructor(object):
   def syncerReturningVersions(self, forRelativeFile, ifWithinLoc1, 
       ifWithinLoc2):
     return self.aSyncer().withBashCode("""
-if [[ $1 = versions-of && $2 = {0} && $4 =~ ^Loc.*= ]]; then
+if [ $1 = info-of-port ]; then
+  if [[ $2 != extra && $2 -lt 3 ]]; then
+    echo 0
+    echo file
+    echo ssh
+  fi
+elif [[ $1 = versions-of && $2 = {0} && $4 =~ ^Loc.*= ]]; then
   relativeToLoc=$3
   if [ $relativeToLoc = 1 ]; then
     {1}

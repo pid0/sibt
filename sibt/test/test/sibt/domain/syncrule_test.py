@@ -97,3 +97,35 @@ def test_shouldThrowAnExceptionIfLocOptionsHaveProtocolsNotSupportedBySyncer(
   assert ex.value.protocol == "d"
   assert ex.value.supportedProtocols == ["c"]
 
+def test_shouldAssignRestoreTargetToThePortWhereToBeRestoredFileWasFoundIn(
+    fixture):
+  syncer = mockSyncer()
+  syncer.ports = [port(["a"]), port(["b"])]
+  loc1 = remoteLocation(protocol="a", path="/foo")
+
+  rule = fixture.ruleWith(mockedSynchronizer=syncer,
+      syncerOptions={ "Loc1": loc1,
+        "Loc2": remoteLocation(protocol="b", path="/bar") })
+ 
+  with pytest.raises(UnsupportedProtocolException) as ex:
+    rule.restore(loc1, version(rule), remoteLocation(protocol="b"))
+  assert ex.value.supportedProtocols == ["a"]
+
+def test_shouldEnforceSpecialInvariantThatOnePortMustHaveFileProtocol(fixture):
+  syncer = mockSyncer()
+  syncer.onePortMustHaveFileProtocol = True
+  syncer.ports = [port(["file", "remote"]), port(["file", "remote"])]
+
+  with pytest.raises(UnsupportedProtocolException) as ex:
+    fixture.ruleWith(mockedSynchronizer=syncer,
+        syncerOptions={ "Loc1": remoteLocation(protocol="remote"),
+          "Loc2": remoteLocation(protocol="remote") })
+  assert "at least one" in ex.value.explanation
+
+  rule = fixture.ruleWith(mockedSynchronizer=syncer,
+      syncerOptions={ "Loc1": remoteLocation(protocol="remote", path="/foo"),
+        "Loc2": remoteLocation(protocol="file", path="/bar") })
+  with pytest.raises(UnsupportedProtocolException) as ex:
+    rule.restore(remoteLocation(protocol="file", path="/bar/file"),
+        version(rule), remoteLocation(protocol="remote"))
+
