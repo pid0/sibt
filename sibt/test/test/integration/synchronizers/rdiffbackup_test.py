@@ -3,17 +3,29 @@ import pytest
 from test.common.assertutil import iterToTest
 import os
 from test.integration.synchronizers.synchronizertest import \
-    SynchronizerTestFixture, MirrorSynchronizerTest, IncrementalSynchronizerTest
+    SSHSupportingSyncerFixture, MirrorSynchronizerTest, \
+    IncrementalSynchronizerTest, UnidirectionalAugmentedPortSyncerTest, \
+    sshLocationFromPath
+from test.common.builders import localLocation
+from test.common.sshserver import sshServerFixture
 
-class Fixture(SynchronizerTestFixture):
-  def __init__(self, tmpdir):
-    self.load("rdiff-backup", tmpdir)
+class Fixture(SSHSupportingSyncerFixture):
+  def __init__(self, tmpdir, sshServerSetup, location1FromPathFunc,
+      location2FromPathFunc, restoreLocFromPathFunc):
+    super().__init__(tmpdir, sshServerSetup, location1FromPathFunc, 
+        location2FromPathFunc, restoreLocFromPathFunc)
+    self.load("rdiff-backup")
 
-@pytest.fixture
-def fixture(tmpdir):
-  return Fixture(tmpdir)
+@pytest.fixture(params=[
+  (sshLocationFromPath, sshLocationFromPath, sshLocationFromPath),
+  (localLocation, localLocation, localLocation)
+  ])
+def fixture(request, tmpdir, sshServerFixture):
+  loc1Func, loc2Func, restoreFunc = request.param
+  return Fixture(tmpdir, sshServerFixture, loc1Func, loc2Func, restoreFunc)
 
-class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest):
+class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest,
+    UnidirectionalAugmentedPortSyncerTest):
   @property
   def minimumDelayBetweenTestsInS(self):
     return 1

@@ -53,7 +53,7 @@ if __name__ == "__main__":
   options = parseKeyValuePairs(sys.argv[3+numberOfPositionals:])
 
   member = getMember(mod, action)
-  if member == NotImplemented:
+  if member is NotImplemented:
     sys.exit(200)
 
   try:

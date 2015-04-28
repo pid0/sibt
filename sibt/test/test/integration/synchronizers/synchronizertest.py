@@ -6,40 +6,68 @@ import os
 from test.integration.synchronizers import loadSynchronizer
 from sibt.infrastructure.exceptions import ExternalFailureException
 from test.common import relativeToProjectRoot
-from test.common.builders import writeFileTree
+from test.common.builders import writeFileTree, remoteLocation, localLocation
+from test.common import sshserver
 
 def makeNonEmptyDir(container, name, innerFileName="file"):
   ret = container.mkdir(name)
   (container / name / innerFileName).write("")
   return ret
 
+def sshLocationFromPath(path):
+  return remoteLocation(protocol="ssh", login="", host="localhost",
+      port=str(sshserver.Port), path=path)
 
 class SynchronizerTestFixture(object):
-  def load(self, synchronizerName, tmpdir):
+  def __init__(self, tmpdir, location1FromPathFunc=localLocation, 
+      location2FromPathFunc=localLocation,
+      restoreLocFromPathFunc=localLocation):
+    self.location1FromPath = location1FromPathFunc
+    self.location2FromPath = location2FromPathFunc
+    self.restoreLocFromPath = restoreLocFromPathFunc
+    self.tmpdir = tmpdir
+
+  def load(self, synchronizerName):
     path = relativeToProjectRoot("sibt/synchronizers/" + synchronizerName)
     self.syncer = loadSynchronizer(path)
 
-    self.loc1 = tmpdir.mkdir("Loc1")
-    self.loc2 = tmpdir.mkdir("Loc2")
-    self.tmpdir = tmpdir
+    self.loc1 = self.tmpdir.mkdir("Loc $1\"\\'")
+    self.loc2 = self.tmpdir.mkdir("Loc $2\"\\'")
 
   def optsWith(self, options):
-    options["Loc1"] = str(self.loc1)
-    assert not options["Loc1"].endswith("/")
-    options["Loc2"] = str(self.loc2)
+    assert not str(self.loc1).endswith("/")
+    options["Loc1"] = self.location1FromPath(str(self.loc1))
+    options["Loc2"] = self.location2FromPath(str(self.loc2))
     return options
 
   def restorePort1File(self, fileName, version, dest, additionalOptions=dict()):
     options = self.optsWith(additionalOptions)
     self.syncer.restore(fileName, 1, version, 
-        None if dest is None else str(dest), options)
+        None if dest is None else self.restoreLocFromPath(str(dest)), options)
 
   def versionsOf(self, fileName, portNumber, additionalOptions=dict()):
     return self.syncer.versionsOf(fileName, portNumber, 
         self.optsWith(additionalOptions))
 
+  def sync(self, additionalOptions=dict()):
+    self.syncer.sync(self.optsWith(additionalOptions))
+
   def changeMTime(self, path, newModiticationTime):
     os.utime(str(path), (0, newModiticationTime))
+
+class SSHSupportingSyncerFixture(SynchronizerTestFixture):
+  def __init__(self, tmpdir, sshServerSetup, location1FromPathFunc, 
+      location2FromPathFunc, restoreLocFromPathFunc):
+    super().__init__(tmpdir, location1FromPathFunc, location2FromPathFunc,
+        restoreLocFromPathFunc)
+    self.sshServerSetup = sshServerSetup
+
+  def optsWith(self, options):
+    options["RemoteShellCommand"] = ("ssh -o UserKnownHostsFile={0} "
+        "-i {1}").format(self.sshServerSetup.knownHostsFile,
+            self.sshServerSetup.clientIdFile)
+    return super().optsWith(options)
+
 
 class SynchronizerTest(object):
   @property
@@ -99,6 +127,9 @@ class SynchronizerTest(object):
   def test_shouldBeAbleToGiveARecursiveFileListing(self, fixture):
     options = fixture.optsWith(dict())
 
+    linkToLoc = fixture.tmpdir / "link-to-loc"
+    linkToLoc.mksymlinkto(fixture.loc2)
+    fixture.loc2 = linkToLoc
     version = self.setUpTestTreeSyncAndDeleteIt(fixture, 
         self.fileNameWithNewline, options)
 
@@ -189,7 +220,7 @@ class SynchronizerTest(object):
     fixture.restorePort1File("foo", version, fixture.tmpdir / "restored")
     assert (fixture.tmpdir / "restored").readlink() == str(folder)
 
-  def test_shouldWriteIntoDirsAddingToContentLikeCpWhenRestoringFolders(
+  def test_shouldWriteIntoDirsMergingContentLikeCpWhenRestoringFolders(
       self, fixture, capfd):
     testFolderName = "novels"
 
@@ -244,7 +275,8 @@ class SynchronizerTest(object):
 
     self.runFileRestoreTest(fixture, 150, testFileName, test)
 
-  def test_shouldEntirelyReplaceFileInSourceTreeWithADir(self, fixture):
+  def test_shouldEntirelyReplaceAnyFileInTheSourceTreeWhenRestoringADir(self, 
+      fixture):
     testFolderName = "baz"
 
     def test(checkFunc, testFolder):
@@ -265,8 +297,8 @@ class SynchronizerTest(object):
       assert not testFolder.islink()
 
       fixture.loc1.remove()
-      checkFunc(None, testFolder, relativePathOfFileToRestore="")
-      assert fixture.loc1.listdir() == [testFolder]
+      checkFunc(None, testFolder, relativePathOfFileToRestore=".")
+      assert testFolder in fixture.loc1.listdir()
 
     self.runFoldersRestoreTest(fixture, 423, testFolderName, test)
 
@@ -332,4 +364,15 @@ class IncrementalSynchronizerTest(SynchronizerTest):
     assert topFile.read() == "new"
     fixture.restorePort1File("top", older, None)
     assert topFile.read() == "old"
+
+class UnidirectionalAugmentedPortSyncerTest(SynchronizerTest):
+  def test_shouldSupportAnSSHLocationAtOneOfTheTwoPorts(self, fixture):
+    assert "RemoteShellCommand" in fixture.syncer.availableOptions
+
+    iterToTest(fixture.syncer.ports).shouldContainMatching(
+        lambda port: "ssh" in port.supportedProtocols,
+        lambda port: "ssh" in port.supportedProtocols)
+
+  def test_shouldWriteToPort2(self, fixture):
+    assert fixture.syncer.ports[1].isWrittenTo
 

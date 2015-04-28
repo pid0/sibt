@@ -1,53 +1,98 @@
 #!bash-runner
 
 AdditionalSyncOpts=
+RemoteShellCommand=
 
 available-options() {
   echo RemoveOlderThan
   echo AdditionalSyncOpts
+  echo RemoteShellCommand
+}
+
+info-of-port() {
+  if [ "$1" = specials ]; then
+    return
+  elif [ "$1" -lt 3 ]; then
+    if [ "$1" = 1 ]; then
+      echo 0
+    else
+      echo 1
+    fi
+    echo file
+    echo ssh
+  fi
+}
+
+loc-syntax-of() {
+  local path="${2:-$(get-var $1 Path)}"
+
+  if [ "$(get-var $1 Protocol)" = file ]; then
+    echo "$path"
+    return 
+  fi
+
+  echo "$(rsh-host-syntax-of $1)$(get-infixed-var ' -p ' $1 Port '')"'::'"$path"
+}
+
+run-rdiff-backup() {
+  local remoteSchemaArg=\
+"${RemoteShellCommand:+${RemoteShellCommand} -C %s rdiff-backup --server}"
+
+  rdiff-backup ${remoteSchemaArg:+--remote-schema "$remoteSchemaArg"} "$@"
 }
 
 sync() {
-  rdiff-backup $AdditionalSyncOpts "$Loc1" "$Loc2"
+  declare -a AdditionalArgs=()
+  eval args-to-array AdditionalArgs "$AdditionalSyncOpts"
+
+  run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
+    "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)"
+
   if [ -n "${RemoveOlderThan+a}" ]; then
-    rdiff-backup $AdditionalSyncOpts --remove-older-than "$RemoveOlderThan" \
-        "$Loc2"
+    run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
+      --remove-older-than "$RemoveOlderThan" "$(loc-syntax-of Loc2)"
   fi
 }
 
 versions-of() {
   path="$1"
   locNumber=$2
+
   if [ $locNumber = 2 ]; then
     return
   fi
-  rdiff-backup --parsable-output --list-increments "$Loc2"/"$path" | \
-      { grep -v missing || true; } | cut -d ' ' -f 1
+
+  run-rdiff-backup --parsable-output --list-increments \
+    "$(loc-syntax-of Loc2 "$Loc2Path"/"$path")" | \
+    { grep -v missing || true; } | cut -d ' ' -f 1
 }
 
 restore() {
-  path="$1"
+  relativePath="$1"
   locNumber=$2
   timestamp=$4
-  dest="$5"
 
   if [ $locNumber = 2 ]; then
     return
   fi
 
-  srcFileType=$(get-repo-file-type "$path" $timestamp)
-  src="$Loc2"/"$path"
-  srcFileName="$(basename "$src")"
+  srcFileType=$(get-repo-file-type "$relativePath" $timestamp)
+  srcPath="$Loc2Path"/"$relativePath"
+  srcFileName="$(basename "$srcPath")"
 
   restoringToSourceTree=0
-  if [ -z "$dest" ]; then
+  if [ -z "$5" ]; then
     restoringToSourceTree=1
-    dest="$Loc1"/"$path"
+    destPath="$Loc1Path"/"$relativePath"
+    destPort=Loc1
+  else
+    destPath="$RestorePath"
+    destPort=Restore
   fi
-  destFileType=$(get-file-type "$dest" follow-links)
+  destFileType=$(get-file-type Loc1 "$destPath" follow-links)
 
-  fileInDest="$dest"/"$srcFileName"
-  fileInDestType=$(get-file-type "$fileInDest")
+  fileInDest="$destPath"/"$srcFileName"
+  fileInDestType=$(get-file-type Loc1 "$fileInDest")
 
   if [ $restoringToSourceTree = 0 ]; then
     if [ $destFileType = non-directory ]; then
@@ -58,7 +103,7 @@ restore() {
       fi
 
     elif [ $destFileType = directory ]; then
-      dest="$fileInDest"
+      destPath="$fileInDest"
 
       if [ $srcFileType = directory ] && \
           [ $fileInDestType = non-directory ]; then
@@ -76,12 +121,15 @@ restore() {
     fi
   fi
 
-  rdiff-backup --force --restore-as-of $timestamp "$src" "$dest"
+  run-rdiff-backup --force --restore-as-of $timestamp \
+    "$(loc-syntax-of Loc2 "$srcPath")" \
+    "$(loc-syntax-of "$destPort" "$destPath")"
 }
 
 get-repo-file-type() {
-  rdiff-backup --parsable-output --list-increments \
-      "$Loc2"/"$1" | sed -n -e "/^${2}/p" | cut -d ' ' -f 2
+  run-rdiff-backup --parsable-output --list-increments \
+    "$(loc-syntax-of Loc2 "$Loc2Path"/"$1")" | \
+    sed -n -e "/^${2}/p" | cut -d ' ' -f 2
 }
 
 append-slash-if-dir() {
@@ -105,7 +153,7 @@ remove-prefix() {
 }
 
 list-files() {
-  path="$1"
+  relativePath="$1"
   locNumber=$2
   timestamp=$4
   recursively=$5
@@ -114,9 +162,9 @@ list-files() {
     return
   fi
 
-  typeOfFile=$(get-repo-file-type "$path" $timestamp)
+  typeOfFile=$(get-repo-file-type "$relativePath" $timestamp)
   if [ $typeOfFile != directory ]; then
-    echo -n "${path##*/}"
+    echo -n "${relativePath##*/}"
     echo -e -n '\0'
     return
   fi
@@ -130,13 +178,14 @@ list-files() {
   fi
 
   preprocessing=''
-  prefix="$path"/
-  if [ "$path" = . ]; then
+  prefix="$relativePath"/
+  if [ "$relativePath" = . ]; then
     prefix=./
     preprocessing="$prependPeriodSlash"
   fi
 
-  rdiff-backup --list-at-time $timestamp "$Loc2"/"$path" | sed -n -e '1!p' |\
-    sed -r -e "$preprocessing" | sed -nr -e "$filter" |\
+  run-rdiff-backup --list-at-time $timestamp \
+    "$(loc-syntax-of Loc2 "$Loc2Path"/"$relativePath")" | sed -n -e '1!p' | \
+    sed -r -e "$preprocessing" | sed -nr -e "$filter" | \
     append-slash-if-dir $timestamp | remove-prefix "$prefix"
 }

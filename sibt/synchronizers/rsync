@@ -1,57 +1,108 @@
 #!bash-runner
 
 AdditionalSyncOpts=
+RemoteShellCommand=
+AdditionalOptsBothWays=
+
+TimestampFileName=".sibt-rsync-timestamp"
 
 available-options() {
 cat <<EOF
 AdditionalSyncOpts
+AdditionalOptsBothWays
+RemoteShellCommand
 EOF
 }
 
-run-rsync() {
-  local srcPath="$1"
-  if [ $3 = 1 ]; then
-    srcPath+=/
+info-of-port() {
+  if [ "$1" = specials ]; then
+    echo one-must-be-file
+  elif [ "$1" -lt 3 ]; then
+    if [ "$1" = 1 ]; then
+      echo 0
+    else
+      echo 1
+    fi
+    echo file
+    echo ssh
   fi
-  # use --protect-args
-  rsync -a --acls --xattrs "${@:4:20}" "$srcPath" "$2" $AdditionalSyncOpts
+}
+
+run-rsync() {
+  local srcLoc="$1"
+  local destLoc="$2"
+  local remotePort="$4"
+  if [ $3 = 1 ]; then
+    srcLoc+=/
+  fi
+
+  declare -a RemoteShellArgs=()
+  if [ -n "$RemoteShellCommand" ]; then
+    RemoteShellArgs=(--rsh "$(rsh-command-with-socket-port $remotePort)")
+  fi
+
+  declare -a AddOptsArray=()
+  eval args-to-array AddOptsArray "$AdditionalOptsBothWays"
+
+  rsync --protect-args -a --acls --xattrs "${@:5:$#}" "$srcLoc" "$destLoc" \
+    "${RemoteShellArgs[@]:+${RemoteShellArgs[@]}}" \
+    "${AddOptsArray[@]:+${AddOptsArray[@]}}"
+}
+
+loc-syntax-of() {
+  local path="${2:-$(get-var $1 Path)}"
+
+  if [ "$(get-var $1 Protocol)" = file ]; then
+    echo "$path"
+    return
+  fi
+
+  echo "$(rsh-host-syntax-of $1)"':'"$path"
 }
 
 sync() {
-  run-rsync "$Loc1" "$Loc2" 1 --delete
+  declare -a AddOptsArray=()
+  eval args-to-array AddOptsArray "$AdditionalSyncOpts"
+
+  run-rsync "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)" 1 \
+    "$(get-first-rsh-port Loc1 Loc2)" --delete \
+    "${AddOptsArray[@]:+${AddOptsArray[@]}}"
+
+  declare -a cmd=(bash -c 'date +%s >"$1"' '' "$Loc2Path"/"$TimestampFileName")
+  execute-at-port Loc2 cmd
 }
 
 versions-of() {
   path="$1"
-  locNumber=$2
+  portNumber=$2
 
-  if [ $locNumber = 2 ]; then
+  if [ $portNumber = 2 ]; then
     return
   fi
 
-  fullPath="$Loc2"/"$path"
-  if [ -e "$fullPath" ]; then
-    stat -c%Y "$fullPath"
-  fi
+  fullPath="$Loc2Path"/"$path"
+  timestampFilePath="$Loc2Path"/"$TimestampFileName"
+
+  declare -a cmd=(bash -c \
+    'if [ -e "$2" ]; then { cat "$1" || stat -c%Y "$2"; }; fi 2>/dev/null' \
+    '' "$timestampFilePath" "$fullPath")
+  execute-at-port Loc2 cmd
 }
 
 restore() {
   path="$1"
-  locNumber="$2"
-  dest="$5"
   restoringToSourceTree=0
+  destPort=Restore
 
-  src="$Loc2"/"$path"
-  srcFileType=$(get-file-type "$src")
+  srcPath="$Loc2Path"/"$path"
+  srcFileType=$(get-file-type Loc2 "$srcPath")
 
-  if [ -z "$dest" ]; then
+  if [ -z "$5" ]; then
     restoringToSourceTree=1
-    dest="$Loc1"/"$path"
-  fi
-
-  restoringEntireLoc=0
-  if [ -z "$path" ]; then
-    restoringEntireLoc=1
+    destPath="$Loc1Path"/"$path"
+    destPort=Loc1
+  else 
+    destPath="$RestorePath"
   fi
 
   declare -a options=()
@@ -61,58 +112,63 @@ restore() {
 
     options+=(--delete)
 
-    if [ $restoringEntireLoc = 1 ]; then
-      withSlash=1
-    else
-      dest=$(dirname "$dest")
-      withSlash=0
-    fi
+    destPath=$(dirname "$destPath")
+    withSlash=0
 
   else
 
-    if ! [ -e "$dest" ] && [ $srcFileType = directory ]; then
+    destFileType=$(get-file-type "$destPort" "$destPath" follow-links)
+
+    if [ "$destFileType" = missing ] && [ "$srcFileType" = directory ]; then
       withSlash=1
     fi
 
-    destFileType=$(get-file-type "$dest" follow-links)
-    if [ $destFileType = directory ] && [ $srcFileType = directory ]; then
-      fileInDest="$dest"/"$(basename "$src")"
-      if [ $(get-file-type "$fileInDest") = non-directory ]; then
+    if [ "$destFileType" = directory ] && [ "$srcFileType" = directory ]; then
+      fileInDest="$destPath"/"$(basename "$srcPath")"
+      if [ "$(get-file-type "$destPort" "$fileInDest")" = non-directory ]; then
         print-error "destination contains non-directory "\
-"‘$(basename "$src")’, could not make way for source"
+"‘$(basename "$srcPath")’, could not make way for source"
         return 1
       fi
     fi
 
   fi
   
-  run-rsync "$src" "$dest" $withSlash "${options[@]:+${options[@]}}"
+  run-rsync "$(loc-syntax-of Loc2 "$srcPath")" \
+    "$(loc-syntax-of "$destPort" "$destPath")" \
+    "$withSlash" "$(get-first-rsh-port "$destPort" Loc2)" \
+    "${options[@]:+${options[@]}}"
 }
 
 list-files() {
   relativePath="$1"
-  locNumber="$2"
+  portNumber="$2"
   recursively=$5
-  path="$Loc2"/"$relativePath"
+  path="$Loc2Path"/"$relativePath"
 
-  if [ $locNumber = 2 ]; then
+  if [ $portNumber = 2 ]; then
     return
   fi
 
+  fileType="$(get-file-type Loc2 "$path")"
+
   mindepth=0
   filePathFormat=f
-  if [[ -d "$path" && ! -L "$path" ]]; then
+  if [ "$fileType" = directory ]; then
     mindepth=1
     filePathFormat=P
   fi
 
-  declare -a maxdepth=(-maxdepth 1)
+  maxdepth=1
   if [ $recursively = 1 ]; then
-    maxdepth=()
+    maxdepth=
   fi
 
-  find "$path" -mindepth "$mindepth" "${maxdepth[@]:+${maxdepth[@]}}" \
-    -printf '%y%'$filePathFormat'\0' | \
+  declare -a cmd=(find "$path" -mindepth "$mindepth" \
+    ${maxdepth:+-maxdepth $maxdepth} \
+    '!' -samefile "$Loc2Path"/"$TimestampFileName" \
+    -printf '%y%'$filePathFormat'\0')
+  execute-at-port Loc2 cmd | \
     sed -zr -e 's,^d(.*)$,\1/,
       t
       s,^.(.*)$,\1,'

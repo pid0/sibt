@@ -11,6 +11,9 @@ shift 1
 action="$1"
 shift 1
 
+#####
+# Default implementations
+#####
 info-of-port() {
   return $notImplStatus
 }
@@ -35,25 +38,87 @@ sync() {
   return $notImplStatus
 }
 
-
+#####
+# Library
+#####
 get-file-type() {
-  local followLinks=${2:-0}
-  if ! [ -e "$1" ]; then
-    echo missing
-    return
-  fi
+  local followLinks=${3:-0}
 
-  if [ -d "$1" ] && ( [ $followLinks = follow-links ] || ! [ -L "$1" ] ); then
+  declare -a cmd=(bash -c \
+ 'if ! [ -e "$1" ]; then
+    echo missing
+  elif [ -d "$1" ] && ( [ "$2" = follow-links ] || ! [ -L "$1" ] ); then
     echo directory
   else
     echo non-directory
+  fi' "" "$2" "$followLinks")
+  execute-at-port "$1" cmd
+}
+
+args-to-array() {
+  declare -n destArray=$1
+
+  destArray=("${@:2:$#}")
+}
+
+get-var() {
+  local fullVarName="$1""$2"
+  echo "${!fullVarName}"
+}
+
+get-optional-var() {
+  local fullVarName="$1""$2"
+  echo "${!fullVarName:+${!fullVarName}}"
+}
+
+get-infixed-var() {
+  local fullVarName="$2""$3"
+  echo "${!fullVarName:+"$1${!fullVarName}$4"}"
+}
+
+rsh-command-with-socket-port() {
+  echo "${RemoteShellCommand:-ssh} ${1:+-p $1}"
+}
+
+rsh-host-syntax-of() {
+  echo "$(get-infixed-var '' $1 Login '@')""$(get-var $1 Host)"
+}
+
+execute-at-port() {
+  local argsArrayName="$2"[@]
+
+  if [ "$(get-var $1 Protocol)" = file ]; then
+    "${!argsArrayName}"
+  else
+    declare -a rshCommand=(\
+      $(rsh-command-with-socket-port "$(get-optional-var $1 Port)"))
+    rshCommand+=("$(rsh-host-syntax-of $1)" "")
+    for arg in "${!argsArrayName}"; do
+      local argWithSingleQuotesEscaped="$(echo "$arg" | \
+        sed -r -e "s,','\"'\"',g")"
+      rshCommand[-1]+="'${argWithSingleQuotesEscaped}' "
+    done
+    "${rshCommand[@]}"
   fi
+}
+
+get-first-rsh-port() {
+  for portLocName in "$@"; do
+    local socketPort="$(get-optional-var "$portLocName" Port)"
+    if ! [ "$(get-var "$portLocName" Protocol)" = file ]; then
+      echo "$socketPort"
+      return
+    fi
+  done
 }
 
 print-error() {
   echo "$(basename "$fileToRun")"' synchronizer:' "$@" >&2
 }
 
+#####
+# Invocation
+#####
 source "$fileToRun"
 
 setup-variables() {

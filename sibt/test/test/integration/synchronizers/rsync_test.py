@@ -1,20 +1,31 @@
 import pytest
 from test.integration.synchronizers.synchronizertest import \
-    SynchronizerTestFixture, MirrorSynchronizerTest
+    SSHSupportingSyncerFixture, MirrorSynchronizerTest, sshLocationFromPath, \
+    UnidirectionalAugmentedPortSyncerTest
 import os
 from datetime import datetime, timezone
-from test.common.builders import anyUTCDateTime
+from test.common.builders import anyUTCDateTime, localLocation, writeFileTree
+from test.common.sshserver import sshServerFixture
+from test.common.assertutil import iterToTest
 
-class Fixture(SynchronizerTestFixture):
-  def __init__(self, tmpdir):
-    self.load("rsync", tmpdir)
+class Fixture(SSHSupportingSyncerFixture):
+  def __init__(self, tmpdir, sshServerSetup, location1FromPathFunc, 
+      location2FromPathFunc, restoreLocFromPathFunc):
+    super().__init__(tmpdir, sshServerSetup, location1FromPathFunc, 
+      location2FromPathFunc, restoreLocFromPathFunc)
+    self.load("rsync")
 
-@pytest.fixture
-def fixture(tmpdir):
-  return Fixture(tmpdir)
+@pytest.fixture(params=[
+  (sshLocationFromPath, localLocation, localLocation),
+  (localLocation, sshLocationFromPath, localLocation)])
+def fixture(request, tmpdir, sshServerFixture):
+  loc1Func, loc2Func, restoreFunc = request.param
+  return Fixture(tmpdir, sshServerFixture, loc1Func, loc2Func, restoreFunc)
 
-class Test_RsyncTest(MirrorSynchronizerTest):
-  def test_shouldSimplyUseTheFilesModificationTimeAsVersion(self, fixture):
+class Test_RsyncTest(MirrorSynchronizerTest, 
+    UnidirectionalAugmentedPortSyncerTest):
+  def test_shouldRememberTheVersionTimestampInAFileAndElseFallBackOnTheMTime(
+      self, fixture):
     someFile = fixture.loc1.join("file")
     someFile.write("")
     fixture.changeMTime(str(someFile), 23)
@@ -22,34 +33,41 @@ class Test_RsyncTest(MirrorSynchronizerTest):
 
     fixture.syncer.sync(options)
 
-    expectedVersion = datetime(1970, 1, 1, 0, 0, 23, tzinfo=timezone.utc)
-    assert fixture.syncer.versionsOf("file", 1, options) == [expectedVersion]
-
     assert fixture.syncer.versionsOf("does-not-exist", 1, options) == []
     assert fixture.syncer.versionsOf("file", 2, options) == []
 
-  def test_shouldSupportInsertingCustomRsyncOptionsWhenSyncing(self, fixture):
+    iterToTest(fixture.syncer.versionsOf("file", 1, options)).\
+        shouldContainMatching(lambda version: version.year > 1970)
+
+    (fixture.loc2 / ".sibt-rsync-timestamp").remove()
+    fixture.syncer.versionsOf("file", 1, options) == \
+        [datetime(1970, 1, 1, 0, 0, 23, tzinfo=timezone.utc)]
+
+  def test_shouldTakeCustomOptionsForSyncingAndForSyncingAndRestoring(self, 
+      fixture):
     assert "AdditionalSyncOpts" in fixture.syncer.availableOptions
+    assert "AdditionalOptsBothWays" in fixture.syncer.availableOptions
 
-    fixture.loc1.join("file=a").write("")
-    fixture.loc1.join("file=b").write("")
+    infoFile, = writeFileTree(fixture.loc1, [".",
+      ["proc",
+        "cpuinfo"],
+      ["foo",
+        ["proc",
+          "cpuinfo [1]"]]])
+    infoFile.write("blah")
 
-    fixture.syncer.sync(fixture.optsWith({"AdditionalSyncOpts": 
-        "--exclude *=a"}))
+    options = { "AdditionalSyncOpts": "--exclude '/?roc/cpu*'",
+        "AdditionalOptsBothWays": "$(echo --no-t)" }
 
-    assert os.listdir(str(fixture.loc2)) == ["file=b"]
+    fixture.sync(options)
+    assert "cpuinfo" not in os.listdir(str(fixture.loc2 / "proc"))
 
-  def test_shouldRestoreFilesTheSameWayItMirroredThem(self, fixture):
-    fileName = "inner-district"
+    fixture.changeMTime(fixture.loc2 / "foo" / "proc" / "cpuinfo", 20)
+    infoFile.remove()
+    fixture.restorePort1File("foo/proc", anyUTCDateTime(), None, options)
+    assert infoFile.read() == "blah"
+    assert os.stat(str(infoFile)).st_mtime != 20
 
-    loc1Folder = fixture.loc1.mkdir("net")
-    loc2Folder = fixture.loc2.mkdir("net")
-    loc2File = loc2Folder.join(fileName)
+  def test_shouldAcknowledgeThatItDoesntSupportTwoSSHLocsAtATime(self, fixture):
+    assert fixture.syncer.onePortMustHaveFileProtocol
 
-    loc2File.write("bar")
-    fixture.changeMTime(loc2File, 20)
-
-    fixture.syncer.restore("net", 1, anyUTCDateTime(), None, fixture.optsWith({
-        "AdditionalSyncOpts": "--no-t"}))
-    assert os.stat(str(loc1Folder / fileName)).st_mtime != 20
-    assert (loc1Folder / fileName).read() == "bar"

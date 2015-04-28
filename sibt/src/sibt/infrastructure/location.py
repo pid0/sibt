@@ -19,13 +19,13 @@ class RemoteLocation(object):
     self.login = login
     self.host = host
     self.port = port
-
-    if len(host) == 0:
-      raise LocationInvalidException(self._strWithPath(path), "has no host")
-    if len(path) == 0:
-      raise LocationInvalidException(self._strWithPath(path), "has no path")
-
     self._filePath = FilePath.fromString(path)
+
+    if len(path) == 0:
+      raise LocationInvalidException(str(self), "has no path")
+    if len(host) == 0:
+      raise LocationInvalidException(str(self), "has no host")
+
     self.path = str(self._filePath)
 
   @property
@@ -66,15 +66,13 @@ class RemoteLocation(object):
 
     return ret
 
-  def _strWithPath(self, path):
+  def __str__(self):
     return "{0}://{1}{2}{3}{4}".format(self.protocol,
         self.login + "@" if self.login != "" else "",
         self.host,
         ":" + self.port if self.port != "" else "",
-        path)
-
-  def __str__(self):
-    return self._strWithPath(self._filePath)
+        self._filePath if self._filePath.isAbsolute else \
+            ("/~/" + str(self._filePath)))
   def __repr__(self):
     return "RemoteLocation{0}".format((self.protocol,
       self.login, self.host, self.port, self.path))

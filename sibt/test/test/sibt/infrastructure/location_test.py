@@ -31,14 +31,15 @@ class LocationTest(object):
     self.assertIsNotWithin("/home/foo-abc", "/home/foo")
 
     self.assertIsWithin("/anything", "/", relPart="anything")
+    self.assertIsWithin("/", "/", relPart=".")
 
 class Test_RemoteLocationTest(LocationTest):
   def locWithPath(self, path):
     return RemoteLocation("ssh", "user", "host", "5000", path)
 
   def test_shouldBeAbleToPrintItself(self):
-    str(RemoteLocation("rsync", "user", "innsmouth", "5655", "/foo/")) == \
-        "rsync://user@innsmouth:5655/foo"
+    assert str(RemoteLocation("rsync", "user", "innsmouth", "5655", 
+      "foo/")) == "rsync://user@innsmouth:5655/~/foo"
 
   def test_shouldRaiseExceptionIfHostOrPathIsMissing(self):
     with pytest.raises(LocationInvalidException) as ex:

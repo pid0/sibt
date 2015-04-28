@@ -5,7 +5,8 @@ from test.integration.synchronizers.synchronizertest import \
 
 class Fixture(SynchronizerTestFixture):
   def __init__(self, tmpdir):
-    self.load("null", tmpdir)
+    super().__init__(tmpdir)
+    self.load("null")
 
 @pytest.fixture
 def fixture(tmpdir):

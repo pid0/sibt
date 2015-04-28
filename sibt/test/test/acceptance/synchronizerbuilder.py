@@ -76,7 +76,7 @@ class SynchronizerBuilder(ConfigObjectBuilder):
         self.name) if toReadonlyDir else self.path
 
     path.write(self.kwParams.get(
-      "content", "#!/usr/bin/env bash\necho foo\nexit 200"))
+      "content", "#!/usr/bin/env bash\nexit 200"))
     path.chmod(0o700)
     self.reMakeExpectations()
     return self
