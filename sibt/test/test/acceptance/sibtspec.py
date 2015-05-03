@@ -139,7 +139,7 @@ def run(args): print("scheduled rule '" + args[0].ruleName + "'")
 
   rule = fixture.conf.aRule("foo-rule").withScheduler(sched).\
       withSynchronizer(syncer1).withContent("""
-[Interpreter]
+[Synchronizer]
 Name = {syncer}
 Option=1
 Loc1={loc1}
@@ -152,7 +152,7 @@ Name = {sched}""").write()
       withSynchronizer(syncer2).withContent("""
   [Scheduler]
   Name = {sched}
-[Interpreter]
+[Synchronizer]
 Name = {syncer}
 Loc1={loc1}
 Loc2={loc2}
@@ -227,15 +227,19 @@ def test_shouldExitWithErrorMessageIfInvalidSyntaxIsFound(fixture):
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("syntax error", "suspect-rule")
+  fixture.stderr.shouldInclude("wrong syntax", "suspect-rule")
 
-def test_shouldDistinguishBetweenDisabledAndSymlinkedToEnabledRules(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("is-on").enabled().write()
+def test_shouldDistinguishBetweenDisabledRulesAndEnabledOnesWithAnInstanceFile(
+    fixture):
+  rule = fixture.conf.ruleWithSchedAndSyncer("is-on").\
+      enabled().\
+      enabled(instanceName="foo").write()
   fixture.conf.ruleWithSchedAndSyncer("is-off").write()
 
   fixture.runSibt("list", "rules")
   fixture.stdout.shouldContainLinePatterns(
       "*is-on*enabled*",
+      "*foo@is-on*enabled*",
       "*is-off*disabled*")
 
 def test_shouldFailIfConfiguredSchedulerOrSynchronizerDoesNotExist(fixture):
@@ -290,7 +294,7 @@ def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
 def test_shouldConsiderNameAndLocsAsMinimumAndAlreadyAvailableOptions(
     fixture):
   fixture.conf.ruleWithSchedAndSyncer("invalid-rule").withContent(
-      """[Interpreter]
+      """[Synchronizer]
       Name={syncer}
       [Scheduler]
       Name={sched}""").write()
@@ -300,16 +304,12 @@ def test_shouldConsiderNameAndLocsAsMinimumAndAlreadyAvailableOptions(
   fixture.stderr.shouldInclude("invalid-rule", "minimum", "Loc1")
 
 def test_shouldIssureErrorMessageIfARuleFileNameContainsAComma(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("no,comma").write()
+  fixture.conf.ruleWithSchedAndSyncer("comma").enabled(
+      instanceName="no,").write()
 
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
-  fixture.stderr.shouldInclude("invalid character", "no,comma")
-def test_shouldIssureErrorMessageIfARuleFileNameContainsAnAt(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("no@at").write()
-
-  fixture.runSibt()
-  fixture.stderr.shouldInclude("invalid character")
+  fixture.stderr.shouldInclude("invalid character", "no,@comma")
 def test_shouldIssureErrorMessageIfARuleFileNameContainsASpace(fixture):
   fixture.conf.ruleWithSchedAndSyncer("no space").write()
 
@@ -324,7 +324,7 @@ def test_shouldIssureErrorMessageIfARuleFileNameBeginsWithAPlus(fixture):
 
   fixture.conf.ruleWithSchedAndSyncer("+-").write()
   fixture.runSibt()
-  fixture.stderr.shouldInclude("begin with", "+-")
+  fixture.stderr.shouldInclude("at the beginning", "+-")
 
 def test_shouldFailWhenReadingARuleConfiguredWithARelativeLocPath(fixture):
   fixture.conf.ruleWithSchedAndSyncer().withLoc1("this-is-relative").write()
@@ -455,13 +455,13 @@ def test_shouldProvideAWayToImportRuleConfigsAndANamingSchemeForIncludeFiles(
 [Scheduler]
 Name = {sched}
 Interval = 3w
-[Interpreter]
+[Synchronizer]
 Name = {syncer}
 """).write()
 
   fixture.conf.aRule("[actual]-rule").withContent("""
 #import header
-[Interpreter]
+[Synchronizer]
 Loc1={loc1}
 Loc2={loc2}
 [Scheduler]
@@ -477,7 +477,82 @@ Syslog = yes""").enabled().write()
 
   fixture.runSibt("show", "header.inc")
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("no", "rule")
+  fixture.stderr.shouldIncludeInOrder("no", "rule", "name")
+  fixture.stdout.shouldBeEmpty()
+
+def test_shouldTreatInstanceFileAsImplicitOverridingImportFile(fixture):
+  fixture.conf.aSyncer("rdiff-backup").withTestOptionsCode().write()
+  fixture.conf.ruleWithSched("user-rule.inc").withContent(r"""
+  _userName = dummy
+  [Scheduler]
+  Name = {sched}
+  [Synchronizer]
+  Loc1 = /home/%(_userName)s
+  Loc2 = /mnt/backup/%(_userName)s""").write()
+
+  fixture.conf.aRule("with-rdiff").withContent(r"""
+  #import user-rule
+  [Synchronizer]
+  Name = rdiff-backup
+  AddFlags = --exclude %(_excludePattern)s""").\
+      enabled("user1", r"""
+  _userName = %(_instanceName)s
+  _excludePattern = *foo""").\
+      enabled("user2", r"""
+  _excludePattern = *bar
+  [Synchronizer]
+  Loc2 = /mnt/important/%(_userName)s
+  _userName = blah""").write()
+
+
+  fixture.runSibtWithRealStreamsAndExec("show", "user1@with-rdiff")
+  fixture.stderr.shouldBeEmpty()
+  fixture.stdout.shouldIncludeLinePatterns(
+      "*Loc1 = /home/user1*",
+      "*Loc2 = /mnt/backup/user1*",
+      "*AddFlags = --exclude [*]foo*")
+
+  fixture.runSibtWithRealStreamsAndExec("show", "user2@with-rdiff")
+  fixture.stdout.shouldIncludeLinePatterns(
+      "*Loc1 = /home/blah*",
+      "*Loc2 = /mnt/important/blah*",
+      "*AddFlags = --exclude [*]bar*")
+
+def test_shouldProvideAWayInItsCliToWriteAndDeleteInstanceFiles(fixture):
+  syncer = fixture.conf.aSyncer().withTestOptionsCode().write()
+  fixture.conf.ruleWithSched("all-of-it!").withSynchronizer(syncer).write()
+
+  fixture.runSibtWithRealStreamsAndExec("enable", "all-of-it!")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stderr.shouldInclude("enabled")
+  fixture.runSibtWithRealStreamsAndExec("enable", "all-of-it!", 
+      "[Synchronizer]", "KeepCopies = 5", "AddFlags = --blah", "--as=here")
+
+  fixture.runSibtWithRealStreamsAndExec("show", "here@all-of-it!")
+  fixture.stdout.shouldIncludeLinePatterns("*KeepCopies = 5*", "*AddFlags*")
+  fixture.runSibtWithRealStreamsAndExec("list", "rules")
+  fixture.stdout.shouldContainLinePatterns("*all-of-it!*enabled*",
+      "*here@all-of-it!*")
+
+  fixture.runSibtWithRealStreamsAndExec("disable", "here@all-of-it!")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stderr.shouldInclude("here")
+  fixture.runSibtWithRealStreamsAndExec("list", "rules")
+  fixture.stdout.shouldNotInclude("here")
+
+  fixture.runSibtWithRealStreamsAndExec("disable", "here@all-of-it!")
+  fixture.shouldHaveExitedWithStatus(1)
+
+  fixture.runSibtWithRealStreamsAndExec("enable", "all-of-it!")
+  fixture.shouldHaveExitedWithStatus(1)
+
+def test_shouldIgnoreDisabledRulesThatNeedOptionsFromTheirInstanceFile(fixture):
+  fixture.conf.ruleWithSchedAndSyncer("ignored-because-insufficient-options").\
+      withLoc1("%(_instanceName)s").write()
+
+  fixture.runSibt("list", "rules")
+  fixture.stderr.shouldBeEmpty()
+  fixture.shouldHaveExitedWithStatus(0)
   fixture.stdout.shouldBeEmpty()
 
 def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
@@ -628,7 +703,7 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
 
   syncer.expecting(execmock.call(lambda args: args[0] == "restore" and
     "Loc2=" + backupDir[:-1] in args and
-    args[1:6] == (fileName, "1", april5th, april5thTimestamp,
+    args[1:5] == (fileName, "1", april5thTimestamp,
       str(fixture.tmpdir) + "/dest.backup"))).reMakeExpectations()
   with fixture.tmpdir.as_cwd():
     callRestore(dataDir + fileName, "tota", "04", "--to=dest.backup")
@@ -638,7 +713,7 @@ def test_shouldGetANullSeparatedFileListingWithACallSimilarToRestore(fixture):
   if [ $1 = versions-of ]; then
     echo '1970-01-01T00:00:50+00:00'
     echo 100000000
-  elif [[ $1 = list-files && $2 = container/folder && $3 = 2 && $5 = 50 ]]; then
+  elif [[ $1 = list-files && $2 = container/folder && $3 = 2 && $4 = 50 ]]; then
     echo -n -e 'some\n-file'
     echo -n -e '\0'
     echo -n 'and-a-dir/'
@@ -664,10 +739,10 @@ def test_shouldHaveAnOptionForARecursiveFileListing(fixture):
     lambda args: args[0] == "versions-of", ret=["20"]))
   fixture.conf.ruleWithSched().withLoc1("/dir").withSynchronizer(syncer).write()
 
-  syncer.expectingListFiles(lambda args: args[5] == "0").reMakeExpectations()
+  syncer.expectingListFiles(lambda args: args[4] == "0").reMakeExpectations()
   fixture.runSibtCheckingExecs("list-files", "/dir/file", "1970")
 
-  syncer.expectingListFiles(lambda args: args[5] == "1").reMakeExpectations()
+  syncer.expectingListFiles(lambda args: args[4] == "1").reMakeExpectations()
   fixture.runSibtCheckingExecs("list-files", "-r", "/dir/file", "1970")
 
 def test_shouldCallRunnerNamedInHashbangLineOfSynchronizersIfItExists(fixture):

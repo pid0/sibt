@@ -2,7 +2,7 @@ from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 
 RuleFormat = """
-    [Interpreter]
+    [Synchronizer]
     Name = {syncer}
     Loc1={loc1}
     Loc2={loc2}
@@ -48,10 +48,9 @@ class RuleBuilder(ConfigObjectBuilder):
     newOpts["Loc4"] = loc4
     return self.withSyncerOpts(**newOpts)
 
-  def enabled(self):
-    return self._withParams(linkWithOwnName=True)
-  def enabledAs(self, linkName):
-    return self._withParams(linkName=linkName)
+  def enabled(self, instanceName="", instanceFileContent=""):
+    return self._withParams(instanceFiles=self.instanceFiles + 
+        [_InstanceFile(instanceName, instanceFileContent)])
 
   def withSchedOpts(self, **newOpts):
     return self._withParams(schedOpts=newOpts)
@@ -70,17 +69,19 @@ class RuleBuilder(ConfigObjectBuilder):
 
     self.ruleFilePath.write(fileContents)
 
-    if "linkWithOwnName" in self.kwParams:
-      self._writeSymlink(self.name)
-    elif "linkName" in self.kwParams:
-      self._writeSymlink(self.kwParams["linkName"])
+    if "instanceFiles" in self.kwParams:
+      for instanceFile in self.instanceFiles:
+        self._writeInstanceFile(instanceFile)
 
     return self
 
-  def _writeSymlink(self, linkName):
-    local(self.configuredPaths.enabledDir).join(linkName).mksymlinkto(
-        self.ruleFilePath)
+  def _writeInstanceFile(self, instanceFile):
+    local(self.configuredPaths.enabledDir).join(
+        instanceFile.name + "@" + self.name).write(instanceFile.content)
 
+  @property
+  def instanceFiles(self):
+    return self.kwParams.get("instanceFiles", [])
   @property
   def loc1(self):
     if "loc1" not in self.kwParams:
@@ -103,3 +104,8 @@ class RuleBuilder(ConfigObjectBuilder):
 
   def newBasic(self, paths, sysPaths, foldersWriter, name, kwParams):
     return RuleBuilder(paths, sysPaths, foldersWriter, name, kwParams)
+
+class _InstanceFile(object):
+  def __init__(self, name, content):
+    self.name = name
+    self.content = content

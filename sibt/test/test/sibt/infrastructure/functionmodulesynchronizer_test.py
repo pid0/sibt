@@ -71,9 +71,9 @@ def test_shouldParseUnixTimestampsAndW3CDateTimesAsVersions(fixture):
       datetime(2013, 5, 10, 10, 5, 20, 0, timezone.utc),
       datetime(2014, 12, 5, 7, 13, 0, 0, timezone.utc))
   
-def test_shouldCallRestoreWithAW3CDateAndAUnixTimestamp(fixture):
+def test_shouldCallRestoreWithAUnixTimestamp(fixture):
   path = "path/to/file"
-  expectedArgs = [path, "1", EpochPlus93SecW3C, "93", ""]
+  expectedArgs = [path, "1", "93", ""]
   time = EpochPlus93Sec
 
   fixture.functions.expectCalls(mock.callMatching("callVoid", 
@@ -91,7 +91,7 @@ def test_shouldReturnExactOutputAsFileListing(fixture):
 
   fixture.functions.expectCalls(mock.callMatching("callExact", 
     lambda funcName, args, options: funcName == "list-files" and list(args) == 
-      [path, "2", EpochPlus93SecW3C, "93", "0"], ret=listing))
+      [path, "2", "93", "0"], ret=listing))
 
   assert fixture.syncer.listFiles(path, 2, EpochPlus93Sec, False, 
       expectedOptions) is listing
@@ -119,7 +119,7 @@ def test_shouldConvertArgumentsAndOptionsToStringsDependingOnTheirType(fixture):
       "Loc1": location("/tmp")}
 
   fixture.functions.expectCalls(mock.callMatching("callVoid",
-      lambda _, args, receivedOptions: args[4] == "/media/foo" and
+      lambda _, args, receivedOptions: args[3] == "/media/foo" and
         receivedOptions["SomePlace"] == "/home/foo" and
         receivedOptions["Loc1"] == "/tmp"))
 

@@ -3,7 +3,6 @@ import shutil
 from test.common.pathsbuilder import existingPaths, pathsIn
 from py.path import local
 
-
 class ConfigFoldersWriter(object):
   def __init__(self, sysPaths, paths, tmpdir):
     self.sysPaths = sysPaths

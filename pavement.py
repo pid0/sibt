@@ -29,8 +29,8 @@ options(setup=dict(
 
     data_files=[
         (ReadonlyConfigDir + "schedulers", ["sibt/schedulers/anacron"]),
-        (ReadonlyConfigDir + "interpreters", 
-            ["sibt/interpreters/rdiff-backup"]),
+        (ReadonlyConfigDir + "synchronizers", 
+            ["sibt/synchronizers/rdiff-backup"]),
         (ReadonlyConfigDir + "runners", ["sibt/runners/bash-runner"])
     ]
     ))

@@ -1,5 +1,6 @@
 import pytest
 from sibt.infrastructure import collectFilesInDirs
+from test.common.assertutil import iterToTest
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -25,17 +26,17 @@ def fixture(tmpdir):
 def test_collectFuncShouldCallFunctionForEachFileInDirsAndCollectResultsInASet(
     fixture):
   fixture.writeFiles()
-  assert collectFilesInDirs(
+  assert iterToTest(collectFilesInDirs(
       [str(fixture.folder1), str(fixture.folder2)], 
-      lambda path, fileName: (path, fileName)) == {
-          (str(fixture.folder1) + "/" + fixture.name1, fixture.name1),
-          (str(fixture.folder1) + "/" + fixture.name2, fixture.name2),
-          (str(fixture.folder2) + "/" + fixture.name3, fixture.name3)}
+      lambda path, fileName: (path, fileName))).shouldContainInAnyOrder(
+          (str(fixture.folder1 / fixture.name1), fixture.name1),
+          (str(fixture.folder1 / fixture.name2), fixture.name2),
+          (str(fixture.folder2 / fixture.name3), fixture.name3))
 
 def test_collectFunctionShouldLeaveOutNoneValues(fixture):
   fixture.writeFiles()
-  assert collectFilesInDirs([str(fixture.folder1)], lambda _, name: 
-      "ab" if name == fixture.name1 else None) == {"ab"}
+  iterToTest(collectFilesInDirs([str(fixture.folder1)], lambda _, name: 
+      "ab" if name == fixture.name1 else None)).shouldContain("ab")
 
 def test_collectFunctionShouldIgnoreDirsThatDontExist(fixture):
   fixture.writeFiles()
@@ -50,8 +51,8 @@ def test_collectFunctionShouldIgnoreDirsWithinTheSpecifiedDirs(fixture):
 def test_collectFunctionShouldCallFunctionWithAbsolutePaths(fixture):
   fixture.writeFiles()
   with fixture.tmpdir.as_cwd():
-    assert collectFilesInDirs(["folder2"], lambda path, _: path) == {
-        str(fixture.folder2.join(fixture.name3))}
+    iterToTest(collectFilesInDirs(["folder2"], lambda path, _: path)).\
+        shouldContainInAnyOrder(str(fixture.folder2.join(fixture.name3)))
 
 def test_shouldIgnoreDotFiles(fixture):
   fixture.writeFiles()

@@ -1,5 +1,6 @@
 import pytest
-from sibt.configuration.exceptions import ConfigConsistencyException
+from sibt.configuration.exceptions import ConfigConsistencyException, \
+    RuleNameInvalidException
 from sibt.domain.rulefactory import RuleFactory
 from test.common import mock
 from test.common.builders import fakeConfigurable, port
@@ -19,6 +20,15 @@ def outRaises():
     def __exit__(self, x, y, z):
       pass
   return Ret()
+
+def test_shouldThrowExceptionIfRuleNameContainsInvalidCharacters(fixture):
+  factory = RuleFactory([fakeConfigurable("sched")], 
+      [fakeConfigurable("syncer", ports=[])])
+
+  with pytest.raises(RuleNameInvalidException) as ex:
+    factory.build("foo@with space", {"Name": "sched"}, {"Name": "syncer"}, 
+        False)
+  assert ex.value.invalidCharacter == " "
 
 def test_shouldThrowExceptionIfSynchronizerOrSchedulerDoesNotExist(fixture):
   existingScheduler = fakeConfigurable("the-sched")

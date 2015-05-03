@@ -23,17 +23,16 @@ class FunctionModuleSynchronizer(object):
     return [self._parseTime(time) for time in times]
 
   def restore(self, path, locNumber, version, destLocation, options):
-    w3c, timestamp = self._encodeTime(version)
     extendedOptions = dict(options)
     extendedOptions["Restore"] = destLocation
     self._callFunction(self.functions.callVoid, "restore", extendedOptions, 
-        path, str(locNumber), w3c, str(timestamp), destLocation or "")
+        path, str(locNumber), self._posixTimestampOf(version), 
+        destLocation or "")
 
     #TODO: leave 0, 1 formatting to formatter
   def listFiles(self, path, locNumber, version, recursively, options):
-    w3c, timestamp = self._encodeTime(version)
     return self._callFunction(self.functions.callExact, "list-files", 
-        options, path, str(locNumber), w3c, str(timestamp), 
+        options, path, str(locNumber), self._posixTimestampOf(version),
         "1" if recursively else "0")
 
   @property
@@ -77,11 +76,8 @@ class FunctionModuleSynchronizer(object):
       raise SynchronizerFuncNotImplementedException(self.name, ex.funcName)\
         from ex.__cause__
 
-  def _encodeTime(self, version):
-    timestamp = int(time.mktime(version.astimezone(None).timetuple()))
-    w3cString = version.strftime(TimeFormat)
-    w3cString = w3cString[:-2] + ":" + w3cString[-2:]
-    return (w3cString, str(timestamp))
+  def _posixTimestampOf(self, version):
+    return int(time.mktime(version.astimezone(None).timetuple()))
 
   def _parseTime(self, string):
     if all(c in "0123456789" for c in string):

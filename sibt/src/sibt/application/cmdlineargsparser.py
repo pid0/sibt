@@ -47,7 +47,8 @@ class CmdLineArgsParser(object):
       option.addToParser(parser)
 
     subs = parser.add_subparsers(title="actions", dest="action", 
-      metavar="list|schedule|versions-of|restore|list-files|show")
+      metavar=("list|schedule|versions-of|restore|list-files|show|enable|"
+        "disable"))
 
     listAction = subs.add_parser("list", aliases=["li"])
     listAction.add_argument("list-type", nargs="?",
@@ -82,6 +83,14 @@ class CmdLineArgsParser(object):
 
     show = subs.add_parser("show")
     show.add_argument("rule-name", action="store")
+
+    enable = subs.add_parser("enable")
+    enable.add_argument("rule-name", action="store")
+    enable.add_argument("--as", action="store")
+    enable.add_argument("lines", nargs="*", action="store")
+
+    disable = subs.add_parser("disable")
+    disable.add_argument("rule-name", action="store")
     
     parsedArgs = vars(parser.parse_args(args))
     cmdLineArgs = dict((key.replace("_", '-'), value) for 

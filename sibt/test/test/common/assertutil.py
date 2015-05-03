@@ -31,6 +31,10 @@ class TestIterable(object):
   def shouldContainInAnyOrder(self, *items):
     assert iterableContainsInAnyOrder(self.iterable, *map(equalsPred, items))
     return self
+  def shouldContain(self, *items):
+    assert len(items) == len(self.iterable)
+    for actualItem, expectedItem in zip(self.iterable, items):
+      assert actualItem == expectedItem
   def shouldContainPropertiesInAnyOrder(self, propertyProducer, *predicates):
     assert iterableContainsPropertiesInAnyOrder(self.iterable, propertyProducer,
         *predicates)

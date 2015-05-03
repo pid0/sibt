@@ -1,6 +1,7 @@
 from sibt.domain.syncrule import SyncRule
 from sibt.domain.exceptions import LocationInvalidException
-from sibt.configuration.exceptions import ConfigConsistencyException
+from sibt.configuration.exceptions import ConfigConsistencyException, \
+    RuleNameInvalidException
 from sibt.configuration.optionvaluesparser import parseLocation
 
 def makeException(ruleName, message):
@@ -12,6 +13,7 @@ class RuleFactory(object):
     self.synchronizers = synchronizers
 
   def build(self, name, schedulerOptions, synchronizerOptions, enabled):
+    self._throwIfRuleNameInvalid(name)
     self._throwIfOptionsNotPresent(schedulerOptions, ["Name"], "scheduler", 
         name)
     self._throwIfOptionsNotPresent(synchronizerOptions, 
@@ -45,6 +47,12 @@ class RuleFactory(object):
 
   def _locOptionsCorrespondingToPorts(self, ports):
     return ["Loc" + str(i + 1) for i in range(len(ports))]
+
+  def _throwIfRuleNameInvalid(self, name):
+    if "," in name:
+      raise RuleNameInvalidException(name, ",")
+    if " " in name:
+      raise RuleNameInvalidException(name, " ")
 
   def _wrapLocs(self, ruleName, locOptionNames, syncerOpts):
     ret = dict(syncerOpts)

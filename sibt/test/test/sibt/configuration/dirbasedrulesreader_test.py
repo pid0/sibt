@@ -14,11 +14,11 @@ class Fixture(object):
     self.factory = mock.mock()
     
   def writeAnyRule(self, name):
-    self.writeRuleFile(name, "[Interpreter]\nName=a\n[Scheduler]\nName=b")
+    self.writeRuleFile(name, "[Synchronizer]\nName=a\n[Scheduler]\nName=b")
   def writeRuleFile(self, name, contents):
     self.filePathOf(name).write(contents)
-  def linkToAs(self, ruleName, linkName):
-    self.enabledDir.join(linkName).mksymlinkto(self.rulesDir.join(ruleName))
+  def writeInstanceFile(self, fileName, contents=""):
+    self.enabledDir.join(fileName).write(contents)
 
   def filePathOf(self, ruleName):
     return self.rulesDir.join(ruleName)
@@ -34,7 +34,7 @@ class Fixture(object):
 def buildCallReturning(matcher, returnValue):
   return mock.callMatchingTuple("build", matcher, ret=returnValue)
 def buildCall(matcher):
-  return buildCallReturning(matcher, None)
+  return buildCallReturning(matcher, 5)
 
 @pytest.fixture
 def fixture(tmpdir):
@@ -58,29 +58,29 @@ def test_shouldReadEachFileAsARuleAndBuildThemWithFactoryWithPrefixedNames(
       lambda x: x == firstConstructedRule,
       lambda x: x == secondConstructedRule)
 
-def test_shouldParseInterpreterAndSchedulerOptionsAsEntriesInRespectiveSections(
+def test_shouldParseOptionsAsEntriesInRespectiveSectionsIncludingGlobalEntries(
     fixture):
   fixture.writeRuleFile("some-rule", 
-      """  [Interpreter]
+      r"""  
+      Name = foo
+      [Synchronizer]
       
-Name=foo
 Option1=%(Name)squux
 Option2 = some-value%%r
 [Scheduler]
-  Name = bar 
   
   Option3 = yes""")
 
   fixture.factory.expectCallsInAnyOrder(
       buildCall(lambda args: args[0] == "some-rule" and
-        args[1] == {"Name": "bar", "Option3": "yes"} and
+        args[1] == {"Name": "foo", "Option3": "yes"} and
         args[2] == {"Name": "foo", "Option1": "fooquux", 
             "Option2": "some-value%r"}))
   fixture.read()
 
-def test_shouldIgnoreOptionsBeginningWithUnderscore(fixture):
+def test_shouldRemoveOptionsBeginningWithAnUnderscore(fixture):
   fixture.writeRuleFile("rule-with-template-opts",
-      """[Interpreter]
+      """[Synchronizer]
       _Template = bar
       Opt1 = %(_Template)s
         foo
@@ -88,11 +88,21 @@ def test_shouldIgnoreOptionsBeginningWithUnderscore(fixture):
       """)
 
   fixture.factory.expectCallsInOrder(
-      buildCall(lambda args: args[2] == {"Opt1": "bar\nfoo"}))
+      buildCall(lambda args: args[2] == { "Opt1": "bar\nfoo" }))
   fixture.read()
 
 def test_shouldThrowExceptionIfItEncountersASyntaxError(fixture):
   fixture.writeRuleFile("invalid", "blah")
+  with pytest.raises(ConfigSyntaxException):
+    fixture.read()
+
+  fixture.writeRuleFile("invalid", r"""
+  [Scheduler]
+  foo = %(_bar)s
+  [Synchronizer]
+  _bar = 1
+  """)
+  fixture.writeInstanceFile("@invalid", "")
   with pytest.raises(ConfigSyntaxException):
     fixture.read()
 
@@ -126,10 +136,11 @@ def test_shouldIgnoreRuleFilesEndingWithInc(fixture):
 
   assert len(fixture.read()) == 0
 
-def test_shouldReadImportsB_nWhenReadingRuleAAndMakeAsSettingsOverrideAnyB_is(
+def test_shouldReadImportedB_nWhenReadingRuleAAndMakeAsSettingsOverrideAnyB_is(
     fixture):
   fixture.writeRuleFile("base.inc", """
-  [Interpreter]
+  [Synchronizer]
+  Loc = /mnt/%(Bar)s
   Base = 3
   Bar = base
   """)
@@ -137,11 +148,13 @@ def test_shouldReadImportsB_nWhenReadingRuleAAndMakeAsSettingsOverrideAnyB_is(
   fixture.writeRuleFile("include.inc", """
   [Scheduler]
   Foo = f1
-  [Interpreter]
+  [Synchronizer]
   Bar = b1""")
   fixture.writeRuleFile("rule", """
   #import which-includes-more
   #import include
+  [Synchronizer]
+  Interpolated = %(Base)s
   [Scheduler]
   Quux = q2
   Foo = f2""")
@@ -149,7 +162,8 @@ def test_shouldReadImportsB_nWhenReadingRuleAAndMakeAsSettingsOverrideAnyB_is(
   fixture.factory.expectCallsInOrder(mock.callMatchingTuple("build",
       lambda args: args[0] == "rule" and 
       args[1] == {"Foo": "f2", "Quux": "q2"} and
-      args[2] == {"Bar": "b1", "Base": "3"}))
+      args[2] == {"Bar": "b1", "Base": "3", "Interpolated": "3", 
+        "Loc": "/mnt/b1"}))
   fixture.read()
 
 def test_shouldThrowExceptionIfAnUnknownSectionIsPresent(fixture):
@@ -157,10 +171,11 @@ def test_shouldThrowExceptionIfAnUnknownSectionIsPresent(fixture):
   [FooSection]
   Lala = 2
   [Scheduler]
-  [Interpreter]
+  [Synchronizer]
   """)
-  with pytest.raises(ConfigSyntaxException):
+  with pytest.raises(ConfigSyntaxException) as ex:
     fixture.read()
+  assert "FooSection" in str(ex.value)
 
 def test_shouldThrowExceptionIfTheTwoKnownSectionsArentThere(fixture):
   fixture.writeRuleFile("invalid", """
@@ -171,18 +186,56 @@ def test_shouldThrowExceptionIfTheTwoKnownSectionsArentThere(fixture):
   with pytest.raises(ConfigSyntaxException):
     fixture.read()
 
-def test_shouldConsiderSymlinkedToRulesEnabled(fixture):
-  on = "enabled-rule"
-  off = "disabled-rule"
-  fixture.writeAnyRule(on)
-  fixture.writeAnyRule(off)
-  fixture.linkToAs(on, on)
-  fixture.linkToAs("/other-file", off)
+def test_shouldConsiderEnabledRulesAsAsManyAsTheyHaveInstances(fixture):
+  fixture.writeAnyRule("on")
+  fixture.writeAnyRule("off")
+  fixture.writeInstanceFile("@on")
+  fixture.writeInstanceFile("foo@on")
+  fixture.writeInstanceFile("quux@on")
+  fixture.writeInstanceFile("off")
 
   fixture.factory.expectCallsInAnyOrder(
-      buildCall(lambda args: args[0] == on and args[3] == True),
-      buildCall(lambda args: args[0] == off and args[3] == False))
+      buildCall(lambda args: args[0] == "on" and args[3] == True),
+      buildCall(lambda args: args[0] == "foo@on" and args[3] == True),
+      buildCall(lambda args: args[0] == "quux@on" and args[3] == True),
+      buildCall(lambda args: args[0] == "off" and args[3] == False))
   fixture.read()
 
-def containsExactlyOneRuleNamed(rules, name):
-  return len([rule for rule in rules if rule.name == name]) == 1
+def test_shouldMakeInstanceFileOverrideAllSettingsALastTime(fixture):
+  fixture.writeRuleFile("rule", r"""
+  _global = base
+  [Scheduler]
+  [Synchronizer]
+  Foo = 1
+  Quux = %(_global)s
+  Bar = %(Foo)s""")
+  fixture.writeInstanceFile("@rule", r"""
+  _global = special
+  [Synchronizer]
+  Foo = 2""")
+
+  fixture.factory.expectCallsInAnyOrder(
+      buildCall(lambda args: args[2] == { "Foo": "2", "Bar": "2" , 
+        "Quux": "special"}))
+  fixture.read()
+
+def test_shouldProvideAccessToTheVariablePartOfTheInstanceName(fixture):
+  fixture.writeRuleFile("rule", r"""
+  [Synchronizer]
+  [Scheduler]
+  Target = /var/local/vms/%(_instanceName)s.img
+  """)
+  fixture.writeInstanceFile("ta@ta@rule", "")
+
+  fixture.factory.expectCallsInAnyOrder(
+      buildCall(lambda args: args[1] == 
+        { "Target": "/var/local/vms/ta@ta.img" }))
+  fixture.read()
+
+def test_shouldIgnoreDisabledRulesWithInterpolationErrors(fixture):
+  fixture.writeRuleFile("rule", r"""
+  [Synchronizer]
+  Foo = %(_globalOption)s
+  [Scheduler]""")
+
+  fixture.read()

@@ -70,7 +70,7 @@ versions-of() {
 restore() {
   relativePath="$1"
   locNumber=$2
-  timestamp=$4
+  timestamp=$3
 
   if [ $locNumber = 2 ]; then
     return
@@ -81,7 +81,7 @@ restore() {
   srcFileName="$(basename "$srcPath")"
 
   restoringToSourceTree=0
-  if [ -z "$5" ]; then
+  if [ -z "$4" ]; then
     restoringToSourceTree=1
     destPath="$Loc1Path"/"$relativePath"
     destPort=Loc1
@@ -155,8 +155,8 @@ remove-prefix() {
 list-files() {
   relativePath="$1"
   locNumber=$2
-  timestamp=$4
-  recursively=$5
+  timestamp=$3
+  recursively=$4
 
   if [ $locNumber = 2 ]; then
     return

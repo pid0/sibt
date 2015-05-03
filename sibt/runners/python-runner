@@ -9,8 +9,8 @@ from subprocess import CalledProcessError
 NumberOfPositionalArgs = { "availableOptions": 0,
     "sync": 0,
     "versionsOf": 2,
-    "restore": 5,
-    "listFiles": 5,
+    "restore": 4,
+    "listFiles": 4,
     "infoOfPort": 1 }
 
 def parseKeyValuePairs(pairs):

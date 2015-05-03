@@ -3,17 +3,22 @@ import os
 import os.path
 from datetime import timedelta, datetime
 from sibt.configuration.exceptions import ConfigSyntaxException, \
-    ConfigConsistencyException
+    ConfigConsistencyException, RuleNameInvalidException
 from sibt.infrastructure import collectFilesInDirs
 from configparser import ConfigParser, BasicInterpolation
 import configparser
 import itertools
+import functools
 
-InterSec = "Interpreter"
+InterSec = "Synchronizer"
 SchedSec = "Scheduler"
+DefaultSec = configparser.DEFAULTSECT
+RequiredSections = [InterSec, SchedSec]
+AllowedCustomSections = [InterSec, SchedSec]
+AllowedSections = [DefaultSec] + AllowedCustomSections
 
-def makeException(file, message):
-  return ConfigSyntaxException("rule", message, file)
+def _makeException(file, message):
+  return ConfigSyntaxException("rule", os.path.basename(file), message, file)
 
 class DirBasedRulesReader(object):
   def __init__(self, rulesDir, enabledDir, factory, namePrefix):
@@ -23,7 +28,8 @@ class DirBasedRulesReader(object):
     self.namePrefix = namePrefix
     
   def read(self):
-    return collectFilesInDirs([self.rulesDir], self._readRuleFile)
+    return [rule for instancesList in collectFilesInDirs([self.rulesDir], 
+      self._readInstancesFromBaseRule) for rule in instancesList]
 
   def _removeUnderscoreOptions(self, sections):
     for name, section in sections.items():
@@ -32,79 +38,117 @@ class DirBasedRulesReader(object):
       for optName in optNames:
         del section[optName]
 
-  def _isEnabled(self, ruleName):
-    linkPath = os.path.join(self.enabledDir, ruleName)
-    return os.path.islink(linkPath) and \
-        os.readlink(linkPath) == os.path.join(self.rulesDir, ruleName)
+  def _parserToSectionsDict(self, parser, filePath, raw=False):
+    try:
+      for allowedSection in AllowedCustomSections:
+        if not parser.has_section(allowedSection):
+          parser.add_section(allowedSection)
+      return dict((section, dict(parser.items(section, raw=raw))) for 
+          section, _ in parser.items())
+    except configparser.InterpolationMissingOptionError as ex:
+      raise _makeException(filePath, "can't resolve options") from ex
 
-  def _overrideSections(self, sections):
-    keyValuePairs = (section.items() for section in sections)
-    concatenatedPairs = itertools.chain(*keyValuePairs)
-
-    return dict(pair for pair in itertools.chain(concatenatedPairs))
-
-  def _overrideSectionDictsLastHighestPrecedence(self, dicts):
-    presentSections = set(sectionName for readDict in dicts for sectionName in 
-        readDict.keys())
-    ret = dict()
-    for sectionName in presentSections:
-      ret[sectionName] = self._overrideSections(section[1] for readDict in
-          dicts for section in readDict.items() if section[0] == sectionName)
-
+  def _makeParser(self, defaultValues=None):
+    ret = ConfigParser(empty_lines_in_values=False, 
+        interpolation=BasicInterpolation())
+    ret.optionxform = lambda key: key
+    if defaultValues is not None:
+      ret.read_dict({ DefaultSec: defaultValues })
     return ret
 
+  def _parseFileWithParser(self, filePath, parser):
+    try:
+      with open(filePath, "r") as file:
+        parser.read_file(itertools.chain(["[{0}]\n".format(DefaultSec)], file), 
+            source=filePath)
+    except configparser.Error as ex:
+      raise _makeException(filePath, "wrong syntax") from ex
 
-  def _readSectionsDict(self, path):
-    parser = ConfigParser(empty_lines_in_values=False, 
-        interpolation=BasicInterpolation())
-    parser.optionxform = lambda key: key
+  def _parseRawSectionsDict(self, filePath):
+    return self._parserToSectionsDict(
+        self._parserOfIniFileWithImportsResolved(filePath), filePath, raw=True)
+
+  def _parserOfIniFileWithImportsResolved(self, path):
+    parser = self._makeParser()
 
     with open(path, "r") as ruleFile:
       lines = [line.strip() for line in ruleFile.readlines()]
       importedNames = [" ".join(line.split(" ")[1:]) for line in lines if 
           line.startswith("#import")]
 
-    try:
-      parser.read(path)
-    except configparser.Error as ex:
-      raise makeException(path, "could not read ini file") from ex
-
-    presetDicts = [self._readSectionsDict(os.path.join(
+    importedDicts = [self._parseRawSectionsDict(os.path.join(
         self.rulesDir, name + ".inc")) for name in importedNames]
 
-    ret = self._overrideSectionDictsLastHighestPrecedence(presetDicts + 
-        [parser])
-    self._removeUnderscoreOptions(ret)
-    return ret
+    for importedDict in importedDicts:
+      parser.read_dict(importedDict)
 
-  def _readRuleFile(self, path, fileName):
-    if "," in fileName or "@" in fileName or " " in fileName:
-      raise makeException(path, 
-          "invalid character (‘,’ or ‘@’ or space ‘ ’) in rule name")
-    if fileName.startswith("+"):
-      raise makeException(path, "rule name may not begin with ‘+’")
+    self._parseFileWithParser(path, parser)
 
-    if fileName.endswith(".inc"):
+    return parser
+
+  def _readInstancesFromBaseRule(self, baseRulePath, baseRuleName):
+    if baseRuleName.endswith(".inc"):
       return None
-    
-    sections = self._readSectionsDict(path)
 
-    if not self._exactlyKnownSectionsPresentIn(sections):
-      raise makeException(path, 
-          "exactly sections [Interpreter] and [Scheduler] are required")
+    baseSections = self._parseRawSectionsDict(baseRulePath)
+    
+    instances =  collectFilesInDirs([self.enabledDir], functools.partial(
+      self._buildRuleInstance, baseSections, baseRuleName, True))
+    if len(instances) == 0:
+      disabledRule = self._buildRuleInstance(baseSections, baseRuleName, False, 
+        baseRulePath, "@" + baseRuleName)
+      if disabledRule is not None:
+        return [disabledRule]
+    return instances
+
+  def _buildRuleInstance(self, baseSectionsDict, baseRuleName, 
+      isEnabled, path, fileName):
+    if not fileName.endswith("@" + baseRuleName):
+      return None
+
+    variablePart = fileName[:-len("@" + baseRuleName)]
+    instanceName = fileName[1:] if fileName.startswith("@") else fileName
+
+    if instanceName.startswith("+"):
+      raise RuleNameInvalidException(instanceName, "+", 
+          furtherDescription="at the beginning")
+
+    if isEnabled:
+      parser = self._makeParser(defaultValues={ "_instanceName": variablePart })
+    else:
+      parser = self._makeParser()
+
+    parser.read_dict(baseSectionsDict)
+    if isEnabled:
+      parser.read_dict(self._parseRawSectionsDict(path))
 
     try:
-      ret = self.factory.build(self.namePrefix + fileName, 
-          dict(sections[SchedSec]), 
-          dict(sections[InterSec]), self._isEnabled(fileName))
+      sections = self._parserToSectionsDict(parser, path)
+    except ConfigSyntaxException as ex:
+      if isinstance(ex.__cause__, 
+          configparser.InterpolationMissingOptionError) and not isEnabled:
+        return None 
+      raise
+
+    self._throwIfSectionsSetIsInvalid(sections.keys(), path)
+    self._removeUnderscoreOptions(sections)
+
+    try:
+      return self.factory.build(self.namePrefix + instanceName, 
+          sections[SchedSec], 
+          sections[InterSec], isEnabled)
     except ConfigConsistencyException as ex:
       ex.file = path
       raise
 
-    return ret
+  def _throwIfSectionsSetIsInvalid(self, sectionNames, filePath):
+    for sectionName in RequiredSections:
+      if sectionName not in sectionNames:
+        raise _makeException(filePath, "section [{0}] is required".format(
+          sectionName))
 
-  def _exactlyKnownSectionsPresentIn(self, parsed):
-    if not all(name in parsed.keys() for name in [InterSec, SchedSec]):
-      return False
-    return len(parsed.keys()) == 3
+    for sectionName in sectionNames:
+      if sectionName not in AllowedSections:
+        raise _makeException(filePath, "unknown section [{0}]".format(
+          sectionName))
 

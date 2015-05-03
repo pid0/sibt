@@ -69,6 +69,13 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     if args.action == "show":
       showRule(rule, stdout)
 
+    elif args.action == "enable":
+      return enableRule(stderr, args.options["rule-name"], paths,
+          args.options.get("as", ""), args.options["lines"])
+
+    elif args.action == "disable":
+      return disableRule(stderr, args.options["rule-name"], paths)
+
     elif args.action == "check":
       errors = validator.validate(matchingRuleSet)
       printValidationErrors(stdout.println, matchingRuleSet, errors, False)
@@ -200,6 +207,25 @@ def printValidationErrors(printFunc, ruleSet, errors, printRuleNames):
 
 def wrapScheduler(useDrySchedulers, stdout, sched):
   return DryScheduler(sched, stdout) if useDrySchedulers else sched
+
+def enableRule(output, baseName, paths, instanceName, configLines):
+  instFilePath = os.path.join(paths.enabledDir, instanceName + "@" + baseName)
+  if os.path.isfile(instFilePath):
+    output.println("‘{0}’ is already enabled".format(baseName))
+    return 1
+  with open(instFilePath, "w") as instanceFile:
+    instanceFile.write("\n".join(configLines))
+  output.println("‘{0}’ written".format(instFilePath))
+  return 0
+
+def disableRule(output, ruleName, paths):
+  instFilePath = os.path.join(paths.enabledDir, ruleName)
+  if not os.path.isfile(instFilePath):
+    output.println("‘{0}’ is not enabled".format(ruleName))
+    return 1
+  os.remove(instFilePath)
+  output.println("‘{0}’ removed".format(instFilePath))
+  return 0
 
 def locationFromArg(arg):
   try:

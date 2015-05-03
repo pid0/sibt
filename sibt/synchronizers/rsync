@@ -97,7 +97,7 @@ restore() {
   srcPath="$Loc2Path"/"$path"
   srcFileType=$(get-file-type Loc2 "$srcPath")
 
-  if [ -z "$5" ]; then
+  if [ -z "$4" ]; then
     restoringToSourceTree=1
     destPath="$Loc1Path"/"$path"
     destPort=Loc1
@@ -143,7 +143,7 @@ restore() {
 list-files() {
   relativePath="$1"
   portNumber="$2"
-  recursively=$5
+  recursively=$4
   path="$Loc2Path"/"$relativePath"
 
   if [ $portNumber = 2 ]; then

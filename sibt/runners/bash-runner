@@ -134,8 +134,8 @@ case $action in
   available-options) available-options;;
   sync) setup-variables "${@:1:$#}"; sync;;
   versions-of) setup-variables "${@:3:$#}"; versions-of "$@";;
-  restore) setup-variables "${@:6:$#}"; restore "$@";;
-  list-files) setup-variables "${@:6:$#}"; list-files "$@";;
+  restore) setup-variables "${@:5:$#}"; restore "$@";;
+  list-files) setup-variables "${@:5:$#}"; list-files "$@";;
   info-of-port) info-of-port "$@";;
 esac
 

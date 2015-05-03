@@ -2,7 +2,7 @@ import os
 import os.path
 
 def collectFilesInDirs(dirs, visitor):
-  ret = set()
+  ret = []
   for directory in dirs:
     absDir = os.path.abspath(directory)
     if os.path.isdir(absDir):
@@ -12,6 +12,6 @@ def collectFilesInDirs(dirs, visitor):
           continue
         result = visitor(path, fileName)
         if result is not None:
-          ret |= {result}
+          ret.append(result)
 
   return ret
