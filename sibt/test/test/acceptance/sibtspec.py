@@ -760,29 +760,37 @@ def test_shouldCallRunnerNamedInHashbangLineOfSynchronizersIfItExists(fixture):
   fixture.runSibtCheckingExecs("list", "synchronizers")
   fixture.shouldHaveExitedWithStatus(0)
 
-def test_shouldPerformSanityChecksOnRulesBeforeSchedulingExceptWhenDisabled(
+def test_shouldPerformSanityChecksBeforeSchedulingDependingOnRuleSettings(
     fixture):
-  containerDir = fixture.confFolders.validSynchronizerLoc("container")
-  subDir = fixture.confFolders.validSynchronizerLoc("container/sub-dir")
+  ruleWhoseLocsDontExist = fixture.conf.ruleWithNonExistentLocs("r-exist").\
+      write()
+  ruleWithEmptyLocs = fixture.conf.ruleWithSchedAndSyncer("r-empty").\
+      withNewValidLocs(locsAreEmpty=True).write()
+  ruleWhoseLocsDontExist.scheduler.withEmptyRunFuncCode().write()
+  ruleWithEmptyLocs.scheduler.withEmptyRunFuncCode().write()
 
-  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptPorts().\
-      writingToLoc2().write()
-  fixture.conf.ruleWithSched("self-destruction").withSynchronizer(syncer).\
-      withLoc1(str(subDir)).withLoc2(str(containerDir)).write()
-
-  fixture.runSibtCheckingExecs("schedule", "self-destruction")
+  fixture.runSibt("schedule", "r-exist")
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldIncludeInOrder("self-destruction", "within",
-      str(containerDir))
-
-  syncer.reMakeExpectations()
-  fixture.runSibtCheckingExecs("--no-checks", "schedule", "self-destruction")
+  fixture.stderr.shouldIncludeInOrder("r-exist", "not exist")
+  fixture.runSibt("schedule", "r-empty")
   fixture.shouldHaveExitedWithStatus(0)
+
+  ruleWhoseLocsDontExist.withOpts(LocCheckLevel="None").write()
+  ruleWithEmptyLocs.withOpts(LocCheckLevel="None").write()
+  fixture.runSibt("schedule", "r-exist", "r-empty")
+  fixture.shouldHaveExitedWithStatus(0)
+
+  ruleWhoseLocsDontExist.withOpts(LocCheckLevel="Strict").write()
+  ruleWithEmptyLocs.withOpts(LocCheckLevel="Strict").write()
+  fixture.runSibt("schedule", "r-exist")
+  fixture.stderr.shouldInclude("not exist")
+  fixture.runSibt("schedule", "r-empty")
+  fixture.shouldHaveExitedWithStatus(1)
 
 def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
   bidirectional = fixture.conf.aSyncer().withBashCode("""
   if [ $1 = info-of-port ]; then
-    if [ $2 -lt 3 ]; then
+    if [ $2 != specials ] && [ $2 -lt 3 ]; then
       echo 1
       echo file
       echo ssh
@@ -794,11 +802,9 @@ def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
   """).write()
 
   fixture.conf.ruleWithSched("uni").withSynchronizer(unidirectional).\
-      withLoc1(fixture.confFolders.validSynchronizerLoc("src/1")).\
-      withLoc2(fixture.confFolders.validSynchronizerLoc("dest/1")).write()
+      withNewValidLoc1("src/1").withNewValidLoc2("dest/1").write()
   fixture.conf.ruleWithSched("bi").withSynchronizer(bidirectional).\
-      withLoc1(fixture.confFolders.validSynchronizerLoc("dest/1")).\
-      withLoc2("ssh://somewhere/dest/2").write()
+      withNewValidLoc1("dest/1").withLoc2("ssh://somewhere/dest/2").write()
 
   fixture.runSibtWithRealStreamsAndExec("schedule", "uni", "bi")
   fixture.shouldHaveExitedWithStatus(1)
@@ -806,18 +812,27 @@ def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
 
 def test_shouldHaveACheckActionThatDoesTheSameChecksAsScheduleButDoesntSchedule(
     fixture):
-  fixture.conf.ruleWithSchedAndSyncer("valid-rule").write()
+  syncer1 = fixture.conf.aSyncer().allowingSetupCalls().write()
+  fixture.conf.ruleWithSched("valid-rule").withSynchronizer(syncer1).write()
 
   fixture.runSibt("check", "valid-rule")
   fixture.stdout.shouldBeEmpty()
   fixture.stderr.shouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(0)
 
-  fixture.conf.ruleWithNonExistentLocs("invalid-rule").write()
+  containerDir = fixture.confFolders.validSynchronizerLoc("container")
+  subDir = fixture.confFolders.validSynchronizerLoc("container/sub-dir")
 
-  fixture.runSibt("check", "invalid-rule", "valid-rule")
+  unidirectional = fixture.conf.aSyncer().allowingSetupCallsExceptPorts().\
+      writingToLoc2().write()
+  fixture.conf.ruleWithSched("self-destruction").withSynchronizer(
+      unidirectional).withLoc1(str(subDir)).withLoc2(str(containerDir)).write()
+  syncer1.reMakeExpectations()
+
+  fixture.runSibtCheckingExecs("check", "self-destruction", "valid-rule")
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stdout.shouldInclude("invalid-rule", "not exist")
+  fixture.stdout.shouldIncludeInOrder("destruction", "within", 
+      str(containerDir)).andAlso.shouldNotInclude("valid-rule")
 
 def test_shouldBeAbleToSimulateSchedulingsAndPrintThemToStdout(fixture):
   def fail(*args):

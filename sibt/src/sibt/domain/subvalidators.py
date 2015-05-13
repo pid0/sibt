@@ -1,4 +1,5 @@
 import os.path
+from sibt.domain.syncrule import LocCheckLevel
 
 def formatLoc(loc):
   return "‘{0}’".format(loc)
@@ -16,6 +17,8 @@ class SchedulerCheckValidator(Validator):
 class LocExistenceValidator(Validator):
   def validate(self, ruleSet):
     for rule in ruleSet:
+      if rule.options["LocCheckLevel"] == LocCheckLevel.None_:
+        continue
       for loc in rule.locs:
         if loc.isAFile:
           return [self.errMsg(formatLoc(loc) + 
@@ -32,6 +35,8 @@ class AcceptingValidator(object):
 class LocNotEmptyValidator(Validator):
   def validate(self, ruleSet):
     for rule in ruleSet:
+      if rule.options["LocCheckLevel"] != LocCheckLevel.Strict:
+        continue
       for loc in rule.locs:
         if loc.isEmpty:
           return [self.errMsg(formatLoc(loc) + " is empty", rule)]

@@ -5,6 +5,7 @@ from sibt.domain.subvalidators import LocExistenceValidator, \
 from test.common.validatortest import fix, ValidatorTest
 from test.common.builders import mockRuleSet
 from test.common.assertutil import iterToTest, strToTest
+from sibt.domain.syncrule import LocCheckLevel
 
 class Test_SchedulerCheckValidatorTest(ValidatorTest):
   def construct(self):
@@ -25,7 +26,11 @@ class Test_LocExistenceValidatorTest(ValidatorTest):
   def construct(self):
     return LocExistenceValidator()
 
-  def test_shouldRecognizeAsAnErrorIfALocIsAFile(self, fix):
+  def invalidRule(self, fix, ruleName, options=None):
+    return fix.mockRule(fix.validLocDir(), "/does/not/exist", name=ruleName,
+        options=options)
+
+  def test_shouldSeeItAsAnErrorIfALocIsAFile(self, fix):
     validator = self.construct()
     aFile = fix.tmpdir.join("file")
     aFile.write("")
@@ -36,21 +41,34 @@ class Test_LocExistenceValidatorTest(ValidatorTest):
   def test_shouldReportErrorIfALocDoesNotExistAsADirectory(self, fix):
     validator = self.construct()
     ruleName = "rulename"
-    errors = validator.validate([fix.validRule(),
-        fix.mockRule(fix.validLocDir(), "/does/not/exist", name=ruleName)])
-    assert len(errors) == 1
-    assert "does not exist" in errors[0]
-    assert ruleName in errors[0]
+    iterToTest(validator.validate([fix.validRule(), self.invalidRule(fix, 
+      ruleName)])).shouldContainMatching(lambda error: 
+          "does not exist" in error and 
+          ruleName in error)
+
+  def test_shouldIgnoreErrorsIfCheckLevelIsNone(self, fix):
+    validator = self.construct()
+    assert validator.validate([self.invalidRule(fix, "foo", 
+      options={ "LocCheckLevel": LocCheckLevel.None_ })]) == []
 
 class Test_LocNotEmptyValidatorTest(ValidatorTest):
   def construct(self):
     return LocNotEmptyValidator()
 
-  def test_shouldComplainIfALocIsAnEmptyDirectory(self, fix):
+  def test_shouldComplainIfALocIsAnEmptyDirectoryAndIfTheCheckLevelIsStrict(
+      self, fix):
     validator = self.construct()
+    emptyDir = fix.tmpdir.mkdir("empty-dir")
 
-    assert "is empty" in validator.validate([fix.validRule(), fix.mockRule(
-        fix.validLocDir(), fix.tmpdir.mkdir("empty-dir"))])[0]
+    def invalidRule(locCheckLevel):
+      return fix.mockRule(fix.validLocDir(), emptyDir,
+          options={"LocCheckLevel": locCheckLevel})
+
+    assert "is empty" in validator.validate([fix.validRule(), 
+      invalidRule(LocCheckLevel.Strict)])[0]
+
+    assert len(validator.validate([invalidRule(LocCheckLevel.Default)])) == 0
+    assert len(validator.validate([invalidRule(LocCheckLevel.None_)])) == 0
 
 class Test_NoOverlappingWritesValidator(ValidatorTest):
   def construct(self):

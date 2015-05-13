@@ -9,6 +9,7 @@ from sibt.domain.version import Version
 import re
 from sibt.domain.port import Port
 from sibt.configuration.optionvaluesparser import parseLocation
+from sibt.domain.syncrule import LocCheckLevel
 
 def randstring():
   return str(random())[2:] 
@@ -79,8 +80,12 @@ def mockRuleSet(rules, schedulerErrors=[]):
 
   return ret
 
-def mockRule(name, scheduler=None, loc1="/tmp/1", loc2="/tmp/2", writeLocs=[2]):
+def mockRule(name, options=None, scheduler=None, loc1="/tmp/1", 
+    loc2="/tmp/2", writeLocs=[2]):
   ret = mock.mock(name)
+  if options is None:
+    options = dict(LocCheckLevel=LocCheckLevel.Default)
+  ret.options = options
   ret.name = name
   ret.scheduler = scheduler
   ret.scheduling = object()

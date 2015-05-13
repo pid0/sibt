@@ -1,4 +1,6 @@
 from sibt.configuration.dirbasedrulesreader import DirBasedRulesReader
+from sibt.configuration.cachinginifilesetreader import CachingIniFileSetReader
+from sibt.configuration import dirbasedrulesreader
 from sibt.domain.defaultvaluesynchronizer import DefaultValueSynchronizer
 from sibt.infrastructure.functionmodulesynchronizer import \
     FunctionModuleSynchronizer
@@ -35,7 +37,9 @@ def readSchedulers(dirs, loader, schedulerWrapper, initArgs):
       schedulerWrapper(loader.loadFromFile(path, fileName, initArgs)))
 
 def readRules(rulesDir, enabledDir, factory, prefix):
-  reader = DirBasedRulesReader(rulesDir, enabledDir, factory, prefix)
+  reader = DirBasedRulesReader(CachingIniFileSetReader(rulesDir,
+    dirbasedrulesreader.AllowedSections), 
+      rulesDir, enabledDir, factory, prefix)
   return list(reader.read())
 
 def createHashbangAwareProcessRunner(runnersDir, processRunner):

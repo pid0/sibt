@@ -13,10 +13,11 @@ class Fixture(object):
     ret.join("file").write("")
     return ret
 
-  def mockRule(self, loc1, loc2, name=None, writeLocs=[2]):
+  def mockRule(self, loc1, loc2, name=None, **kwargs):
     self.nameCounter += 1
-    return mockRule(loc1=loc1, loc2=loc2, writeLocs=writeLocs,
-        name=name or "rule-" + str(self.nameCounter))
+    return mockRule(loc1=loc1, loc2=loc2, 
+        name=name or "rule-" + str(self.nameCounter),
+        **kwargs)
 
   def validRule(self):
     return self.mockRule(self.validLocDir(), self.validLocDir())

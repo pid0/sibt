@@ -2,6 +2,9 @@ from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 
 RuleFormat = """
+    [Rule]
+    {ruleOpts}
+
     [Synchronizer]
     Name = {syncer}
     Loc1={loc1}
@@ -21,15 +24,15 @@ class RuleBuilder(ConfigObjectBuilder):
   def __init__(self, paths, sysPaths, foldersWriter, name, kwParams):
     super().__init__(paths, sysPaths, foldersWriter, name, kwParams)
 
-  def _validLoc(self):
-    folder = self.foldersWriter.makeUniqueFolder()
-    (folder / "file").write("")
-    return str(folder)
+  def _validLoc(self, name=None, isEmpty=False):
+    return self.foldersWriter.validSynchronizerLoc(
+        self.foldersWriter.uniqueFolderName() if name is None else name, 
+        isEmpty)
 
   def withSynchronizer(self, syncer):
-    return self._withParams(synchronizerName=syncer.name)
+    return self._withParams(synchronizerName=syncer.name, synchronizer=syncer)
   def withScheduler(self, sched):
-    return self._withParams(schedulerName=sched.name)
+    return self._withParams(schedulerName=sched.name, scheduler=sched)
   def withSynchronizerName(self, syncerName):
     return self._withParams(synchronizerName=syncerName)
   def withSchedulerName(self, schedName):
@@ -39,6 +42,14 @@ class RuleBuilder(ConfigObjectBuilder):
     return self._withParams(loc1=loc1)
   def withLoc2(self, loc2):
     return self._withParams(loc2=loc2)
+  def withNewValidLoc1(self, name=None, isEmpty=False):
+    return self._withParams(loc1=self._validLoc(name, isEmpty))
+  def withNewValidLoc2(self, name=None, isEmpty=False):
+    return self._withParams(loc2=self._validLoc(name, isEmpty))
+  def withNewValidLocs(self, locsAreEmpty=False):
+    return self.withNewValidLoc1(isEmpty=locsAreEmpty).\
+        withNewValidLoc2(isEmpty=locsAreEmpty)
+
   def withLoc3(self, loc3):
     newOpts = dict(self.syncerOpts)
     newOpts["Loc3"] = loc3
@@ -56,6 +67,8 @@ class RuleBuilder(ConfigObjectBuilder):
     return self._withParams(schedOpts=newOpts)
   def withSyncerOpts(self, **newOpts):
     return self._withParams(syncerOpts=newOpts)
+  def withOpts(self, **newOpts):
+    return self._withParams(ruleOpts=newOpts)
 
   def write(self):
     format = self.kwParams.get("content", RuleFormat)
@@ -65,7 +78,8 @@ class RuleBuilder(ConfigObjectBuilder):
         sched=self.kwParams.get("schedulerName", ""),
         syncer=self.kwParams.get("synchronizerName", ""),
         schedOpts=iniFileFormatted(self.schedOpts),
-        syncerOpts=iniFileFormatted(self.syncerOpts))
+        syncerOpts=iniFileFormatted(self.syncerOpts),
+        ruleOpts=iniFileFormatted(self.ruleOpts))
 
     self.ruleFilePath.write(fileContents)
 
@@ -83,6 +97,12 @@ class RuleBuilder(ConfigObjectBuilder):
   def instanceFiles(self):
     return self.kwParams.get("instanceFiles", [])
   @property
+  def scheduler(self):
+    return self.kwParams["scheduler"]
+  @property
+  def synchronizer(self):
+    return self.kwParams["synchronizer"]
+  @property
   def loc1(self):
     if "loc1" not in self.kwParams:
       self.kwParams["loc1"] = self._validLoc()
@@ -98,6 +118,9 @@ class RuleBuilder(ConfigObjectBuilder):
   @property
   def syncerOpts(self):
     return self.kwParams.get("syncerOpts", dict())
+  @property
+  def ruleOpts(self):
+    return self.kwParams.get("ruleOpts", dict())
   @property
   def ruleFilePath(self):
     return local(self.configuredPaths.rulesDir).join(self.name)

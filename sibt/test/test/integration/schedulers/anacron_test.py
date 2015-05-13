@@ -212,7 +212,7 @@ def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
 
   executingScheduling = scheduling().withOption(
       "ExecOnFailure", "{0} {1} {2}".format(str(onFailScript), "a", "%r")).\
-      withOption("LogFile", "/tmp/foo")
+      withOption("LogFile", str(fixture.miscDir / "log"))
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
   if [ $2 = fails ]; then

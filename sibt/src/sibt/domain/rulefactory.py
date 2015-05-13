@@ -1,8 +1,10 @@
 from sibt.domain.syncrule import SyncRule
+from sibt.domain import syncrule
 from sibt.domain.exceptions import LocationInvalidException
 from sibt.configuration.exceptions import ConfigConsistencyException, \
     RuleNameInvalidException
 from sibt.configuration.optionvaluesparser import parseLocation
+from sibt.domain.syncrule import LocCheckLevel
 
 def makeException(ruleName, message):
   return ConfigConsistencyException("rule", ruleName, message)
@@ -12,7 +14,8 @@ class RuleFactory(object):
     self.schedulers = schedulers
     self.synchronizers = synchronizers
 
-  def build(self, name, schedulerOptions, synchronizerOptions, enabled):
+  def build(self, name, ruleOptions, schedulerOptions, synchronizerOptions, 
+      enabled):
     self._throwIfRuleNameInvalid(name)
     self._throwIfOptionsNotPresent(schedulerOptions, ["Name"], "scheduler", 
         name)
@@ -30,11 +33,16 @@ class RuleFactory(object):
     self._throwIfOptionsNotPresent(synchronizerOptions, locOptions, 
         "synchronizer", name)
 
-    self._throwIfUnsupported(scheduler, schedulerOptions, [], "scheduler", name)
-    self._throwIfUnsupported(synchronizer, synchronizerOptions, 
-        locOptions, "synchronizer", name)
+    self._throwIfUnsupported(scheduler.availableOptions, 
+        schedulerOptions, [], "scheduler", name)
+    self._throwIfUnsupported(synchronizer.availableOptions, 
+        synchronizerOptions, locOptions, "synchronizer", name)
+    self._throwIfUnsupported(syncrule.AvailableOptions, ruleOptions, 
+        [], "rule", name)
 
-    return SyncRule(name, schedulerOptions, 
+    self._setRuleOptionsDefaultValues(ruleOptions)
+
+    return SyncRule(name, ruleOptions, schedulerOptions, 
         self._wrapLocs(name, locOptions, synchronizerOptions), 
         enabled, scheduler, synchronizer)
 
@@ -63,16 +71,16 @@ class RuleFactory(object):
       raise makeException(ruleName, str(ex))
     return ret
 
-  def _throwIfUnsupported(self, configurable, options, predefinedOptions, 
+  def _throwIfUnsupported(self, supportedOptions, options, predefinedOptions, 
       description, ruleName):
-    unsupportedOptions = self._unsupportedOptions(configurable, options, 
+    unsupportedOptions = self._unsupportedOptions(supportedOptions, options, 
         predefinedOptions)
     if len(unsupportedOptions) > 0:
       raise makeException(ruleName, "unsupported {0} options: {1}".format(
           description, ", ".join(unsupportedOptions)))
 
-  def _unsupportedOptions(self, configurable, options, predefinedOptions):
-    supported = configurable.availableOptions + predefinedOptions
+  def _unsupportedOptions(self, supportedOptions, options, predefinedOptions):
+    supported = supportedOptions + predefinedOptions
     return [key for key in options.keys() if key not in supported]
 
   def _findName(self, objects, expectedName, searchDescription, ruleName):
@@ -81,3 +89,11 @@ class RuleFactory(object):
       raise makeException(ruleName, "{0} with name ‘{1}’ not found".format(
           searchDescription, expectedName))
     return matching[0]
+
+  def _setRuleOptionsDefaultValues(self, options):
+    if "LocCheckLevel" not in options:
+      options["LocCheckLevel"] = LocCheckLevel.Default
+    else:
+      for possibleOption in LocCheckLevel.values:
+        if options["LocCheckLevel"] == possibleOption.name:
+          options["LocCheckLevel"] = possibleOption

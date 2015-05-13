@@ -1,3 +1,5 @@
+from py.path import local
+
 def initName(builder, name):
   return builder.withAnyName() if name is None else builder.withName(name)
 
@@ -47,7 +49,7 @@ class ConfigScenarioConstructor(object):
       ifWithinLoc2):
     return self.aSyncer().withBashCode("""
 if [ $1 = info-of-port ]; then
-  if [[ $2 != extra && $2 -lt 3 ]]; then
+  if [ $2 != specials ] && [ $2 -lt 3 ]; then
     echo 0
     echo file
     echo ssh

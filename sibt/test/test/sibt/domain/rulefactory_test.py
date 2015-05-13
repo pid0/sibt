@@ -4,6 +4,7 @@ from sibt.configuration.exceptions import ConfigConsistencyException, \
 from sibt.domain.rulefactory import RuleFactory
 from test.common import mock
 from test.common.builders import fakeConfigurable, port
+from sibt.domain.syncrule import LocCheckLevel
 
 class Fixture(object):
   def __init__(self):
@@ -26,7 +27,7 @@ def test_shouldThrowExceptionIfRuleNameContainsInvalidCharacters(fixture):
       [fakeConfigurable("syncer", ports=[])])
 
   with pytest.raises(RuleNameInvalidException) as ex:
-    factory.build("foo@with space", {"Name": "sched"}, {"Name": "syncer"}, 
+    factory.build("foo@with space", {}, {"Name": "sched"}, {"Name": "syncer"}, 
         False)
   assert ex.value.invalidCharacter == " "
 
@@ -36,12 +37,13 @@ def test_shouldThrowExceptionIfSynchronizerOrSchedulerDoesNotExist(fixture):
 
   factory = RuleFactory([existingScheduler], [existingSynchronizer])
   with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {"Name": "no"}, {"Name": "the-syncer"}, False)
+    factory.build("name", {}, {"Name": "no"}, {"Name": "the-syncer"}, False)
   with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {"Name": "the-sched"}, {"Name": "no"}, False)
+    factory.build("name", {}, {"Name": "the-sched"}, {"Name": "no"}, False)
 
   with outRaises():
-    factory.build("works", {"Name": "the-sched"}, {"Name": "the-syncer"}, False)
+    factory.build("works", {}, {"Name": "the-sched"}, {"Name": "the-syncer"}, 
+        False)
 
 def test_shouldThrowExceptionIfAnOptionIsNotSupported(fixture):
   scheduler = fakeConfigurable("sched", availableOptions=["sched-supported"])
@@ -50,18 +52,22 @@ def test_shouldThrowExceptionIfAnOptionIsNotSupported(fixture):
 
   factory = RuleFactory([scheduler], [synchronizer])
 
-  def callBuild(schedulerOptions, synchronizerOptions):
+  def callBuild(ruleOptions, schedulerOptions, synchronizerOptions):
     schedulerOptions["Name"] = "sched"
     synchronizerOptions["Name"] = "syncer"
-    factory.build("rule", schedulerOptions, synchronizerOptions, True)
+    factory.build("rule", ruleOptions, schedulerOptions, synchronizerOptions, 
+        True)
 
   with pytest.raises(ConfigConsistencyException):
-    callBuild({"sched-supported": 1}, {"not": 1})
+    callBuild({}, {"sched-supported": 1}, {"not": 1})
   with pytest.raises(ConfigConsistencyException):
-    callBuild({"not": 1}, {"syncer-supported": 1})
+    callBuild({}, {"not": 1}, {"syncer-supported": 1})
 
   with outRaises():
-    callBuild({"sched-supported": 1}, {"syncer-supported": 1})
+    callBuild({}, {"sched-supported": 1}, {"syncer-supported": 1})
+
+  with pytest.raises(ConfigConsistencyException):
+    callBuild({"Blah": 2}, {"sched-supported": 1}, {"syncer-supported": 1})
 
 #TODO Name is not an option when rulefactory gets passed real syncer/scheds
 #TODO locations must be true locations
@@ -72,14 +78,25 @@ def test_shouldTreatLocsCorrespondingToPortsAndNameAsMinimumOptions(fixture):
 
   factory = RuleFactory([scheduler], [synchronizer])
   with pytest.raises(ConfigConsistencyException):
-    factory.build("rule name", {"Name": "scheduler"}, {"Name": "synchronizer",
+    factory.build("rule name", {}, {"Name": "scheduler"}, 
+        {"Name": "synchronizer",
       "Loc1": "/some-place", "Loc2": "/foo", "Loc3": "/bar"}, True)
 
   with pytest.raises(ConfigConsistencyException):
-    factory.build("rule", {}, {"Name": "synchronizer",
+    factory.build("rule", {}, {}, {"Name": "synchronizer",
       "Loc1": "/some-place", "Loc2": "/place", "Loc3": "/bar"}, True)
 
   with outRaises():
-    factory.build("rule", {"Name": "scheduler"}, {"Name": "synchronizer",
+    factory.build("rule", {}, {"Name": "scheduler"}, {"Name": "synchronizer",
       "Loc1": "/some-place", "Loc2": "/place", "Loc3": "/bar",
       "Loc4": "/fourth"}, True)
+
+def test_shouldHaveADefaultValueForTheLocCheckLevelOption(fixture):
+  scheduler = fakeConfigurable("scheduler")
+  synchronizer = fakeConfigurable("synchronizer")
+
+  factory = RuleFactory([scheduler], [synchronizer])
+
+  assert factory.build("name", {}, {"Name": "scheduler"}, 
+      {"Name": "synchronizer", "Loc1": "/foo", "Loc2": "/bar"}, 
+      False).options["LocCheckLevel"] == LocCheckLevel.Default

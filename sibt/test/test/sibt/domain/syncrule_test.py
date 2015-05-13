@@ -17,7 +17,7 @@ class Fixture(object):
       syncerOptions["Loc1"] = location("/mnt")
     if "Loc2" not in syncerOptions:
       syncerOptions["Loc2"] = location("/etc")
-    return SyncRule(name, schedOptions, syncerOptions, False,
+    return SyncRule(name, {}, schedOptions, syncerOptions, False,
         None, mockedSynchronizer)
 
 @pytest.fixture

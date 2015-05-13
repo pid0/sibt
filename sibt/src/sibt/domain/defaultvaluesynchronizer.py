@@ -1,5 +1,5 @@
 from sibt.infrastructure.exceptions import \
-    SynchronizerFuncNotImplementedException
+    SynchronizerFuncNotImplementedException, ExternalFailureException
 from sibt.domain.port import Port
 
 class DefaultValueSynchronizer(object):
@@ -16,7 +16,7 @@ class DefaultValueSynchronizer(object):
   def versionsOf(self, *args):
     try:
       return self.wrapped.versionsOf(*args)
-    except SynchronizerFuncNotImplementedException:
+    except (SynchronizerFuncNotImplementedException, ExternalFailureException):
       return []
 
   @property

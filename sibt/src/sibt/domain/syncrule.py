@@ -1,16 +1,25 @@
 from sibt.domain.scheduling import Scheduling
 from sibt.domain.version import Version
 from sibt.domain.exceptions import UnsupportedProtocolException
+from sibt.infrastructure.types import Enum
+
+AvailableOptions = ["LocCheckLevel"]
+
+class LocCheckLevel(Enum):
+  Enum.value("None")
+  Enum.value("Default")
+  Enum.value("Strict")
 
 class SyncRule(object):
-  def __init__(self, name, schedulerOptions, synchronizerOptions, enabled, 
-      scheduler, synchronizer):
+  def __init__(self, name, options, schedulerOptions, synchronizerOptions, 
+      enabled, scheduler, synchronizer):
     self.name = name
     self.schedulerOptions = schedulerOptions
     self.enabled = enabled
     self.scheduler = scheduler
     self.synchronizer = synchronizer
     self.ports = synchronizer.ports
+    self.options = options
     self._onePortMustHaveFileProtocol = synchronizer.onePortMustHaveFileProtocol
 
     locKeys = ["Loc" + str(i + 1) for i, _ in enumerate(self.ports)]

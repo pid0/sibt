@@ -10,15 +10,16 @@ class ConfigFoldersWriter(object):
     self.tmpdir = tmpdir
     self.testDirNumber = 100
 
-  def makeUniqueFolder(self):
+  def uniqueFolderName(self):
     self.testDirNumber += 1
-    return self.tmpdir.mkdir("loc-" + str(self.testDirNumber))
+    return "loc-" + str(self.testDirNumber)
 
-  def validSynchronizerLoc(self, name):
+  def validSynchronizerLoc(self, name, isEmpty=False):
     ret = self.tmpdir.join(name)
     if not os.path.isdir(str(ret)):
       os.makedirs(str(ret))
-    ret.join("file").write("")
+    if not isEmpty:
+      ret.join("file").write("")
     return str(ret)
 
   def createSysFolders(self):

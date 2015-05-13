@@ -29,5 +29,10 @@ class ConfigSyntaxException(Exception):
     self.file = file
 
   def __str__(self):
-    return "error in configuration of {0} {1} (‘{2}’): {3}".format(
-        self.unitType, self.unitName, self.file, self.message)
+    return "error in configuration of {0}{1} (‘{2}’): {3}".format(
+        self.unitType, (" " + self.unitName) if 
+        self.unitName is not None else "", self.file, self.message)
+
+class MissingConfigValuesException(ConfigSyntaxException):
+  def __init__(self, unitType, unitName, file=None):
+    super().__init__(unitType, unitName, "can't resolve option values", file)
