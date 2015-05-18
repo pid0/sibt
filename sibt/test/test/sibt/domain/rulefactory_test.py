@@ -3,18 +3,21 @@ from sibt.configuration.exceptions import ConfigConsistencyException, \
     RuleNameInvalidException
 from sibt.domain.rulefactory import RuleFactory
 from test.common import mock
-from test.common.builders import fakeConfigurable, port
+from test.common.builders import fakeConfigurable, port, optInfo, \
+    location as loc, mkSyncerOpts
 from sibt.domain.syncrule import LocCheckLevel
+from sibt.infrastructure import types
+from test.common.assertutil import strToTest
 
 class Fixture(object):
   def __init__(self):
-    pass
+    self.factory = RuleFactory()
 
 @pytest.fixture
 def fixture():
   return Fixture()
 
-def outRaises():
+def noException():
   class Ret(object):
     def __enter__(self):
       return self
@@ -23,80 +26,55 @@ def outRaises():
   return Ret()
 
 def test_shouldThrowExceptionIfRuleNameContainsInvalidCharacters(fixture):
-  factory = RuleFactory([fakeConfigurable("sched")], 
-      [fakeConfigurable("syncer", ports=[])])
-
   with pytest.raises(RuleNameInvalidException) as ex:
-    factory.build("foo@with space", {}, {"Name": "sched"}, {"Name": "syncer"}, 
-        False)
+    fixture.factory.build("foo@with space", fakeConfigurable("sched"),
+        fakeConfigurable("syncer", ports=[]), {}, {}, mkSyncerOpts(), False)
   assert ex.value.invalidCharacter == " "
 
-def test_shouldThrowExceptionIfSynchronizerOrSchedulerDoesNotExist(fixture):
-  existingScheduler = fakeConfigurable("the-sched")
-  existingSynchronizer = fakeConfigurable("the-syncer", ports=[])
-
-  factory = RuleFactory([existingScheduler], [existingSynchronizer])
-  with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {}, {"Name": "no"}, {"Name": "the-syncer"}, False)
-  with pytest.raises(ConfigConsistencyException):
-    factory.build("name", {}, {"Name": "the-sched"}, {"Name": "no"}, False)
-
-  with outRaises():
-    factory.build("works", {}, {"Name": "the-sched"}, {"Name": "the-syncer"}, 
-        False)
-
 def test_shouldThrowExceptionIfAnOptionIsNotSupported(fixture):
-  scheduler = fakeConfigurable("sched", availableOptions=["sched-supported"])
+  scheduler = fakeConfigurable("sched", 
+      availableOptions=[optInfo("sched-supported")])
   synchronizer = fakeConfigurable("syncer", ports=[],
-      availableOptions=["syncer-supported"])
-
-  factory = RuleFactory([scheduler], [synchronizer])
+      availableOptions=[optInfo("syncer-supported")])
 
   def callBuild(ruleOptions, schedulerOptions, synchronizerOptions):
-    schedulerOptions["Name"] = "sched"
-    synchronizerOptions["Name"] = "syncer"
-    factory.build("rule", ruleOptions, schedulerOptions, synchronizerOptions, 
-        True)
+    fixture.factory.build("rule", scheduler, synchronizer, ruleOptions, 
+        schedulerOptions, mkSyncerOpts(**synchronizerOptions), True)
 
   with pytest.raises(ConfigConsistencyException):
     callBuild({}, {"sched-supported": 1}, {"not": 1})
   with pytest.raises(ConfigConsistencyException):
     callBuild({}, {"not": 1}, {"syncer-supported": 1})
 
-  with outRaises():
+  with noException():
     callBuild({}, {"sched-supported": 1}, {"syncer-supported": 1})
 
   with pytest.raises(ConfigConsistencyException):
     callBuild({"Blah": 2}, {"sched-supported": 1}, {"syncer-supported": 1})
 
-#TODO Name is not an option when rulefactory gets passed real syncer/scheds
-#TODO locations must be true locations
-def test_shouldTreatLocsCorrespondingToPortsAndNameAsMinimumOptions(fixture):
-  scheduler = fakeConfigurable("scheduler")
-  synchronizer = fakeConfigurable("synchronizer",
-      ports=[port(), port(), port(), port()])
+def test_shouldTreatLocsCorrespondingToPortsAsMinimumOptions(fixture):
+  def locOptInfo(number):
+    return optInfo("Loc" + str(number), types.Location)
+  sched = fakeConfigurable("scheduler")
+  syncer = fakeConfigurable("synchronizer",
+      ports=[port(), port(), port(), port()],
+      availableOptions=[locOptInfo(1), locOptInfo(2), locOptInfo(3), 
+        locOptInfo(4)])
 
-  factory = RuleFactory([scheduler], [synchronizer])
-  with pytest.raises(ConfigConsistencyException):
-    factory.build("rule name", {}, {"Name": "scheduler"}, 
-        {"Name": "synchronizer",
-      "Loc1": "/some-place", "Loc2": "/foo", "Loc3": "/bar"}, True)
+  loc1Through3 = {"Loc1": loc("/some-place"), "Loc2": loc("/place"), 
+      "Loc3": loc("/bar")}
 
-  with pytest.raises(ConfigConsistencyException):
-    factory.build("rule", {}, {}, {"Name": "synchronizer",
-      "Loc1": "/some-place", "Loc2": "/place", "Loc3": "/bar"}, True)
+  with pytest.raises(ConfigConsistencyException) as ex:
+    fixture.factory.build("rulename", sched, syncer, {}, {}, 
+        mkSyncerOpts(**loc1Through3), True)
+  strToTest(str(ex.value)).shouldIncludeInOrder("not", "minimum opt").andAlso.\
+      shouldInclude("Loc4")
 
-  with outRaises():
-    factory.build("rule", {}, {"Name": "scheduler"}, {"Name": "synchronizer",
-      "Loc1": "/some-place", "Loc2": "/place", "Loc3": "/bar",
-      "Loc4": "/fourth"}, True)
+  with noException():
+    fixture.factory.build("rule", sched, syncer, {}, {}, 
+        mkSyncerOpts(Loc4=loc("/fourth"), **loc1Through3), True)
 
 def test_shouldHaveADefaultValueForTheLocCheckLevelOption(fixture):
-  scheduler = fakeConfigurable("scheduler")
-  synchronizer = fakeConfigurable("synchronizer")
-
-  factory = RuleFactory([scheduler], [synchronizer])
-
-  assert factory.build("name", {}, {"Name": "scheduler"}, 
-      {"Name": "synchronizer", "Loc1": "/foo", "Loc2": "/bar"}, 
-      False).options["LocCheckLevel"] == LocCheckLevel.Default
+  assert fixture.factory.build("name", fakeConfigurable(), 
+      fakeConfigurable(ports=[]), {}, {}, mkSyncerOpts(), False).\
+          options["LocCheckLevel"] == LocCheckLevel.Default

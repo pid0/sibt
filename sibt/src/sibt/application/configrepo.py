@@ -8,6 +8,8 @@ from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException
 from sibt.infrastructure import collectFilesInDirs
 import sys
+from sibt.configuration.rulefromstringoptionsreader import \
+    RuleFromStringOptionsReader
 from sibt.domain.rulefactory import RuleFactory
 import itertools
 from sibt.application.runner import Runner
@@ -17,6 +19,7 @@ from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from sibt.application.exceptions import RuleNameMismatchException
 from sibt.infrastructure.runnablefilefunctionmodule import \
     RunnableFileFunctionModule
+from sibt.configuration.optionvaluesparser import OptionValuesParser
 
 def readSynchronizers(dirs, processRunner):
   def load(path, fileName):
@@ -70,7 +73,8 @@ class ConfigRepo(object):
         PyModuleSchedulerLoader(moduleLoader), schedulerWrapper,
         (sibtInvocation, paths))
 
-    factory = RuleFactory(schedulers, synchronizers)
+    factory = RuleFromStringOptionsReader(RuleFactory(),
+        OptionValuesParser(), schedulers, synchronizers)
     userRules = readRules(paths.rulesDir, paths.enabledDir, factory, "")
     sysRules = [] if not readSysConf else readRules(sysPaths.rulesDir, 
         sysPaths.enabledDir, factory, "+")

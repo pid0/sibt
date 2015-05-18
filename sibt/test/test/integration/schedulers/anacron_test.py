@@ -36,6 +36,10 @@ class Fixture(object):
     self.execs.check()
   def check(self, schedulings):
     return self.mod.check(schedulings)
+  
+  @property
+  def optionNames(self):
+    return [optInfo.name for optInfo in self.mod.availableOptions]
 
   def runWithMockedSibt(self, sibtProgram, schedulings, sibtArgs=[]):
     sibt = self.miscDir / "sibt"
@@ -107,7 +111,7 @@ def test_shouldCountUpTabAndScriptNamesNamesIfTheyExistAndDeleteThemAfterwards(
 
 def test_shouldPassIntervalOptionInDaysToAnacron(fixture):
   fixture.init()
-  assert "Interval" in fixture.mod.availableOptions
+  assert "Interval" in fixture.optionNames
 
   schedulings = [scheduling().
       withRuleName("one-day").
@@ -168,11 +172,11 @@ def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
   assert "dolor sit" in log
   assert "lorem ipsum" not in log
   
-  assert "LogFile" in fixture.mod.availableOptions
+  assert "LogFile" in fixture.optionNames
 
 def test_shouldSupportSysloggingSibtOutput(fixture):
   fixture.init()
-  assert "Syslog" in fixture.mod.availableOptions
+  assert "Syslog" in fixture.optionNames
 
   logFile = fixture.tmpdir.join("log")
 
@@ -226,12 +230,12 @@ def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
   assert os.path.isfile(testFile2)
   assert testFile.read() == "fails\n"
 
-  assert "ExecOnFailure" in fixture.mod.availableOptions
+  assert "ExecOnFailure" in fixture.optionNames
 
 def test_shouldHaveAnInterfaceToAnacronsStartHoursRange(fixture):
   fixture.init()
 
-  assert "AllowedHours" in fixture.mod.availableOptions
+  assert "AllowedHours" in fixture.optionNames
   def checkTab(tabPath):
     fixture.tabShouldContainLinesMatching(tabPath, "*START_HOURS_RANGE=6-20")
     return True

@@ -6,7 +6,6 @@ from sibt.configuration.exceptions import MissingConfigValuesException, \
 import pytest
 from test.common import mock
 from test.common.assertutil import iterToTest
-from sibt.configuration.cachinginifilesetreader import CachingIniFileSetReader
 
 DontCheck = object()
   
@@ -29,18 +28,10 @@ class Fixture(object):
     local(self.instancePath(fileName)).write(contents)
 
   def _createReader(self, prefix, fileReader=None):
-    if fileReader is None:
-      fileReader = CachingIniFileSetReader(str(self.rulesDir), 
-          [dirbasedrulesreader.RuleSec, dirbasedrulesreader.SyncerSec, 
-            dirbasedrulesreader.SchedSec])
     return DirBasedRulesReader(fileReader, str(self.rulesDir), 
         str(self.enabledDir), self.factory, prefix)
-  def read(self, namePrefix=""):
-    ret = self._createReader(namePrefix).read()
-    self.factory.checkExpectedCalls()
-    return ret
 
-  def readWithMock(self, mockedFileReader=None, namePrefix=""):
+  def read(self, mockedFileReader=None, namePrefix=""):
     if mockedFileReader is None:
       mockedFileReader = fakeReader()
     ret = self._createReader(namePrefix, fileReader=mockedFileReader).read()
@@ -57,7 +48,7 @@ def buildCall(name=DontCheck, ruleOpts=DontCheck, schedOpts=DontCheck,
         return False
     return True
     
-  return mock.callMatchingTuple("build", matcher, ret=ret)
+  return mock.callMatchingTuple("readRule", matcher, ret=ret)
 
 def readCall(paths, instanceArgument=DontCheck, ret=None):
   def matcher(args):
@@ -105,7 +96,7 @@ def test_shouldReadEachFileAsARuleAndBuildThemWithFactoryWithPrefixedNames(
       buildCall(name="a-rule-2", ruleOpts=ruleOpts2, schedOpts=schedOpts2,
         syncerOpts=syncerOpts2, ret=secondConstructedRule))
 
-  assert iterToTest(fixture.readWithMock(fileReader, namePrefix="a-")).\
+  assert iterToTest(fixture.read(fileReader, namePrefix="a-")).\
       shouldContainInAnyOrder(firstConstructedRule, secondConstructedRule)
 
 def test_shouldPassOnExceptionIfRuleIsFoundInconsistentByTheFactory(fixture):
@@ -115,9 +106,9 @@ def test_shouldPassOnExceptionIfRuleIsFoundInconsistentByTheFactory(fixture):
   def fail(_):
     raise consistencyEx
 
-  fixture.factory.expectCalls(mock.callMatchingTuple("build", fail))
+  fixture.factory.expectCalls(mock.callMatchingTuple("readRule", fail))
   with pytest.raises(ConfigConsistencyException) as ex:
-    fixture.readWithMock()
+    fixture.read()
   assert ex.value is consistencyEx
   assert ex.value.file == fixture.rulePath("rule")
 
@@ -127,26 +118,16 @@ def test_shouldPassOnExceptionIfRuleIsFoundInconsistentByTheFactory(fixture):
     raise regularEx
   
   fixture.factory.clearExpectedCalls()
-  fixture.factory.expectCalls(mock.callMatchingTuple("build", totallyFail))
+  fixture.factory.expectCalls(mock.callMatchingTuple("readRule", totallyFail))
 
   with pytest.raises(Exception) as ex:
-    fixture.readWithMock()
+    fixture.read()
   assert ex.value == regularEx
 
 def test_shouldIgnoreRuleFilesEndingWithInc(fixture):
   fixture.writeAnyRule("header-rule.inc")
 
   assert len(fixture.read()) == 0
-
-#TODO: obsolete -> name not there
-#def test_shouldThrowExceptionIfTheTwoKnownSectionsArentThere(fixture):
-#  fixture.writeRuleFile("invalid", """
-#  [Fake1]
-#  [Fake2]
-#  Lala = 2
-#  """)
-#  with pytest.raises(ConfigSyntaxException):
-#    fixture.read()
 
 def test_shouldConsiderEnabledRulesAsAsManyAsTheyHaveInstances(fixture):
   fixture.writeAnyRule("on")
@@ -161,7 +142,7 @@ def test_shouldConsiderEnabledRulesAsAsManyAsTheyHaveInstances(fixture):
       buildCall(name="foo@on", isEnabled=True),
       buildCall(name="quux@on", isEnabled=True),
       buildCall(name="off", isEnabled=False))
-  fixture.readWithMock()
+  fixture.read()
 
 def test_shouldMakeInstanceFileOverrideAllSettingsALastTime(fixture):
   fixture.writeAnyRule("rule")
@@ -174,7 +155,7 @@ def test_shouldMakeInstanceFileOverrideAllSettingsALastTime(fixture):
     ret=sectionsDict()))
 
   fixture.factory.expectCallsInAnyOrder(buildCall(name="ta@ta@rule"))
-  fixture.readWithMock(reader)
+  fixture.read(reader)
 
 def test_shouldIgnoreDisabledRulesWithInterpolationErrors(fixture):
   fixture.writeRuleFile("rule", "")
@@ -184,4 +165,4 @@ def test_shouldIgnoreDisabledRulesWithInterpolationErrors(fixture):
   reader = mock.mock()
   reader.sectionsFromFiles = interpolationError
 
-  fixture.readWithMock(reader)
+  fixture.read(reader)

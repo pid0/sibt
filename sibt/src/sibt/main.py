@@ -56,8 +56,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
       return 1
 
     rulesFinder = RulesFinder(configRepo)
-    validator = subvalidators.AcceptingValidator() if \
-        args.options["no-checks"] else constructRulesValidator()
+    validator = constructRulesValidator()
 
     if args.action in ["schedule", "check"]:
       matchingRuleSet = rulesFinder.findSyncRuleSetByPatterns(

@@ -2,7 +2,7 @@ from sibt.infrastructure.coprocessrunner import CoprocessRunner
 from sibt.infrastructure.fileobjoutput import FileObjOutput
 from fnmatch import fnmatchcase
 from test.acceptance.runresult import RunResult
-from test.acceptance.bufferingoutput import BufferingOutput
+from test.common.bufferingoutput import BufferingOutput
 from test.common.execmock import ExecMock
 from test.common import execmock
 from py.path import local
@@ -22,6 +22,7 @@ from test.acceptance.synchronizerbuilder import SynchronizerBuilder
 from test.acceptance.schedulerbuilder import SchedulerBuilder
 from test.acceptance.rulebuilder import RuleBuilder
 from test.acceptance.configscenarioconstructor import ConfigScenarioConstructor
+from datetime import timedelta
 
 Utc0 = "1970-01-01T00:00:00"
 
@@ -252,29 +253,78 @@ def test_shouldFailIfConfiguredSchedulerOrSynchronizerDoesNotExist(fixture):
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("synchronizer", "is-not-there", "not found")
 
-def test_shouldPassOptionsAsIsToCorrectSchedulersAndSynchronizers(fixture):
+def test_shouldPassParsedAndFormattedOptionsToSyncersAndSchedsBasedOnType(
+    fixture):
+  schedMock, sched = fixture.conf.aSched().\
+      withOptions("High|Med|Low Verbosity", "t Interval").mock()
   syncer = fixture.conf.aSyncer().allowingSetupCallsExceptOptions().\
-      withTestOptions().write()
-  schedMock, sched = fixture.conf.aSched().withTestOptions().mock()
+      withOptions("b Compress", "b Encrypt").write()
 
   rule = fixture.conf.aRule().\
-      withSchedOpts(Interval="2w").\
-      withSyncerOpts(AddFlags="-X -A").\
+      withSchedOpts(Verbosity="High", Interval="2m 5s").\
+      withSyncerOpts(Compress=" on", Encrypt="nO").\
       withScheduler(sched).\
       withSynchronizer(syncer).write()
 
   schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
       len(schedulings) == 1 and
       schedulings[0].ruleName == rule.name and
-      schedulings[0].options == { "Interval": "2w" }))
+      schedulings[0].options == dict(Verbosity="High", Interval=timedelta(
+        minutes=2, seconds=5))))
 
   fixture.runSibtCheckingExecs("schedule", rule.name)
 
   syncer.expecting(execmock.call(lambda args: args[0] == "sync" and
-    set(args[1:]) == {"AddFlags=-X -A", "Loc1=" + rule.loc1,
-      "Loc2=" + rule.loc2, "Loc1Protocol=file", "Loc1Path=" + rule.loc1,
-      "Loc2Protocol=file", "Loc2Path=" + rule.loc2})).reMakeExpectations()
+    "Loc1=" + rule.loc1 in args and
+    "Compress=1" in args and
+    "Encrypt=0" in args)).reMakeExpectations()
+
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
+
+def test_shouldFailIfOptionValuesHaveAnInvalidSyntax(fixture):
+  sched = fixture.conf.aSched().withOptions("b Syslog").write()
+  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptOptions().\
+      withOptions("p NoOfCopies").write()
+
+  baseRule = fixture.conf.aRule().\
+      withOpts(LocCheckLevel="None").\
+      withSchedOpts(Syslog="Yes").\
+      withSyncerOpts(NoOfCopies="3").\
+      withScheduler(sched).\
+      withSynchronizer(syncer).write()
+
+  def run():
+    syncer.reMakeExpectations()
+    fixture.runSibtCheckingExecs("show", baseRule.name)
+  fixture.execs.reset()
+
+  run()
+  fixture.shouldHaveExitedWithStatus(0)
+
+  baseRule.withOpts(LocCheckLevel="dffd").write()
+  run()
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("pars", "opt", "LocCheckLevel", "dffd")
+
+  baseRule.withSyncerOpts(NoOfCopies="-5").withSchedOpts(Syslog="hmm").write()
+  run()
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("NoOfCopies", "negative", "Syslog", "hmm")
+
+def test_shouldNicelyFormatOptionValuesBasedOnTypeSoTheyCouldBeParsed(fixture):
+  syncer = fixture.conf.aSyncer().allowingSetupCallsExceptOptions().\
+      withOptions("t DeleteAfter").write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).\
+      withOpts(LocCheckLevel="Strict").\
+      withLoc1("file:///mnt").\
+      withSyncerOpts(DeleteAfter="2w 1d 3 s").write()
+
+  fixture.runSibtCheckingExecs("show", rule.name)
+  print(fixture.stdout.string)
+  fixture.stdout.shouldIncludeLinePatterns(
+      "*LocCheck*Strict*",
+      "*Loc1*/mnt*",
+      "*DeleteAfter*=?2 weeks 1 day 3 seconds*")
 
 def test_shouldFailIfOptionsAreUsedNotPredefinedOrSupportedByConfiguration(
     fixture):
@@ -304,17 +354,17 @@ def test_shouldConsiderNameAndLocsAsMinimumAndAlreadyAvailableOptions(
   fixture.stderr.shouldInclude("invalid-rule", "minimum", "Loc1")
 
 def test_shouldIssureErrorMessageIfARuleFileNameContainsAComma(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("comma").enabled(
+  fixture.conf.ruleWithSchedAndSyncer("comma,2015-01-01").enabled(
       instanceName="no,").write()
 
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
   fixture.stderr.shouldInclude("invalid character", "no,@comma")
 def test_shouldIssureErrorMessageIfARuleFileNameContainsASpace(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("no space").write()
+  fixture.conf.ruleWithSchedAndSyncer("no space-in-crontab").write()
 
   fixture.runSibt()
-  fixture.stderr.shouldInclude("invalid character", "no space")
+  fixture.stderr.shouldInclude("invalid character", "no space-in")
 def test_shouldIssureErrorMessageIfARuleFileNameBeginsWithAPlus(fixture):
   fixture.conf.ruleWithSchedAndSyncer("-+").write()
 
@@ -748,16 +798,16 @@ def test_shouldHaveAnOptionForARecursiveFileListing(fixture):
 def test_shouldCallRunnerNamedInHashbangLineOfSynchronizersIfItExists(fixture):
   runnerPath = fixture.confFolders.writeRunner("faith")
   syncer = fixture.conf.aSyncer().withCode("#!faith").write()
-  fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
-  anyCallsExceptOptions = execmock.call(
-      lambda args: args[1] != "available-options",
+  anyCallsExceptSync = execmock.call(
+      lambda args: args[1] != "sync",
       returningNotImplementedStatus=True)
-  fixture.execs.allow(runnerPath, anyCallsExceptOptions)
+  fixture.execs.allow(runnerPath, anyCallsExceptSync)
 
   fixture.execs.expect(runnerPath, execmock.call(
-      (str(syncer.path), "available-options")))
-  fixture.runSibtCheckingExecs("list", "synchronizers")
+    lambda args: args[0] == syncer.path and args[1] == "sync"))
+  fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
   fixture.shouldHaveExitedWithStatus(0)
 
 def test_shouldPerformSanityChecksBeforeSchedulingDependingOnRuleSettings(
@@ -786,6 +836,12 @@ def test_shouldPerformSanityChecksBeforeSchedulingDependingOnRuleSettings(
   fixture.stderr.shouldInclude("not exist")
   fixture.runSibt("schedule", "r-empty")
   fixture.shouldHaveExitedWithStatus(1)
+
+  ruleWhoseLocsDontExist2 = fixture.conf.ruleWithNonExistentLocs("r-exist2").\
+      write()
+  fixture.runSibt("schedule", "r-exist", "r-exist2")
+  fixture.stderr.shouldInclude(ruleWhoseLocsDontExist.loc1,
+      ruleWhoseLocsDontExist.loc2, ruleWhoseLocsDontExist2.loc1)
 
 def test_shouldCheckIfTwoRulesToScheduleWouldWriteToTheSameLocation(fixture):
   bidirectional = fixture.conf.aSyncer().withBashCode("""
@@ -856,25 +912,7 @@ def test_shouldBeAbleToSimulateSchedulingsAndPrintThemToStdout(fixture):
   fixture.stderr.shouldInclude("/doesn't-exist")
   fixture.stdout.shouldBeEmpty()
 
-# TODO check slash removed
-# remote loc test (with versions-of; change to ip later)
-#def test_shouldSynchronizerAColonSeparatedFormatForRemoteLocations(fixture):
-#  utc12 = "*1970-01-01T00:00:12*"
-#
-#  syncer = fixture.conf.syncerReturningVersions(forRelativeFile="raven",
-#      ifWithinLoc1=["12"], ifWithinLoc2=[]).write()
-##TODO scramble path
-#  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).\
-#      withLoc1("other-host:/mnt/data").write()
-#  
-#  fixture.runSibtWithRealStreamsAndExec("versions-of", 
-#      "other-host:/mnt/data/raven")
-#  fixture.stdout.shouldContainLinePatterns(utc12)
-
 def test_shouldDissectRemoteLocationsWrittenAsUrlsForSyncers(fixture):
-# TODO refactor to functionmodule; check allLocalRule 
-#   (with file:/// and without; syntactic sugar test)
-# TODO use ssh syntactic sugar somewhere else in a test
   rule = fixture.conf.ruleWithSched().\
       withLoc1("protocol1://bar@somehost/usr//share/").\
       withLoc2("http://foo:123/~/downloads").\

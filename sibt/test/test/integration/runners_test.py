@@ -34,7 +34,7 @@ class RunnerTest(object):
   def test_shouldNotFailForFunctionsThatHaveAReasonableDefault(self, fixture):
     syncer = self.loadSynchronizerWithCode("", fixture)
     assert syncer.onePortMustHaveFileProtocol == False
-    assert syncer.availableOptions == []
+    _ = syncer.availableOptions
     iterToTest(syncer.ports).shouldContainMatching(
         lambda port: port.supportedProtocols == ["file"] and \
             not port.isWrittenTo,

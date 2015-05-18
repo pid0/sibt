@@ -3,10 +3,11 @@ from sibt.domain.validatorcollectionvalidator import \
 from sibt.domain import subvalidators
 
 def constructRulesValidator():
-  return ValidatorCollectionValidator([
-        subvalidators.LocExistenceValidator(),
-        subvalidators.LocNotEmptyValidator(),
-        subvalidators.NoOverlappingWritesValidator(),
-        subvalidators.NoSourceDirOverwriteValidator(),
-        subvalidators.SchedulerCheckValidator()
-    ])
+  return ValidatorCollectionValidator([[ 
+      subvalidators.LocExistenceValidator()
+    ], [ 
+      subvalidators.LocNotEmptyValidator(), 
+      subvalidators.NoOverlappingWritesValidator(),
+      subvalidators.NoSourceDirOverwriteValidator(),
+      subvalidators.SchedulerCheckValidator()
+    ]])

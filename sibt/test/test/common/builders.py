@@ -10,6 +10,9 @@ import re
 from sibt.domain.port import Port
 from sibt.configuration.optionvaluesparser import parseLocation
 from sibt.domain.syncrule import LocCheckLevel
+from sibt.domain.optioninfo import OptionInfo
+from sibt.infrastructure import types
+from sibt.domain.synchronizeroptions import SynchronizerOptions 
 
 def randstring():
   return str(random())[2:] 
@@ -45,6 +48,12 @@ def anyUTCDateTime():
 
 def port(supportedProtocols=["file"], isWrittenTo=False):
   return Port(supportedProtocols, isWrittenTo)
+
+def optInfo(name, optionType=types.String):
+  return OptionInfo(name, optionType)
+
+def mkSyncerOpts(**options):
+  return SynchronizerOptions.fromDict(options)
 
 def location(path="/any"):
   return localLocation(path)

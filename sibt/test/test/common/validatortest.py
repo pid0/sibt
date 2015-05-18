@@ -32,4 +32,3 @@ class ValidatorTest(object):
     ruleSet = mockRuleSet([fix.validRule(), fix.validRule()],
         schedulerErrors=[])
     assert validator.validate(ruleSet) == []
-

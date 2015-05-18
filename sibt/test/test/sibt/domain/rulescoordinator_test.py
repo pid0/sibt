@@ -2,7 +2,6 @@ import pytest
 from test.common import mock
 from test.common.builders import mockRule
 from sibt.domain.rulescoordinator import RulesCoordinator
-from sibt.domain.subvalidators import AcceptingValidator
 from sibt.domain.exceptions import ValidationException
 
 class Fixture(object):
@@ -24,7 +23,11 @@ class Fixture(object):
 
 @pytest.fixture
 def fixture():
-  return Fixture()
+ return Fixture()
+
+class AcceptingValidator(object):
+  def validate(self, ruleSet):
+    return []
 
 def schedCallWithRules(action, *rules, **kwargs):
   return mock.callMatching(action, lambda schedulings:

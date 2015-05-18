@@ -62,9 +62,11 @@ class SynchronizerBuilder(ConfigObjectBuilder):
     return self.expecting(execmock.call(lambda args: args[0] == "list-files" and
       matcher(args), delimiter="\0"))
 
+  def withOptions(self, *options):
+    return self.allowing(execmock.call(lambda args: args[0] == 
+      "available-options", ret=list(options)))
   def withTestOptions(self):
-    return self.expecting(execmock.call(lambda args: args[0] == 
-      "available-options", ret=["AddFlags", "KeepCopies"]))
+    return self.withOptions("AddFlags", "KeepCopies")
 
   def reMakeExpectations(self):
     self.execChecker.expect(str(self.path), *self.expectations)

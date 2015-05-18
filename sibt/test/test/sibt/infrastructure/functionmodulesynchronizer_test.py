@@ -8,10 +8,11 @@ from test.common.assertutil import iterToTest, dictIncludes
 from sibt.infrastructure.exceptions import ExternalFailureException, \
     SynchronizerFuncNotImplementedException, \
     ModuleFunctionNotImplementedException
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from test.common import mock
 from test.common.builders import remoteLocation, localLocation, location, \
-    anyUTCDateTime
+    anyUTCDateTime, mkSyncerOpts
+from sibt.infrastructure import types
 
 EpochPlus93Sec = datetime(1970, 1, 1, 0, 1, 33, tzinfo=timezone.utc)
 EpochPlus93SecW3C = "1970-01-01T00:01:33+00:00"
@@ -27,11 +28,11 @@ def fixture():
   return Fixture()
 
 def test_shouldCallAppropriateFunctionForSynchronization(fixture):
-  options = {"One": "1", "Two": "two"}
+  options = mkSyncerOpts(One="1", Two="two")
 
   fixture.functions.expectCalls(mock.callMatching("callVoid",
     lambda funcName, args, usedOptions: funcName == "sync" and
-        len(args) == 0 and usedOptions == options))
+        len(args) == 0 and usedOptions == dict(options)))
 
   fixture.syncer.sync(options)
 
@@ -48,13 +49,15 @@ def test_shouldWrapFunctionNotImplementedException(fixture):
     fixture.syncer.sync({})
   assert ex.value.synchronizerName == fixture.syncer.name
 
-def test_shouldReturnFuzzyOutputAsAvailableOptions(fixture):
-  ret = ["A", "B"]
+def test_shouldSplitFuzzyOutputForTypeAndNameOfAvailableOptions(fixture):
+  ret = ["Default", "b B"]
 
   fixture.functions.expectCalls(mock.callMatching("callFuzzy",
     lambda funcName, *_: funcName == "available-options", ret=ret))
 
-  assert fixture.syncer.availableOptions == ret
+  assert iterToTest(fixture.syncer.availableOptions).shouldContainMatching(
+      lambda opt: opt.name == "Default" and opt.optionType == types.String,
+      lambda opt: opt.name == "B" and opt.optionType == types.Bool)
 
 def test_shouldParseUnixTimestampsAndW3CDateTimesAsVersions(fixture):
   path = "/etc/config"
@@ -114,14 +117,25 @@ def test_shouldTreatFirstLineOfPortOutputAsWrittenToFlag(fixture):
           not port.isWrittenTo)
 
 def test_shouldConvertArgumentsAndOptionsToStringsDependingOnTheirType(fixture):
+  enum = types.Enum("A", "B")
   options = {
       "SomePlace": location("/home//foo/"),
-      "Loc1": location("/tmp")}
+      "Loc1": location("/tmp"),
+      "Yes": True,
+      "No": False,
+      "Number": 934,
+      "Interval": timedelta(minutes=2, seconds=3.5),
+      "Choice": enum.A}
 
   fixture.functions.expectCalls(mock.callMatching("callVoid",
       lambda _, args, receivedOptions: args[3] == "/media/foo" and
         receivedOptions["SomePlace"] == "/home/foo" and
-        receivedOptions["Loc1"] == "/tmp"))
+        receivedOptions["Loc1"] == "/tmp" and
+        receivedOptions["Yes"] == "1" and 
+        receivedOptions["No"] == "0" and 
+        receivedOptions["Number"] == "934" and 
+        receivedOptions["Interval"] == "123" and 
+        receivedOptions["Choice"] == "A"))
 
   fixture.syncer.restore("foo", 1, anyUTCDateTime(), 
       location("/media/foo/"), options)

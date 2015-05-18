@@ -62,7 +62,7 @@ class DirBasedRulesReader(object):
       raise
 
     try:
-      return self.factory.build(self.namePrefix + instanceName, 
+      return self.factory.readRule(self.namePrefix + instanceName, 
           sections[RuleSec],
           sections[SchedSec], 
           sections[SyncerSec], isEnabled)

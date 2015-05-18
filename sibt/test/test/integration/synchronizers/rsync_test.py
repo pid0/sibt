@@ -45,8 +45,8 @@ class Test_RsyncTest(MirrorSynchronizerTest,
 
   def test_shouldTakeCustomOptionsForSyncingAndForSyncingAndRestoring(self, 
       fixture):
-    assert "AdditionalSyncOpts" in fixture.syncer.availableOptions
-    assert "AdditionalOptsBothWays" in fixture.syncer.availableOptions
+    assert "AdditionalSyncOpts" in fixture.optionNames
+    assert "AdditionalOptsBothWays" in fixture.optionNames
 
     infoFile, = writeFileTree(fixture.loc1, [".",
       ["proc",

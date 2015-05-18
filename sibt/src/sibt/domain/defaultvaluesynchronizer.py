@@ -1,17 +1,27 @@
 from sibt.infrastructure.exceptions import \
     SynchronizerFuncNotImplementedException, ExternalFailureException
 from sibt.domain.port import Port
+from sibt.infrastructure import types
+from sibt.domain.optioninfo import OptionInfo
 
 class DefaultValueSynchronizer(object):
   def __init__(self, wrapped):
     self.wrapped = wrapped
 
-  @property
-  def availableOptions(self):
+  def _getAvailableOptions(self):
     try:
       return self.wrapped.availableOptions
     except SynchronizerFuncNotImplementedException:
       return []
+
+  def _locOptionInfosCorrespondingToPorts(self, ports):
+    return [OptionInfo("Loc" + str(i + 1), types.Location) for i in 
+        range(len(ports))]
+
+  @property
+  def availableOptions(self):
+    return self._getAvailableOptions() + \
+        self._locOptionInfosCorrespondingToPorts(self.ports)
 
   def versionsOf(self, *args):
     try:

@@ -27,7 +27,6 @@ GlobalOpts = [opt("config-dir"),
   opt("readonly-dir"), 
   opt("no-sys-config", True),
   opt("verbose", True),
-  opt("no-checks", True),
   opt("utc", True)]
 
 class CmdLineArgs(object):

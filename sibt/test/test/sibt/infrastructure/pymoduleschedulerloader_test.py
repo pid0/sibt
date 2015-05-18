@@ -21,13 +21,14 @@ class Fixture(object):
 def fixture():
   return Fixture()
 
-def test_shouldReturnPythonModuleLoadedFromFileWithNameAttributeSet(fixture):
+def test_shouldReturnSchedulerBasedOnPythonModuleInAFileAndSetItsName(fixture):
   name = "a-sched-module"
   module = fixture.validModule
+  module.availableOptions = ["b Foo"]
 
-  loadedMod = fixture.loadScheduler(module, name)
-  assert loadedMod is module
-  assert loadedMod.name == name
+  loadedSched = fixture.loadScheduler(module, name)
+  assert loadedSched.availableOptions[0].name == "Foo"
+  assert loadedSched.name == name
 
 def test_shouldCallInitFunctionAsFinalStep(fixture):
   expectedArgs = (1, 2, 3)

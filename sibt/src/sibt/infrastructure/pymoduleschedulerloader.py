@@ -1,5 +1,7 @@
 import importlib.machinery
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
+from sibt.infrastructure.optioninfoparsingscheduler import \
+    OptionInfoParsingScheduler
 
 class PyModuleSchedulerLoader(object):
   def __init__(self, moduleLoader):
@@ -9,5 +11,5 @@ class PyModuleSchedulerLoader(object):
     ret = self.loader.loadFromFile(path, moduleName)
     ret.name = moduleName
     ret.init(*initArgs)
-    return ret
+    return OptionInfoParsingScheduler(ret)
 

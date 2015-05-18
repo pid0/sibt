@@ -28,7 +28,7 @@ def archiveFileHasContents(archivePath, name, expectedContents):
 class Test_TarTest(object):
   def test_shouldKeepAsManyArchivesAsSpecifiedAndCycleThroughThem(self, 
       fixture):
-    assert "KeepCopies" in fixture.syncer.availableOptions
+    assert "KeepCopies" in fixture.optionNames
 
     options = fixture.optsWith({ "KeepCopies": "3" })
 

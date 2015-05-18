@@ -49,6 +49,10 @@ class SynchronizerTestFixture(object):
     return self.syncer.versionsOf(fileName, portNumber, 
         self.optsWith(additionalOptions))
 
+  @property
+  def optionNames(self):
+    return [optInfo.name for optInfo in self.syncer.availableOptions]
+
   def sync(self, additionalOptions=dict()):
     self.syncer.sync(self.optsWith(additionalOptions))
 
@@ -367,7 +371,7 @@ class IncrementalSynchronizerTest(SynchronizerTest):
 
 class UnidirectionalAugmentedPortSyncerTest(SynchronizerTest):
   def test_shouldSupportAnSSHLocationAtOneOfTheTwoPorts(self, fixture):
-    assert "RemoteShellCommand" in fixture.syncer.availableOptions
+    assert "RemoteShellCommand" in fixture.optionNames
 
     iterToTest(fixture.syncer.ports).shouldContainMatching(
         lambda port: "ssh" in port.supportedProtocols,

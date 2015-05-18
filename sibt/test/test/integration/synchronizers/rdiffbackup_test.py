@@ -38,8 +38,8 @@ class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest,
 
   def test_shouldUseRemoveOlderThanFeatureAfterSyncingIfSpecified(self, 
       fixture):
-    assert "RemoveOlderThan" in fixture.syncer.availableOptions
-    assert "AdditionalSyncOpts" in fixture.syncer.availableOptions
+    assert "RemoveOlderThan" in fixture.optionNames
+    assert "AdditionalSyncOpts" in fixture.optionNames
 
     def withTime(unixTime, andAlso=dict()):
       in2037 = oneDay * 366 * 67
