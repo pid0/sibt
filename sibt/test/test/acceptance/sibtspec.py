@@ -188,7 +188,7 @@ def test_shouldBeAbleToListOnlyRootUsersConfigurationOptionsToStdout(fixture):
   fixture.stdout.shouldContainLinePatterns("*rule-1*", 
       "*test-rule-2*")
 
-  fixture.runSibt("list")
+  fixture.runSibt("list", "all")
   fixture.stdout.shouldIncludeInOrder("synchronizers", "syncer-1")
   fixture.stdout.shouldInclude("rule-1", "test-rule-2", "sched-1", "sched-2")
 
@@ -212,10 +212,10 @@ def test_ifInvokedAsNormalUserItShouldListSystemConfigAsWellAsTheOwn(fixture):
   fixture.conf.writeAnyScheduler("system-sched", sysConfig=True)
 
   fixture.setNormalUserId()
-  fixture.runSibt()
+  fixture.runSibt("ls", "all")
   fixture.stdout.shouldIncludeLinePatterns(
       "*normal-user-rule*",
-      "+*system-rule*",
+      "*+system-rule*",
       "*user-syncer*",
       "*system-syncer*",
       "*user-sched*",
@@ -225,10 +225,32 @@ def test_shouldExitWithErrorMessageIfInvalidSyntaxIsFound(fixture):
   fixture.conf.aRule("suspect-rule").withContent("sdafsdaf").write()
   fixture.conf.ruleWithSchedAndSyncer("some-valid-rule").write()
 
-  fixture.runSibt()
+  fixture.runSibt("show", "suspect-rule", "some-valid-rule")
   fixture.stdout.shouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("wrong syntax", "suspect-rule")
+  fixture.stderr.shouldInclude("wrong syntax", "suspect-rule").andAlso.\
+      shouldNotInclude("some-valid")
+
+  fixture.runSibt("list")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("wrong syntax")
+
+def test_shouldIgnoreRulesThatAreNotNecessaryForTheCurrentOperation(fixture):
+  fixture.conf.aRule("invalid").withContent("fubar").write()
+  fixture.conf.ruleWithSchedAndSyncer("+invalid-name").write()
+  fixture.conf.ruleWithSchedAndSyncer("valid").write()
+
+  syncer = fixture.conf.aSyncer().allowingSetupCalls().expecting(execmock.call(
+    lambda args: args[0] == "sync")).write()
+  fixture.conf.ruleWithSched("backup").withSynchronizer(syncer).write()
+
+  fixture.runSibtCheckingExecs("sync-uncontrolled", "backup")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stderr.shouldBeEmpty()
+
+  fixture.runSibt("ls", "[!i]*id")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldInclude("valid")
 
 def test_shouldDistinguishBetweenDisabledRulesAndEnabledOnesWithAnInstanceFile(
     fixture):
@@ -251,7 +273,8 @@ def test_shouldFailIfConfiguredSchedulerOrSynchronizerDoesNotExist(fixture):
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("synchronizer", "is-not-there", "not found")
+  fixture.stderr.shouldInclude("synchronizer", "is-not-there", "not found", 
+      "run", "ls synchronizers")
 
 def test_shouldPassParsedAndFormattedOptionsToSyncersAndSchedsBasedOnType(
     fixture):
@@ -320,7 +343,6 @@ def test_shouldNicelyFormatOptionValuesBasedOnTypeSoTheyCouldBeParsed(fixture):
       withSyncerOpts(DeleteAfter="2w 1d 3 s").write()
 
   fixture.runSibtCheckingExecs("show", rule.name)
-  print(fixture.stdout.string)
   fixture.stdout.shouldIncludeLinePatterns(
       "*LocCheck*Strict*",
       "*Loc1*/mnt*",
@@ -353,19 +375,19 @@ def test_shouldConsiderNameAndLocsAsMinimumAndAlreadyAvailableOptions(
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("invalid-rule", "minimum", "Loc1")
 
-def test_shouldIssureErrorMessageIfARuleFileNameContainsAComma(fixture):
+def test_shouldIssueErrorMessageIfARuleFileNameContainsAComma(fixture):
   fixture.conf.ruleWithSchedAndSyncer("comma,2015-01-01").enabled(
       instanceName="no,").write()
 
   fixture.runSibt()
   fixture.stdout.shouldBeEmpty()
   fixture.stderr.shouldInclude("invalid character", "no,@comma")
-def test_shouldIssureErrorMessageIfARuleFileNameContainsASpace(fixture):
+def test_shouldIssueErrorMessageIfARuleFileNameContainsASpace(fixture):
   fixture.conf.ruleWithSchedAndSyncer("no space-in-crontab").write()
 
   fixture.runSibt()
   fixture.stderr.shouldInclude("invalid character", "no space-in")
-def test_shouldIssureErrorMessageIfARuleFileNameBeginsWithAPlus(fixture):
+def test_shouldIssueErrorMessageIfARuleFileNameBeginsWithAPlus(fixture):
   fixture.conf.ruleWithSchedAndSyncer("-+").write()
 
   fixture.runSibt()
@@ -401,11 +423,10 @@ def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
     fixture):
   schedMock, sched = fixture.conf.aSched().mock()
 
-  disabledRule = fixture.conf.aRule().withScheduler(sched).\
-      withSynchronizer(fixture.conf.aSyncer().write())
+  disabledRule = fixture.conf.ruleWithSyncer().withScheduler(sched)
   enabledRule = disabledRule.enabled()
 
-  for name in ["rule-a1", "rule-a2", "rule-b"]:
+  for name in ["rule-a1", "rule-a2", "rule-b", "exact[-]match"]:
     enabledRule.withName(name).write()
   for name in ["disabled-1", "disabled-2"]:
     disabledRule.withName(name).write()
@@ -414,15 +435,16 @@ def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
       iterableContainsPropertiesInAnyOrder(schedulings,
         lambda scheduling: scheduling.ruleName,
         equalsPred("rule-a1"), equalsPred("rule-a2"),
-        equalsPred("disabled-2"))))
+        equalsPred("disabled-2"), equalsPred("exact[-]match"))))
 
-  fixture.runSibt("schedule", "*a[0-9]", "disabled-2")
+  fixture.runSibt("schedule", "*a[0-9]", "disabled-2", "exact[-]match")
 
 def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("rule").write()
+  fixture.conf.ruleWithSchedAndSyncer("valid-rule").write()
 
-  fixture.runSibt("schedule", "foo")
+  fixture.runSibt("schedule", "valid-rule", "foo")
   fixture.stderr.shouldInclude("no rule matching", "foo")
+  fixture.stderr.shouldNotInclude("valid-rule")
   fixture.shouldHaveExitedWithStatus(1)
 
 def test_shouldRequireAnExactRuleNameMatchWhenSyncingUncontrolledly(fixture):
@@ -471,7 +493,7 @@ def test_shouldSupportCommandLineOptionToCompletelyIgnoreSysConfig(fixture):
 
   fixture.setNormalUserId()
 
-  fixture.runSibt("--no-sys-config", "list")
+  fixture.runSibt("--no-sys-config", "list", "all")
   fixture.stdout.shouldInclude("own-sched")
   fixture.stdout.shouldNotInclude("systemd", "tar", "os-backup")
 
@@ -483,7 +505,7 @@ def test_shouldAdditionallyReadSynchronizersAndSchedulersFromReadonlyDir(
   fixture.conf.aSyncer("included-synchronizer").write(
       toReadonlyDir=True)
 
-  fixture.runSibt()
+  fixture.runSibt("list", "all")
   fixture.stdout.shouldIncludeLinePatterns(
       "*included-synchronizer*", "*included-scheduler*")
 
@@ -527,7 +549,7 @@ Syslog = yes""").enabled().write()
 
   fixture.runSibt("show", "header.inc")
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldIncludeInOrder("no", "rule", "name")
+  fixture.stderr.shouldIncludeInOrder("no", "rule", "header.inc")
   fixture.stdout.shouldBeEmpty()
 
 def test_shouldTreatInstanceFileAsImplicitOverridingImportFile(fixture):
@@ -596,14 +618,24 @@ def test_shouldProvideAWayInItsCliToWriteAndDeleteInstanceFiles(fixture):
   fixture.runSibtWithRealStreamsAndExec("enable", "all-of-it!")
   fixture.shouldHaveExitedWithStatus(1)
 
-def test_shouldIgnoreDisabledRulesThatNeedOptionsFromTheirInstanceFile(fixture):
-  fixture.conf.ruleWithSchedAndSyncer("ignored-because-insufficient-options").\
+def test_shouldIgnoreMissingInstanceFileOptionsOfDisabledRulesWhenListing(
+    fixture):
+  fixture.conf.ruleWithSchedAndSyncer("valid").write()
+  fixture.conf.ruleWithSchedAndSyncer("not-enough-options").\
       withLoc1("%(_instanceName)s").write()
 
   fixture.runSibt("list", "rules")
-  fixture.stderr.shouldBeEmpty()
   fixture.shouldHaveExitedWithStatus(0)
-  fixture.stdout.shouldBeEmpty()
+  fixture.stderr.shouldBeEmpty()
+  fixture.stdout.shouldContainLinePatterns("*valid*", "*not-enough*disabled*")
+
+  fixture.runSibt("ls", "rules", "*")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldInclude("not-enough")
+
+  fixture.runSibt("list", "rules", "-f")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldContainLinePatterns("*valid*")
 
 def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
     fixture):
@@ -1021,3 +1053,13 @@ def test_shouldAllowRemoteLocationsForTheRestoreTarget(fixture):
   fixture.runSibtCheckingExecs("restore", "/foo/file", ":",
       "--to=first://h/the/dest")
 
+def test_shouldPrintHelpMessageIfInvalidCliArgsAreGiven(fixture):
+  fixture.runSibt("--huh?")
+  fixture.shouldHaveExitedWithStatus(2)
+  fixture.stderr.shouldInclude("unknown", "--huh?",
+      "Usage", "[--config-dir")
+
+  fixture.runSibt("list", "rules", "--help")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldNotInclude("unknown").andAlso.\
+      shouldInclude("Usage", "[--full]")

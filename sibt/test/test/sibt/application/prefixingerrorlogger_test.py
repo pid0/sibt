@@ -6,38 +6,38 @@ class Fixture(object):
   def __init__(self):
     self.maximumVerbosity = 0
 
-  def assertExpectedOutput(self, logInput, formatArgs, expectedOutput):
+  def getLoggedOutput(self, logInput, *formatArgs, maxVerbosity=10, **kwargs):
     output = mock.mock()
-    output.expectCalls(mock.call("println", (expectedOutput,)))
-    logger = PrefixingErrorLogger(output, 10)
-    logger.log(logInput, *formatArgs)
-    output.checkExpectedCalls()
-
-  def callsOutputWithVerbosity(self, verbosity, maximum):
-    output = mock.mock()
-    ret = [False]
-    def println(*args):
-      ret[0] = True
+    ret = [None]
+    def storeResult(string):
+      ret[0] = string
       return True
 
-    output.expectCalls(mock.callMatching("println", println))
-    logger = PrefixingErrorLogger(output, maximum)
-    logger.log("""the dark cold enticing with spots of warmth and 
-      covered with a sheet of drowsy dimness""", verbosity=verbosity)
+    output.expectCalls(mock.callMatching("println", storeResult))
+    logger = PrefixingErrorLogger(output, maxVerbosity)
+
+    logger.log(logInput, *formatArgs, **kwargs)
     return ret[0]
 
+  def callsOutputWithVerbosity(self, verbosity, maximum):
+    return self.getLoggedOutput(\
+        """the dark cold enticing with spots of warmth and 
+        covered with a sheet of drowsy dimness""", maxVerbosity=maximum,
+        verbosity=verbosity) is not None
 
 @pytest.fixture
 def fixture():
   return Fixture()
 
 def test_shouldPrintFormattedLogMessagesWithAPrefixAndIndentation(fixture):
-  fixture.assertExpectedOutput("foo {0} baz\nquux", ["bar"],
-      "sibt: foo bar baz\n      quux")
+  assert fixture.getLoggedOutput("foo {0} baz\nquux", "bar") == \
+      "sibt: foo bar baz\n      quux"
+  assert fixture.getLoggedOutput("{0} {1}", "the", "rest", continued=True) == \
+      "      the rest"
 
 def test_shouldNotFormatIfNoFormatArgsAreGiven(fixture):
   logInput = "{0} /file{/bar"
-  fixture.assertExpectedOutput(logInput, [], "sibt: " + logInput)
+  fixture.getLoggedOutput(logInput) == "sibt: " + logInput
 
 def test_shouldIgnoreLogMessagesThatHaveAVerbosityAboveTheThreshold(fixture):
   assert fixture.callsOutputWithVerbosity(0, maximum=0)

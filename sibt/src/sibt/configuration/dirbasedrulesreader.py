@@ -5,6 +5,7 @@ from sibt.configuration.exceptions import ConfigConsistencyException, \
   RuleNameInvalidException, MissingConfigValuesException
 from sibt.infrastructure import collectFilesInDirs
 import functools
+from sibt.configuration.lazysyncrule import LazySyncRule
 
 RuleSec = "Rule"
 SyncerSec = "Synchronizer"
@@ -30,17 +31,17 @@ class DirBasedRulesReader(object):
       return None
 
     instances =  collectFilesInDirs([self.enabledDir], functools.partial(
-      self._buildRuleInstance, baseRulePath, baseRuleName, True))
+      self._buildLazyInstance, baseRulePath, baseRuleName, True))
 
     if len(instances) == 0:
-      disabledRule = self._buildRuleInstance(baseRulePath, baseRuleName, False, 
+      disabledRule = self._buildLazyInstance(baseRulePath, baseRuleName, False, 
         baseRulePath, "@" + baseRuleName)
       if disabledRule is not None:
         return [disabledRule]
 
     return instances
 
-  def _buildRuleInstance(self, baseRulePath, baseRuleName, isEnabled, 
+  def _buildLazyInstance(self, baseRulePath, baseRuleName, isEnabled, 
       path, fileName):
     if not fileName.endswith("@" + baseRuleName):
       return None
@@ -48,18 +49,19 @@ class DirBasedRulesReader(object):
     variablePart = fileName[:-len("@" + baseRuleName)]
     instanceName = fileName[1:] if fileName.startswith("@") else fileName
 
+    return LazySyncRule(self.namePrefix + instanceName, isEnabled, 
+        lambda: self._loadInstance(path, baseRulePath, isEnabled, 
+          instanceName, variablePart))
+
+  def _loadInstance(self, path, baseRulePath, isEnabled, instanceName,
+      variablePart):
     if instanceName.startswith("+"):
       raise RuleNameInvalidException(instanceName, "+", 
-          furtherDescription="at the beginning")
+          furtherDescription="at the beginning", file=path)
 
-    try:
-      sections = self.confFileReader.sectionsFromFiles([baseRulePath] + 
-          ([path] if isEnabled else []), 
-          variablePart if isEnabled else None)
-    except MissingConfigValuesException as ex:
-      if not isEnabled:
-        return None 
-      raise
+    sections = self.confFileReader.sectionsFromFiles([baseRulePath] + 
+        ([path] if isEnabled else []), 
+        variablePart if isEnabled else None)
 
     try:
       return self.factory.readRule(self.namePrefix + instanceName, 
@@ -69,4 +71,3 @@ class DirBasedRulesReader(object):
     except ConfigConsistencyException as ex:
       ex.file = path
       raise
-

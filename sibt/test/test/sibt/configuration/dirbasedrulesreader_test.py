@@ -31,10 +31,12 @@ class Fixture(object):
     return DirBasedRulesReader(fileReader, str(self.rulesDir), 
         str(self.enabledDir), self.factory, prefix)
 
-  def read(self, mockedFileReader=None, namePrefix=""):
+  def read(self, mockedFileReader=None, namePrefix="", loadLazyRules=True):
     if mockedFileReader is None:
       mockedFileReader = fakeReader()
     ret = self._createReader(namePrefix, fileReader=mockedFileReader).read()
+    if loadLazyRules:
+      ret = [lazyRule.load() for lazyRule in ret]
     self.factory.checkExpectedCalls()
     mockedFileReader.checkExpectedCalls()
     return ret
@@ -72,15 +74,19 @@ def fakeReader():
 def fixture(tmpdir):
   return Fixture(tmpdir)
   
-def test_shouldReadEachFileAsARuleAndBuildThemWithFactoryWithPrefixedNames(
+def test_shouldReturnALazyRuleForEachFileAndBuildWithTheFactoryWhenLoadIsCalled(
     fixture):
   fixture.writeAnyRule("rule-1")
   fixture.writeAnyRule("rule-2")
 
+  fileReader = mock.mock()
+
+  lazyRules = fixture.read(fileReader, loadLazyRules=False, namePrefix="a-")
+  assert lazyRules[0].name.startswith("a-rule-")
+
   ruleOpts1, schedOpts1, syncerOpts1, ruleOpts2, schedOpts2, syncerOpts2 = \
       object(), object(), object(), object(), object(), object()
 
-  fileReader = mock.mock()
   fileReader.expectCallsInAnyOrder(
       readCall(paths=[fixture.rulePath("rule-1")], 
         ret=sectionsDict(ruleOpts1, schedOpts1, syncerOpts1)),
@@ -96,7 +102,7 @@ def test_shouldReadEachFileAsARuleAndBuildThemWithFactoryWithPrefixedNames(
       buildCall(name="a-rule-2", ruleOpts=ruleOpts2, schedOpts=schedOpts2,
         syncerOpts=syncerOpts2, ret=secondConstructedRule))
 
-  assert iterToTest(fixture.read(fileReader, namePrefix="a-")).\
+  assert iterToTest(rule.load() for rule in lazyRules).\
       shouldContainInAnyOrder(firstConstructedRule, secondConstructedRule)
 
 def test_shouldPassOnExceptionIfRuleIsFoundInconsistentByTheFactory(fixture):
@@ -157,12 +163,13 @@ def test_shouldMakeInstanceFileOverrideAllSettingsALastTime(fixture):
   fixture.factory.expectCallsInAnyOrder(buildCall(name="ta@ta@rule"))
   fixture.read(reader)
 
-def test_shouldIgnoreDisabledRulesWithInterpolationErrors(fixture):
-  fixture.writeRuleFile("rule", "")
+def test_shouldReturnNameAndBasicInfoOfRulesEvenWithoutBuildingThem(fixture):
+  fixture.writeAnyRule("foo")
+  fixture.writeAnyRule("bar")
+  fixture.writeInstanceFile("@bar")
 
-  def interpolationError(*_):
-    raise MissingConfigValuesException("type", "name")
-  reader = mock.mock()
-  reader.sectionsFromFiles = interpolationError
+  iterToTest(fixture.read(mockedFileReader=mock.mock(),
+    loadLazyRules=False)).shouldContainMatchingInAnyOrder(
+      lambda rule: rule.name == "foo" and not rule.enabled,
+      lambda rule: rule.name == "bar" and rule.enabled)
 
-  fixture.read(reader)

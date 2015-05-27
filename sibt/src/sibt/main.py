@@ -10,10 +10,10 @@ from sibt.application.paths import Paths
 from sibt.infrastructure.userbasepaths import UserBasePaths
 from sibt.application.eachownlineconfigprinter import EachOwnLineConfigPrinter
 from sibt.configuration.exceptions import ConfigSyntaxException, \
-    ConfigConsistencyException
+    ConfigConsistencyException, ConfigurableNotFoundException
 from sibt.infrastructure.exceptions import ExternalFailureException, \
     SynchronizerFuncNotImplementedException
-from sibt.application.cmdlineargsparser import CmdLineArgsParser
+from sibt.application.sibtargsparser import SibtArgsParser
 from sibt.application.configrepo import ConfigRepo
 import sys
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
@@ -23,19 +23,21 @@ from sibt.domain.exceptions import ValidationException, \
     UnsupportedProtocolException, LocationInvalidException, \
     LocationNotAbsoluteException
 from sibt.application.rulesfinder import RulesFinder
-from sibt.application.exceptions import RuleNameMismatchException, \
-    RulePatternsMismatchException
+from sibt.application.exceptions import RuleNotFoundException
 import functools
 from sibt.application.dryscheduler import DryScheduler
 from sibt.configuration.optionvaluesparser import parseLocation
+from sibt.domain.rulescoordinator import RulesCoordinator
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, moduleLoader):
 
   errorLogger = PrefixingErrorLogger(stderr, 0)  
   try:
-    argParser = CmdLineArgsParser()
-    args = argParser.parseArgs(cmdLineArgs)
+    argParser = SibtArgsParser()
+    parserExitStatus, args = argParser.parseArgs(cmdLineArgs, stdout, stderr)
+    if parserExitStatus is not None:
+       return parserExitStatus
     errorLogger = PrefixingErrorLogger(stderr, 
         1 if args.options["verbose"] else 0)
 
@@ -46,27 +48,27 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     useDrySchedulers = args.options.get("dry", False)
 
-    try:
-      configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
-          moduleLoader, [sys.argv[0]] + args.globalOptionsArgs,
-          functools.partial(wrapScheduler, useDrySchedulers, stdout))
-    except (ConfigSyntaxException, ConfigConsistencyException) as ex:
-      printKnownException(ex, errorLogger, 
-          causeIsEssential=isinstance(ex, ConfigSyntaxException))
-      return 1
-
+    configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
+        moduleLoader, [sys.argv[0]] + args.globalOptionsArgs,
+        functools.partial(wrapScheduler, useDrySchedulers, stdout))
     rulesFinder = RulesFinder(configRepo)
     validator = constructRulesValidator()
 
     if args.action in ["schedule", "check"]:
-      matchingRuleSet = rulesFinder.findSyncRuleSetByPatterns(
-          args.options["rule-patterns"])
-    if args.action in ["sync-uncontrolled", "show"]:
+      matchingRuleSet = RulesCoordinator(rulesFinder.findRulesByPatterns(
+          args.options["rule-patterns"], onlySyncRules=True))
+    if args.action in ["sync-uncontrolled"]:
       rule = rulesFinder.findRuleByName(args.options["rule-name"],
-          args.action == "sync-uncontrolled")
+          args.action == "sync-uncontrolled", False)
 
     if args.action == "show":
-      showRule(rule, stdout)
+      matchingRules = rulesFinder.findRulesByPatterns(
+          args.options["rule-patterns"], onlySyncRules=False, 
+          keepUnloadedRules=False)
+      for i, rule in enumerate(matchingRules):
+        if i != 0:
+          stdout.println("")
+        showRule(rule, stdout)
 
     elif args.action == "enable":
       return enableRule(stderr, args.options["rule-name"], paths,
@@ -100,11 +102,19 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           raise
         printKnownException(ex, errorLogger, 1)
         return 1
+
     elif args.action == "list":
+      rules = rulesFinder.findRulesByPatterns(
+        args.options["rule-patterns"], onlySyncRules=False, 
+        keepUnloadedRules=True) if \
+        args.options["command2"] == "rules" and \
+        len(args.options["rule-patterns"]) > 0 else \
+        configRepo.getAllRules(keepUnloadedRules=True)
       listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
-          args.options["list-type"], configRepo.userRules.getAll(), 
-          configRepo.sysRules.getAll(), configRepo.synchronizers, 
-          configRepo.schedulers)
+          "full" if args.options["command2"] == "rules" and \
+              args.options["full"] else args.options["command2"], 
+          rules, configRepo.schedulers, 
+          configRepo.synchronizers)
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
       for rule in configRepo.getAllRules():
@@ -146,27 +156,36 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
               stdout.println(fileName.replace("\n", r"\n"), lineSeparator="\n")
 
     return 0
+  except (ConfigurableNotFoundException) as ex:
+    printKnownException(ex, errorLogger, additionalInfo=
+        "run ‘$ sibt ls {0}s’ to show available values".format(ex.unitType))
+    return 1
+  except (ConfigSyntaxException, ConfigConsistencyException) as ex:
+    printKnownException(ex, errorLogger, 
+        causeIsEssential=isinstance(ex, ConfigSyntaxException))
+    return 1
   except (ExternalFailureException, SynchronizerFuncNotImplementedException,
-      RuleNameMismatchException, RulePatternsMismatchException,
-      UnsupportedProtocolException, LocationInvalidException) as ex:
+      RuleNotFoundException, UnsupportedProtocolException, 
+      LocationInvalidException) as ex:
     printKnownException(ex, errorLogger)
     return 1
 
 def printKnownException(ex, errorLogger, baseVerbosity=0, 
-    causeIsEssential=False):
+    causeIsEssential=False, additionalInfo=None):
   errorLogger.log(str(ex), verbosity=baseVerbosity)
   errorLogger.log("cause: {0}", str(ex.__cause__), verbosity=baseVerbosity + (
-    0 if causeIsEssential else 1))
+    0 if causeIsEssential else 1), continued=True)
+  if additionalInfo is not None:
+    errorLogger.log(additionalInfo, continued=True)
 
-def listConfiguration(printer, output, listType, rules, sysRules, 
-    synchronizers, schedulers):
-  if listType == "synchronizers":
-    printer.printSynchronizers(synchronizers)
-  elif listType == "schedulers":
+def listConfiguration(printer, output, listType, rules, schedulers, 
+    synchronizers):
+  if listType == "schedulers":
     printer.printSchedulers(schedulers)
+  elif listType == "synchronizers":
+    printer.printSynchronizers(synchronizers)
   elif listType == "rules":
-    printer.printSysRules(sysRules)
-    printer.printRules(rules)
+    printer.printSimpleRuleListing(rules)
   elif listType == "all":
     output.println("schedulers:")
     printer.printSchedulers(schedulers)
@@ -175,8 +194,9 @@ def listConfiguration(printer, output, listType, rules, sysRules,
     printer.printSynchronizers(synchronizers)
     output.println("")
     output.println("rules:")
-    printer.printSysRules(sysRules)
-    printer.printRules(rules)
+    printer.printSimpleRuleListing(rules)
+  elif listType == "full":
+    printer.printFullRuleListing(rules)
 
 def overridePaths(paths, cmdLineArgs):
   newConfigDir = cmdLineArgs.options.get("config-dir", None)

@@ -4,7 +4,7 @@ from sibt.configuration import dirbasedrulesreader
 from sibt.domain.defaultvaluesynchronizer import DefaultValueSynchronizer
 from sibt.infrastructure.functionmodulesynchronizer import \
     FunctionModuleSynchronizer
-from sibt.configuration.exceptions import ConfigSyntaxException, \
+from sibt.configuration.exceptions import MissingConfigValuesException, \
     ConfigConsistencyException
 from sibt.infrastructure import collectFilesInDirs
 import sys
@@ -39,7 +39,7 @@ def readSchedulers(dirs, loader, schedulerWrapper, initArgs):
   return collectFilesInDirs(dirs, lambda path, fileName:
       schedulerWrapper(loader.loadFromFile(path, fileName, initArgs)))
 
-def readRules(rulesDir, enabledDir, factory, prefix):
+def readRuleLoaders(rulesDir, enabledDir, factory, prefix):
   reader = DirBasedRulesReader(CachingIniFileSetReader(rulesDir,
     dirbasedrulesreader.AllowedSections), 
       rulesDir, enabledDir, factory, prefix)
@@ -52,11 +52,11 @@ def createHashbangAwareProcessRunner(runnersDir, processRunner):
   
 
 class ConfigRepo(object):
-  def __init__(self, schedulers, synchronizers, userRules, sysRules):
+  def __init__(self, schedulers, synchronizers, lazyUserRules, lazySysRules):
     self.schedulers = schedulers
     self.synchronizers = synchronizers
-    self.userRules = RulesRepo(userRules)
-    self.sysRules = RulesRepo(sysRules)
+    self.userRules = RulesRepo(lazyUserRules)
+    self.sysRules = RulesRepo(lazySysRules)
 
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
@@ -75,27 +75,36 @@ class ConfigRepo(object):
 
     factory = RuleFromStringOptionsReader(RuleFactory(),
         OptionValuesParser(), schedulers, synchronizers)
-    userRules = readRules(paths.rulesDir, paths.enabledDir, factory, "")
-    sysRules = [] if not readSysConf else readRules(sysPaths.rulesDir, 
+    userRules = readRuleLoaders(paths.rulesDir, paths.enabledDir, factory, "")
+    sysRules = [] if not readSysConf else readRuleLoaders(sysPaths.rulesDir, 
         sysPaths.enabledDir, factory, "+")
 
     return clazz(schedulers, synchronizers, userRules, sysRules)
 
-  def getAllRules(self):
-    return itertools.chain(self.userRules.getAll(), self.sysRules.getAll())
+  def getAllRules(self, keepUnloadedRules=False):
+    return itertools.chain(self.userRules.getAll(keepUnloadedRules), 
+        self.sysRules.getAll(keepUnloadedRules))
 
 class RulesRepo(object):
-  def __init__(self, rules):
-    self._namesToRules = dict((rule.name, rule) for rule in rules)
+  def __init__(self, lazyRules):
+    self._namesToRules = dict((rule.name, rule) for rule in lazyRules)
+    self._ruleRead = dict((rule.name, False) for rule in lazyRules)
     self.names = list(self._namesToRules.keys())
-    self.enabledNames = [rule.name for rule in rules if rule.enabled]
-    self.disabledNames = [rule.name for rule in rules if not rule.enabled]
+    self.enabledNames = [rule.name for rule in lazyRules if rule.enabled]
+    self.disabledNames = [rule.name for rule in lazyRules if not rule.enabled]
   
-  def getRule(self, name):
+  def getRule(self, name, keepUnloaded):
     try:
+      if not self._ruleRead[name]:
+        try:
+          self._namesToRules[name] = self._namesToRules[name].load()
+          self._ruleRead[name] = True
+        except MissingConfigValuesException:
+          if self._namesToRules[name].enabled or not keepUnloaded:
+            raise
       return self._namesToRules[name]
     except KeyError:
       raise RuleNameMismatchException(name)
   
-  def getAll(self):
-    return self._namesToRules.values()
+  def getAll(self, keepUnloadedRules):
+    return [self.getRule(name, keepUnloadedRules) for name in self.names]

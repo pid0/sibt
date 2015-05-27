@@ -14,7 +14,7 @@ class RuleNameInvalidException(ConfigConsistencyException):
       file=None):
     super().__init__("rule", ruleName, 
         "has invalid character in its name: ‘{0}’ {1}".format(invalidCharacter,
-          furtherDescription))
+          furtherDescription), file=file)
     self.invalidCharacter = invalidCharacter
 
   def __str__(self):
@@ -44,7 +44,7 @@ class ConfigurableNotFoundException(ConfigConsistencyException):
 
   def __str__(self):
     return "{0}{1} of rule ‘{2}’ (‘{3}’) not found{4}".format(self.unitType,
-        ("‘ " + self.unitName + "’") if self.unitName is not None else "", 
+        (" ‘" + self.unitName + "’") if self.unitName is not None else "", 
         self.ruleName, self.file, 
         (": " + self.message) if self.message is not None else "")
 
@@ -70,3 +70,4 @@ class OptionParseError(object):
   def __repr__(self):
     return "OptionParseError{0}".format((self.optionName, self.stringToParse,
       self.expectedType, self.message))
+

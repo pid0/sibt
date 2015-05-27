@@ -41,7 +41,8 @@ class TestIterable(object):
     return self
   def shouldIncludeMatching(self, *predicates):
     for predicate in predicates:
-      assert any(predicate(item) for item in self.iterable)
+      assert any(predicate(item) for item in self.iterable), str(list(
+        self.iterable))
     return self
 
   def shouldBe(self, expected):

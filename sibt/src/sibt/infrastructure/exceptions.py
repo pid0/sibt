@@ -29,3 +29,4 @@ class ParseException(Exception):
   def __str__(self):
     return "error when parsing ‘{0}’: {1}".format(
         repr(self.parsedString), self.error)
+
