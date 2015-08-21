@@ -57,12 +57,14 @@ class SyncRule(object):
   def restore(self, location, version, destinationLocation):
     locNumber = self._getLocNumber(location)
     locIndex = locNumber - 1
-    if self._onePortMustHaveFileProtocol:
-      self._throwIfNotAtLeastOneIsLocal(self.locs[:locIndex] + 
-          [destinationLocation] + self.locs[locIndex+1:], ["restore target"])
 
-    self._throwIfPortCantUseLoc(self.ports[locIndex], destinationLocation,
-        "restore target")
+    if destinationLocation is not None:
+      if self._onePortMustHaveFileProtocol:
+        self._throwIfNotAtLeastOneIsLocal(self.locs[:locIndex] + 
+            [destinationLocation] + self.locs[locIndex+1:], ["restore target"])
+
+      self._throwIfPortCantUseLoc(self.ports[locIndex], destinationLocation,
+          "restore target")
 
     self.synchronizer.restore(self._loc(locNumber).relativePathTo(location), 
         locNumber, version.time, destinationLocation, 

@@ -126,6 +126,9 @@ def test_shouldIgnoreOptionalsAfterADoubleDash(fixture):
   assert fixture.inFilesWithOpts.parseArgs(["a", "--rest", "a", "--", "-f"]).\
       values["rest"] == ["a", "-f"]
 
+  assert fixture.twoOptsParser.parseArgs(["--", "a", "b"]).values == \
+      { "in-file": "a", "outFile": "b" }
+
 def test_shouldFailIfUnknownOptionalsAreUsed(fixture):
   with pytest.raises(cliparser.UnknownOptionalException) as ex:
     fixture.parserWithShortOpts.parseArgs(["-fa"])
@@ -176,7 +179,7 @@ def test_shouldProvideANormalizedArgListThatLedToAParsedOption(fixture):
 def test_shouldChooseSubGroupsBasedOnASinglePositional(fixture):
   assert fixture.parserWithGroups.parseArgs(["foo"]).values == \
       dict(command="foo", first=False, rest=[])
-  assert fixture.parserWithGroups.parseArgs(["b", "-s", "sub2"]).values == \
+  assert fixture.parserWithGroups.parseArgs(["ba", "-s", "sub2"]).values == \
       dict(command="bar", command2="sub2", second=True, abc=False)
 
 def test_shouldChooseDefaultGroupIfTheChoiceDoesntMatch(fixture):
@@ -185,6 +188,9 @@ def test_shouldChooseDefaultGroupIfTheChoiceDoesntMatch(fixture):
   result = fixture.parserWithGroups.parseArgs(["nothing"])
   assert result.values == dict(command="foo", first=False, rest=["nothing"])
   assert result.options["command"].source == ["foo"]
+
+def test_shouldNotNotMatchAGroupIfThePositionalIsJustOneChar(fixture):
+  assert fixture.parserWithGroups.parseArgs(["b"]).values["command"] == "foo"
 
 def test_shouldChooseGroupThatContainsAnUnknownOptional(fixture):
   assert fixture.parserWithGroups.parseArgs(["-s", "sub1", "sub21"]).values == \
@@ -197,3 +203,10 @@ def test_shouldProvideAChosenGroupsTrailOnFailure(fixture):
       lambda group: group.name == "bar",
       lambda group: group.name == "sub1",
       lambda group: group.name == "sub22")
+
+def test_shouldFirstChooseGroupsWithShorterNames(fixture):
+  parser = cliparser.CliParser([SubGroups(
+    SubGroup("list-files"),
+    SubGroup("list"))])
+
+  assert parser.parseArgs(["lis"]).values["command"] == "list"

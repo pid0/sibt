@@ -28,16 +28,60 @@ import functools
 from sibt.application.dryscheduler import DryScheduler
 from sibt.configuration.optionvaluesparser import parseLocation
 from sibt.domain.rulescoordinator import RulesCoordinator
+from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
+import signal
+import os
+
+class FatalSignalException(Exception):
+  def __init__(self, signalNumber, childExitStatus):
+    self.signalNumber = signalNumber
+    self.childExitStatus = childExitStatus
+
+signalIgnored = dict()
+FatalSignals = [signal.SIGINT, signal.SIGTERM]
+receivedSignal = None
+def signalHandler(raiseException):
+  def handleSignal(signalNumber, _):
+    global receivedSignal
+    if receivedSignal is None:
+      receivedSignal = signalNumber
+      if signalNumber == signal.SIGTERM:
+        os.killpg(os.getpgid(0), signal.SIGTERM)
+      if raiseException:
+        raise FatalSignalException(signalNumber, None)
+  return handleSignal
+
+def killSelf(signalNumber):
+  signal.signal(signalNumber, signal.SIG_DFL)
+  os.kill(os.getpid(), signalNumber)
+
+def beforeSubprocessRun():
+  setFatalSignalsHandler(signalHandler(raiseException=False))
+def afterSubprocessRun(exitStatus):
+  setFatalSignalsHandler(signalHandler(raiseException=True))
+  if receivedSignal is not None:
+    raise FatalSignalException(receivedSignal, exitStatus)
+
+def setFatalSignalsHandler(handler):
+  for signalNo in FatalSignals:
+    if not signalIgnored[signalNo]:
+      signal.signal(signalNo, handler)
+
+def testFatalSignalDispositions():
+  for signalNo in FatalSignals:
+    signalIgnored[signalNo] = signal.getsignal(signalNo) == signal.SIG_IGN
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userId, moduleLoader):
+  testFatalSignalDispositions()
+  setFatalSignalsHandler(signalHandler(raiseException=True))
 
   errorLogger = PrefixingErrorLogger(stderr, 0)  
   try:
     argParser = SibtArgsParser()
     parserExitStatus, args = argParser.parseArgs(cmdLineArgs, stdout, stderr)
     if parserExitStatus is not None:
-       return parserExitStatus
+      return parserExitStatus
     errorLogger = PrefixingErrorLogger(stderr, 
         1 if args.options["verbose"] else 0)
 
@@ -95,9 +139,11 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
       try:
         rule.sync()
       except Exception as ex:
+        exitStatus = ex.exitStatus if isinstance(ex, ExternalFailureException) \
+            else ex.childExitStatus if isinstance(ex, FatalSignalException) \
+            else None
         errorLogger.log("running rule ‘{0}’ failed ({1})", rule.name,
-          str(ex.exitStatus) if isinstance(ex, ExternalFailureException) else
-            "<unexpected error>")
+          str(exitStatus) if exitStatus is not None else "<unexpected error>")
         if not isinstance(ex, ExternalFailureException):
           raise
         printKnownException(ex, errorLogger, 1)
@@ -139,7 +185,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
               ", ".join(matchingVersions))
           return 1
         if len(matchingVersions) == 0:
-          errorLogger.log("no matching version for patterns")
+          errorLogger.log("no matching version")
           return 1
         version = stringsToVersions[matchingVersions[0]]
 
@@ -155,10 +201,17 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
             else:
               stdout.println(fileName.replace("\n", r"\n"), lineSeparator="\n")
 
+    sys.stdout.flush()
     return 0
+  except (FatalSignalException) as ex:
+    errorLogger.log("terminating because of " + { signal.SIGINT: 
+      "SIGINT", signal.SIGTERM: "SIGTERM" }[ex.signalNumber])
+    killSelf(ex.signalNumber)
+  except BrokenPipeError as ex:
+    killSelf(signal.SIGPIPE)
   except (ConfigurableNotFoundException) as ex:
     printKnownException(ex, errorLogger, additionalInfo=
-        "run ‘$ sibt ls {0}s’ to show available values".format(ex.unitType))
+        "run ‘$ sibt ls {0}s’ to show possible values".format(ex.unitType))
     return 1
   except (ConfigSyntaxException, ConfigConsistencyException) as ex:
     printKnownException(ex, errorLogger, 
@@ -247,6 +300,8 @@ def disableRule(output, ruleName, paths):
   return 0
 
 def locationFromArg(arg):
+  if arg is None:
+    return None
   try:
     return parseLocation(arg)
   except LocationNotAbsoluteException:
@@ -254,9 +309,10 @@ def locationFromArg(arg):
         ("/" if arg.endswith("/") else ""))
 
 def main():
+  sys.stderr = UnbufferedTextFile(sys.stderr)
   exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 
       FileObjOutput(sys.stderr),
-      CoprocessRunner(), 
+      CoprocessRunner(beforeSubprocessRun, afterSubprocessRun), 
       Paths(UserBasePaths.forCurrentUser()),
       Paths(UserBasePaths(0)), os.getuid(), 
       PyModuleLoader("schedulers"))

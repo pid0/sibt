@@ -62,6 +62,7 @@ def setup_testing():
 @needs(["setup_testing"])
 def acceptance_test():
   runPyTest([str(Root / "sibt/test/test/acceptance/sibtspec.py")])
+  runPyTest([str(Root / "sibt/test/test/acceptance/processspec.py")])
 
 @task
 @needs(["setup_testing"])

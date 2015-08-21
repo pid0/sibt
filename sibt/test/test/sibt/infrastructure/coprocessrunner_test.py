@@ -2,6 +2,8 @@ import pytest
 from sibt.infrastructure.coprocessrunner import \
     CoprocessRunner
 from sibt.infrastructure.exceptions import ExternalFailureException
+from test.common.assertutil import strToTest, FakeException
+import sys
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -57,6 +59,10 @@ def test_shouldRaiseCustomExceptionIfProgramReturnsWithNonZeroStatus(fixture):
   with pytest.raises(ExternalFailureException) as ex:
     list(fixture.runner.getOutput(path))
   assert ex.value.exitStatus == 103
+  with pytest.raises(ExternalFailureException) as ex:
+    fixture.runner.execute(path, "a", "b")
+  assert ex.value.program == path
+  assert ex.value.arguments == ["a", "b"]
 
 def test_shouldRaiseExceptionDuringGetOutputCallIfProgramFailsWithoutOutput(
     fixture):
@@ -65,3 +71,30 @@ def test_shouldRaiseExceptionDuringGetOutputCallIfProgramFailsWithoutOutput(
   with pytest.raises(ExternalFailureException) as ex:
     fixture.runner.getOutput(path)
   assert ex.value.exitStatus == 54
+
+def test_shouldCallFuncsAfterForkingANewProcessAndAfterItsTermination(fixture, 
+    capfd):
+  raiseException = False
+  def before():
+    sys.stderr.write("before\n")
+  def after(exitStatus):
+    sys.stderr.write(str(exitStatus) + "\n")
+    if raiseException:
+      raise FakeException()
+
+  runner = CoprocessRunner(before, after)
+
+  def shouldOutputInCorrectOrder(runFunc, exitStatus):
+    path = fixture.writeBashExecutable(r"echo foo >&2; exit " + str(exitStatus))
+    if raiseException:
+      with pytest.raises(FakeException):
+        runFunc(path)
+    else:
+      runFunc(path)
+    _, stderr = capfd.readouterr()
+    strToTest(stderr).shouldContainLinePatternsInOrder("before", "foo", 
+        str(exitStatus))
+
+  shouldOutputInCorrectOrder(runner.execute, 0)
+  raiseException = True
+  shouldOutputInCorrectOrder(runner.getOutput, 5)

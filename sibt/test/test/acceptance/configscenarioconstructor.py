@@ -45,6 +45,12 @@ class ConfigScenarioConstructor(object):
   def ruleWithSched(self, name=None):
     return self.aRule(name).withScheduler(self.aSched().write())
 
+  def realRule(self, name, schedName, syncerName):
+    return self.aRule(name).\
+        withSchedulerName(schedName).\
+        withSynchronizerName(syncerName).\
+        withNewValidLocs(locsAreEmpty=True)
+
   def syncerReturningVersions(self, forRelativeFile, ifWithinLoc1, 
       ifWithinLoc2):
     return self.aSyncer().withBashCode("""

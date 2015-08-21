@@ -97,6 +97,11 @@ class TestString(TestIterable):
     assert len(self.lines()) == len(patterns)
     self.shouldIncludeLinePatterns(*patterns)
     return self
+  def shouldContainLinePatternsInOrder(self, *patterns):
+    assert len(self.lines()) == len(patterns)
+    for line, pattern in zip(self.lines(), patterns):
+      line._matches(pattern)
+    return self
 
   def __repr__(self):
     return "TestString({0})".format(repr(self.string))

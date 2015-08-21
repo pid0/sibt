@@ -2,9 +2,16 @@ from sibt.infrastructure.coprocessrunner import CoprocessRunner
 from sibt.infrastructure.intervalparser import IntervalParser
 import os
 from sibt.infrastructure.schedulerhelper import evalTruth
+import tempfile
+from contextlib import contextmanager
+import functools
 
 availableOptions = ["Interval", "LogFile", "ExecOnFailure", "AllowedHours",
-    "Syslog"]
+    "Syslog", "TmpDir"]
+
+CommonFileNamePrefix = "sibt-anacron-"
+TabPrefix = CommonFileNamePrefix + "tab-"
+ScriptPrefix = CommonFileNamePrefix + "script-"
 
 def quoted(options, optionKey):
   string = options.get(optionKey, "")
@@ -25,30 +32,31 @@ class Anacron(object):
         "Interval", "3")))
 
   def run(self, schedulings):
-    tabPath = self.findFileName("tab")
-    scriptPath = self.findFileName("script")
-    self.writeScript(scriptPath)
+    tmpDir = schedulings[0].options["TmpDir"] if \
+        "TmpDir" in schedulings[0].options else tempfile.gettempdir()
 
-    with open(tabPath, "w") as tabFile:
-      for scheduling in schedulings:
-        if "AllowedHours" in scheduling.options:
-          tabFile.write("START_HOURS_RANGE={0}".format(
-              scheduling.options["AllowedHours"]) + "\n")
-          break
+    with writeAndCloseTemporaryFile(tmpDir, ScriptPrefix, 
+        self.writeScript) as scriptPath:
+      with writeAndCloseTemporaryFile(tmpDir, TabPrefix, functools.partial(
+          self.writeTabFile, scriptPath, schedulings)) as tabPath:
+        self.processRunner.execute("anacron", "-t", tabPath,
+            "-S", self.spoolDir, "-d")
 
-      for scheduling in schedulings:
-        self.writeTabEntry(scriptPath, tabFile, scheduling)
+  def writeTabFile(self, scriptPath, schedulings, tabFile):
+    for scheduling in schedulings:
+      if "AllowedHours" in scheduling.options:
+        tabFile.write("START_HOURS_RANGE={0}".format(
+            scheduling.options["AllowedHours"]) + "\n")
+        break
 
-    self.processRunner.execute("anacron", "-t", tabPath,
-        "-S", self.spoolDir, "-d")
-
-    os.remove(tabPath)
-    os.remove(scriptPath)
+    for scheduling in schedulings:
+      self.writeTabEntry(scriptPath, tabFile, scheduling)
 
   def check(self, schedulings):
     for scheduling in schedulings:
       try:
         self.getInterval(scheduling)
+      #TODO catch this exception more specifically (ParseException...)
       except Exception as ex:
         return [str(ex)]
 
@@ -65,15 +73,15 @@ class Anacron(object):
 
     return []
 
-  def writeScript(self, path):
-    with open(path, "w") as scriptFile:
-      scriptFile.write("""#!/usr/bin/env bash
+  def writeScript(self, scriptFile):
+    scriptFile.write("""#!/usr/bin/env bash
+trap '' INT TERM
 declare -a sibtProgram=({sibtProg})
 ruleName="$1"
 logFile="$2"
 execOnFailure="$3"
 execOnFailure=${execOnFailure/'%r'/"$ruleName"}
-syslog=$4
+syslog="$4"
 syslogTestOpts="$5"
 
 set -o pipefail
@@ -86,19 +94,17 @@ if [ -n "$logFile" ]; then
   logCommand+=' >>"$logFile"'
 fi
 
-declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled "$ruleName")
+declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled -- "$ruleName")
 if [[ $syslog = 1 || -n "$logFile" ]]; then
-  "${sibtCall[@]}" 2>&1 | eval $logCommand
+  (trap - INT TERM; "${sibtCall[@]}") 2>&1 | eval $logCommand
 else
-  "${sibtCall[@]}"
+  (trap - INT TERM; "${sibtCall[@]}")
 fi
 
 if [ $? != 0 ]; then
   $execOnFailure
-fi
-      """.replace("{sibtProg}", " ".join(
-          ("'" + word + "'" for word in self.sibtCall))))
-    os.chmod(path, 0o700)
+fi""".replace("{sibtProg}", " ".join("'" + word + "'" for word in 
+  self.sibtCall)))
 
   def writeTabEntry(self, scriptPath, tabFile, scheduling):
     for field in [
@@ -106,24 +112,37 @@ fi
         "0", 
         scheduling.ruleName,
 
+        "bash",
         scriptPath,
         scheduling.ruleName,
         quoted(scheduling.options, "LogFile"),
         quoted(scheduling.options, "ExecOnFailure"),
-        "1" if evalTruth(scheduling.options.get("Syslog", "")) else "0",
+        "1" if evalTruth(scheduling.options.get("Syslog", "")) else "1",
         quoted(scheduling.options, "SyslogTestOpts")]:
       tabFile.write(field)
       tabFile.write(" ")
 
     tabFile.write("\n")
 
-  def findFileName(self, prefix):
+  def findFileName(self, folder, prefix):
     counter = 1
     ret = None
     while ret is None or os.path.isfile(ret):
-      ret = os.path.join(self.varDir, prefix + "-" + str(counter))
+      ret = os.path.join(folder, prefix + "-" + str(counter))
       counter += 1
     return ret
+
+@contextmanager
+def writeAndCloseTemporaryFile(tmpDir, prefix, writeFunc):
+  fd, name = tempfile.mkstemp(dir=tmpDir, prefix=prefix)
+  try:
+    path = os.path.join(tmpDir, name)
+    with os.fdopen(fd, "w+") as tmpFile:
+      writeFunc(tmpFile)
+
+    yield path
+  finally:
+    os.unlink(path)
 
 impl = Anacron()
 

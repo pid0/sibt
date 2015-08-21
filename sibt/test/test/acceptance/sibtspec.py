@@ -36,21 +36,20 @@ class SibtSpecFixture(object):
     self.paths = existingPaths(pathsIn(userDir, readonlyDir))
     self.sysPaths = pathsIn(sysDir, "")
 
-    self.testRuleCounter = 1
     self.setRootUserId()
     self.mockedSchedulers = dict()
     self.execs = ExecMock()
     self.capfd = capfd
 
     self.confFolders = ConfigFoldersWriter(self.sysPaths, self.paths, tmpdir)
-    self.aScheduler = SchedulerBuilder(self.paths, self.sysPaths,
+    aScheduler = SchedulerBuilder(self.paths, self.sysPaths,
         self.confFolders, "sched", self.mockedSchedulers, dict())
-    self.aSyncerpreter = SynchronizerBuilder(self.paths, self.sysPaths,
+    aSynchronizer = SynchronizerBuilder(self.paths, self.sysPaths,
         self.confFolders, "syncer", self.execs, dict())
-    self.aRule = RuleBuilder(self.paths, self.sysPaths, self.confFolders,
+    aRule = RuleBuilder(self.paths, self.sysPaths, self.confFolders,
         "rule", dict())
-    self.conf = ConfigScenarioConstructor(self.confFolders, self.aSyncerpreter,
-        self.aScheduler, self.aRule)
+    self.conf = ConfigScenarioConstructor(self.confFolders, aSynchronizer,
+        aScheduler, aRule)
 
   @property
   def stdout(self):
@@ -447,7 +446,7 @@ def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
   fixture.stderr.shouldNotInclude("valid-rule")
   fixture.shouldHaveExitedWithStatus(1)
 
-def test_shouldRequireAnExactRuleNameMatchWhenSyncingUncontrolledly(fixture):
+def test_shouldRequireAnExactRuleNameMatchWhenSyncing(fixture):
   syncer = fixture.conf.aSyncer().allowingSetupCalls()
   rule = fixture.conf.ruleWithSched("[rule]a*b").withSynchronizer(syncer).\
     enabled().write()
@@ -670,7 +669,7 @@ def test_shouldFailAndPrintErrorIfExternalProgramReturnsErrorCode(fixture):
   fixture.runSibtWithRealStreamsAndExec()
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stdout.shouldBeEmpty()
-  fixture.stderr.shouldInclude("failing-syncer", "error", "calling", "(4)",
+  fixture.stderr.shouldInclude("failing-syncer", "error when calling", "(4)",
       "arguments", "available-options")
 
 def test_shouldPrintRuleNameIfSyncFailsAndAlsoNormalErrorMessageIfVerboseIsOn(
@@ -781,7 +780,7 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   syncer.reMakeExpectations()
   callRestore(dataDir + fileName, "this-is-not-a-substring")
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("patterns", "no match")
+  fixture.stderr.shouldInclude("no matching")
 
   syncer.expecting(execmock.call(lambda args: args[0] == "restore" and
     "Loc2=" + backupDir[:-1] in args and
@@ -1057,7 +1056,7 @@ def test_shouldPrintHelpMessageIfInvalidCliArgsAreGiven(fixture):
   fixture.runSibt("--huh?")
   fixture.shouldHaveExitedWithStatus(2)
   fixture.stderr.shouldInclude("unknown", "--huh?",
-      "Usage", "[--config-dir")
+      "Usage", "[--config-dir").andAlso.shouldNotInclude("sync-uncontrolled")
 
   fixture.runSibt("list", "rules", "--help")
   fixture.shouldHaveExitedWithStatus(0)

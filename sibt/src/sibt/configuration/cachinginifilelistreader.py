@@ -12,7 +12,7 @@ def _flatten(xss):
 def _makeException(file, message):
   return ConfigSyntaxException("rule", None, message, file)
 
-class CachingIniFileSetReader(object):
+class CachingIniFileListReader(object):
   def __init__(self, includeFilesDir, allowedSections):
     self.includeFilesDir = includeFilesDir
     self.allowedSections = allowedSections + ["Global"]

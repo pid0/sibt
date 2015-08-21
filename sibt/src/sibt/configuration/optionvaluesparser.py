@@ -63,7 +63,7 @@ class OptionValuesParser(object):
     if string.strip().lower() in ["no", "off", "0", "false"]:
       return False
     raise _ParseException("truth value", 
-        "it's not yes/no, on/off, 1/0 or true/false")
+        "it's not yes/no, on/off, 1/0, or true/false")
 
   def _parsePositive(self, string):
     expectedType = "positive number"
@@ -142,14 +142,3 @@ def parseLocation(string):
     return buildLocationFromUrl("ssh://{0}{1}".format(hostAndLogin, path))
   else:
     return buildLocationFromUrl("file://" + string)
-
-# wrap into parse exception
-#  def _wrapLocs(self, ruleName, locOptionNames, syncerOpts):
-#    ret = dict(syncerOpts)
-#    try:
-#      for loc in locOptionNames:
-#        ret[loc] = parseLocation(ret[loc])
-#    except LocationInvalidException as ex:
-#      raise makeException(ruleName, str(ex))
-#    return ret
-

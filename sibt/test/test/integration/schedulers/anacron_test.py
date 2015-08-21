@@ -14,11 +14,13 @@ from test.common import execmock
 import sys
 from fnmatch import fnmatchcase
 from test.common import relativeToProjectRoot
+from test.common.assertutil import strToTest
 
 class Fixture(object):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
     self.miscDir = tmpdir.mkdir("misc")
+    self.tmpDir = self.miscDir.mkdir("tmp")
 
   def init(self, sibtCall=["/where/sibt/is"]):
     loader = PyModuleSchedulerLoader(PyModuleLoader("testpackage"))
@@ -58,6 +60,7 @@ class Fixture(object):
       lambda args: matcher(args[1 + args.index(optionName)])))
     self.run(schedulings)
 
+#TODO rewrite with strToTest?
   def tabShouldContainLinesMatching(self, tabPath, *expectedPatterns):
     lines = [line.strip() for line in local(tabPath).readlines()]
     for pattern in expectedPatterns:
@@ -75,8 +78,8 @@ def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
   assert not os.path.isfile(testFile)
 
   fixture.runWithMockedSibt(r"""#!/usr/bin/env bash
-  if [[ $1 = --some-global-opt && $2 = 'blah foo' && \
-      $3 = sync-uncontrolled && $4 = 'some*rule' ]]; then
+  if [ $1 = --some-global-opt ] && [ "$2" = 'blah foo' ] && \
+      [ $3 = sync-uncontrolled ] && [ $4 = -- ] && [ "$5" = 'some*rule' ]; then
     touch {0}
   fi""".format(testFile), 
       [scheduling().withRuleName("some*rule")], 
@@ -84,40 +87,36 @@ def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
 
   assert os.path.isfile(testFile)
 
-def test_shouldUseConstantExistingSpoolDirForAnacron(fixture):
+def test_shouldUseUnchangingSpoolDirForAnacron(fixture):
   fixture.init()
   fixture.checkOption("-S", [anyScheduling()], 
       lambda spoolDir: os.path.isdir(spoolDir) and spoolDir.startswith(
           str(fixture.anaVarDir)))
 
-def test_shouldCountUpTabAndScriptNamesNamesIfTheyExistAndDeleteThemAfterwards(
+def test_shouldPutTemporaryTabAndScriptsIntoTmpDirAndDeleteThemAfterwards(
     fixture):
   fixture.init()
-  usedTabPath = []
-  (fixture.anaVarDir / "script-1").write("")
-  (fixture.anaVarDir / "tab-1").write("")
-  (fixture.anaVarDir / "tab-2").write("")
-  
+  assert "TmpDir" in fixture.optionNames
+
   def checkTab(tab):
-    usedTabPath.append(tab)
-    assert os.path.basename(tab) == "tab-3"
-    assert os.path.isfile(tab)
-    fixture.tabShouldContainLinesMatching(tab, "*script-2*")
+    assert len(fixture.tmpDir.listdir()) > 0
+    strToTest(local(tab).read()).shouldIncludeLinePatterns(
+        "*rule-id*{0}*".format(str(fixture.tmpDir)))
     return True
 
-  fixture.checkOption("-t", [anyScheduling()], checkTab)
+  fixture.checkOption("-t", [scheduling().withRuleName("rule-id").\
+      withOption("TmpDir", str(fixture.tmpDir)).build()], checkTab)
 
-  fixture.shouldBeDeleted(usedTabPath[0])
+  assert len(fixture.tmpDir.listdir()) == 0
 
+#round to days; check warning output (use scheduler logger)
 def test_shouldPassIntervalOptionInDaysToAnacron(fixture):
   fixture.init()
   assert "Interval" in fixture.optionNames
 
-  schedulings = [scheduling().
-      withRuleName("one-day").
-      withOption("Interval", "a").build(),
-      scheduling().withRuleName("two-days").
-      withOption("Interval", "b").build(),
+  schedulings = [
+      scheduling().withRuleName("one-day").withOption("Interval", "a").build(),
+      scheduling().withRuleName("two-days").withOption("Interval", "b").build(),
       scheduling().withRuleName("no-interval").build()]
 
   parser = fixture.mockIntervalParser()
@@ -149,13 +148,13 @@ def test_shouldCheckIfIntervalSyntaxIsCorrectByCatchingExceptionsOfTheParser(
 def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
   logFile = fixture.miscDir / "log"
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
-  if [ $2 = not-logging ]; then
+  if [ $3 = not-logging ]; then
     echo lorem ipsum
   fi
-  if [ $2 = logging-2 ]; then
+  if [ $3 = logging-2 ]; then
     echo dolor sit
   fi
-  if [ $2 = logging ]; then
+  if [ $3 = logging ]; then
     echo lazy dog
   fi
   echo quick brown fox >&2
@@ -167,6 +166,7 @@ def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
           str(logFile)).build()])
 
   log = logFile.read()
+#TODO use strToTest().containLinePatterns; fox must exist twice
   assert "quick brown fox" in log
   assert "lazy dog" in log
   assert "dolor sit" in log
@@ -195,6 +195,7 @@ def test_shouldSupportSysloggingSibtOutput(fixture):
         withOption("SyslogTestOpts", "--server localhost --port 5024").build()])
     time.sleep(0.2)
 
+#TODO use strToTest for both
   syslog = syslogMock.receivedBytes.decode("utf-8")
 
   assert "sibt" in syslog
@@ -203,7 +204,7 @@ def test_shouldSupportSysloggingSibtOutput(fixture):
   assert message1 in logFile.read()
   assert message2 in logFile.read()
 
-  
+#not %r but $r so it works automatically with eval
 def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
   testFile = fixture.miscDir / "test"
   testFile2 = str(fixture.miscDir / "test2")
@@ -219,7 +220,7 @@ def test_shouldHaveAnOptionThatTakesAPogramToExecuteWhenSibtFails(fixture):
       withOption("LogFile", str(fixture.miscDir / "log"))
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
-  if [ $2 = fails ]; then
+  if [ $3 = fails ]; then
     exit 1
   else
     touch '{0}'
@@ -256,10 +257,12 @@ def test_shouldCheckIfAllowedHoursSettingsAreContradictory(fixture):
       scheduling().withOption("AllowedHours", "12-20").build(),
       scheduling().withOption("AllowedHours", "12-20").build()]) == []
 
-def test_shouldManageToBeInitializedMultipleTimesWithTheSameFolder(fixture):
+def test_shouldManageToBeInitializedMultipleTimesWithTheSameFolders(fixture):
   fixture.init()
   fixture.init()
 
+#TODO invert this test (use file name somewhere else); fix by using shlex.quote
+#Also: sibtCall can contain spaces...
 def test_shouldNotAllowSingleQuotesInOptionsPassedToExecutable(fixture):
   fixture.init()
 

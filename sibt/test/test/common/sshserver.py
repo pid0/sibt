@@ -2,7 +2,6 @@ import paramiko
 import socket
 import threading
 import time
-import signal
 import subprocess
 import functools
 import queue

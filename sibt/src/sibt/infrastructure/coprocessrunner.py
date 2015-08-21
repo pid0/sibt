@@ -2,30 +2,41 @@ import subprocess
 from sibt.infrastructure.exceptions import ExternalFailureException
 
 ChunkSize = 2048
+Nop = lambda *args: None
+
+def spawnProcess(program, arguments, afterForking, **kwargs):
+  ret = subprocess.Popen([program] + list(arguments), **kwargs)
+  afterForking()
+  return ret
+
+def waitAndCheckExitStatus(process, programPath, arguments, afterWaiting):
+  process.wait()
+  afterWaiting(process.returncode)
+  if process.returncode != 0:
+    raise ExternalFailureException(programPath, list(arguments), 
+        process.returncode)
 
 class CoprocessRunner(object):
-  def _wrappingException(self, func):
-    try:
-      return func()
-    except subprocess.CalledProcessError as ex:
-      raise ExternalFailureException(ex.cmd[0], ex.cmd[1:], 
-          ex.returncode) from ex
-    
+  def __init__(self, afterForking=Nop, afterWaiting=Nop):
+    self.afterForking = afterForking
+    self.afterWaiting = afterWaiting
+
   def getOutput(self, program, *arguments, delimiter="\n"):
     assert ord(delimiter) < 128
-    process = subprocess.Popen([program] + list(arguments),
+    process = spawnProcess(program, arguments, self.afterForking,
         stdout=subprocess.PIPE)
 
-    return CoprocessRunner.OutputIterator([program] + list(arguments), 
-        process, delimiter.encode("utf-8"))
+    return CoprocessRunner.OutputIterator(program, arguments, 
+        process, delimiter.encode("utf-8"), self.afterWaiting)
 
   def execute(self, program, *arguments):
-    return self._wrappingException(lambda: 
-        subprocess.check_call([program] + list(arguments)))
-
+    with spawnProcess(program, arguments, self.afterForking) as process:
+      waitAndCheckExitStatus(process, program, arguments, self.afterWaiting)
 
   class OutputIterator(object):
-    def __init__(self, arguments, process, delimiter):
+    def __init__(self, programPath, arguments, process, delimiter, 
+        afterWaiting):
+      self.programPath = programPath
       self.arguments = arguments
       self.process = process
       self.delimiter = delimiter
@@ -35,6 +46,7 @@ class CoprocessRunner(object):
       self.firstLine = None
       self.buffer = b""
       self.eof = False
+      self.afterWaiting = afterWaiting
 
       self._waitForFirstLine()
 
@@ -45,12 +57,12 @@ class CoprocessRunner(object):
         pass
 
     def _cleanUp(self):
-      self.process.wait()
-      with self.process:
-        pass
-      if self.process.poll() != 0:
-        raise ExternalFailureException(self.arguments[0], 
-            self.arguments[1:], self.process.returncode)
+      def afterWaiting(*args):
+        with self.process:
+          pass
+        self.afterWaiting(*args)
+      waitAndCheckExitStatus(self.process, self.programPath, self.arguments,
+          afterWaiting)
 
     def __iter__(self):
       return self
@@ -80,7 +92,7 @@ class CoprocessRunner(object):
               return output.decode()
           else:
             self._readChunk()
-      except Exception as ex:
+      except StopIteration as ex:
         self._cleanUp()
         raise
 

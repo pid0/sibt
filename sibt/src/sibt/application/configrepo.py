@@ -1,5 +1,5 @@
 from sibt.configuration.dirbasedrulesreader import DirBasedRulesReader
-from sibt.configuration.cachinginifilesetreader import CachingIniFileSetReader
+from sibt.configuration.cachinginifilelistreader import CachingIniFileListReader
 from sibt.configuration import dirbasedrulesreader
 from sibt.domain.defaultvaluesynchronizer import DefaultValueSynchronizer
 from sibt.infrastructure.functionmodulesynchronizer import \
@@ -40,7 +40,7 @@ def readSchedulers(dirs, loader, schedulerWrapper, initArgs):
       schedulerWrapper(loader.loadFromFile(path, fileName, initArgs)))
 
 def readRuleLoaders(rulesDir, enabledDir, factory, prefix):
-  reader = DirBasedRulesReader(CachingIniFileSetReader(rulesDir,
+  reader = DirBasedRulesReader(CachingIniFileListReader(rulesDir,
     dirbasedrulesreader.AllowedSections), 
       rulesDir, enabledDir, factory, prefix)
   return list(reader.read())

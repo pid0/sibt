@@ -98,7 +98,8 @@ restore() {
     if [ $destFileType = non-directory ]; then
 
       if [ $srcFileType = directory ]; then
-        print-error "source is a directory; destination must be a directory, too"
+        print-error "source is a directory; destination must be a directory, \
+too"
         return 1
       fi
 

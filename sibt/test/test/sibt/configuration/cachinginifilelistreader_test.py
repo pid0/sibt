@@ -2,7 +2,7 @@ from sibt.configuration.exceptions import ConfigSyntaxException, \
     MissingConfigValuesException
 import pytest
 from test.common.assertutil import iterToTest
-from sibt.configuration.cachinginifilesetreader import CachingIniFileSetReader
+from sibt.configuration.cachinginifilelistreader import CachingIniFileListReader
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -10,7 +10,7 @@ class Fixture(object):
     self.useAllowedSections(["a", "b", "c"])
 
   def useAllowedSections(self, allowedSections):
-    self.iniFileReader = CachingIniFileSetReader(str(self.tmpdir),
+    self.iniFileReader = CachingIniFileListReader(str(self.tmpdir),
         allowedSections)
     
   def writeFile(self, name, contents):

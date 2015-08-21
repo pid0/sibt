@@ -45,7 +45,7 @@ class SibtArgsParser(object):
         rulePatterns),
 
       SubGroup("sync-uncontrolled", 
-        PosArg("rule-name")),
+        PosArg("rule-name"), description=None),
 
       SubGroup("versions-of",
         PosArg("file")),

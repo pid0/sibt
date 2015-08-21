@@ -15,7 +15,7 @@ class OptArg(object):
 
 class SubGroups(object):
   def __init__(self, *groups, default=None):
-    self.groups = list(groups)
+    self.groups = sorted(groups, key=lambda group: len(group.name))
     self.default = None if default is None else \
         next(group for group in groups if group.name == default)
 
@@ -23,6 +23,8 @@ class SubGroups(object):
     return PosArg("command" + (str(level + 1) if level > 0 else ""))
 
   def choose(self, parsedArg):
+    if len(parsedArg.value) <= 1:
+      return
     for group in self.groups:
       for name in group.aliases + [group.name]:
         if name.startswith(parsedArg.value):
@@ -38,7 +40,7 @@ class SubGroups(object):
     return "SubGroups{0}".format((self.groups,))
 
 class SubGroup(object):
-  def __init__(self, name, *options):
+  def __init__(self, name, *options, description=""):
     if isinstance(name, tuple):
       self.name = name[0]
       self.aliases = list(name[1:])
@@ -46,6 +48,7 @@ class SubGroup(object):
       self.name = name
       self.aliases = []
 
+    self.description = description
     options = list(options)
     self._optionsArg = options
 
@@ -60,6 +63,8 @@ class SubGroup(object):
     for opt in self.opts:
       for name in [opt.name] + opt.aliases:
         self.namesToOpts[name] = opt
+
+    self.hasSubGroups = self.groups is not None
 
   def _setDefaults(self, resultOpts):
     ret = resultOpts
@@ -162,6 +167,14 @@ class ParseState(object):
       assert name not in namesToOpts
       namesToOpts[name] = opt
     return ParseState(self.args, self.posOpts, namesToOpts, self.acceptOpts)
+
+  def _isOptional(self, arg):
+    return arg.startswith("-") and len(arg) > 1
+
+  @property
+  def nextArgIsOptional(self):
+    return len(self.args) > 0 and self._isOptional(self.args[0]) and \
+        self.acceptOpts
   
 class CliParser(object):
   def __init__(self, options):
@@ -180,7 +193,7 @@ class CliParser(object):
 
     group = groupsTrail[-1]
     posOpts = [group.groups.choiceArg(len(groupsTrail) - 1)] if \
-        group.groups is not None else group.posOpts
+        group.hasSubGroups else group.posOpts
 
     stringParts.append(_buildGrammarString(posOpts))
     if fullDescriptions:
@@ -191,9 +204,9 @@ class CliParser(object):
     return " ".join(part for part in stringParts if len(part) > 0)
 
   def _optDescriptions(self, group):
-    if group.groups is not None:
+    if group.hasSubGroups:
       return "command can be\n" + "\n".join("  " + group.name for group in \
-          group.groups.groups)
+          group.groups.groups if group.description is not None)
     return ""
 
   def helpString(self, groupsTrail=[], **kwargs):
@@ -234,7 +247,7 @@ class CliParser(object):
       state = state.withNewPosOpts(newGroup.posOpts).optsMerged(
           newGroup.namesToOpts)
 
-      if newGroup.groups is not None:
+      if newGroup.hasSubGroups:
         result, state = self._parseGroups(state, newGroup.groups, 
             groupLevel + 1)
       else:
@@ -246,13 +259,10 @@ class CliParser(object):
         ex.groupsTrail = [newGroup] + ex.groupsTrail
       raise
 
-  def _isOptional(self, arg):
-    return arg.startswith("-") and len(arg) > 1
-
   def _parseAll(self, state):
-    result = {1: 2}
+    result = {}
     ret = dict()
-    while len(result) != 0:
+    while len(state.posOpts) > 0 or state.nextArgIsOptional:
       result, state = self._parseOne(state)
       ret = _optsMerged(ret, *result.values(), checkDuplicates=True)
 
@@ -264,18 +274,13 @@ class CliParser(object):
   def _parseOne(self, state, firstMayBeOptional=True):
     if len(state.args) > 0 and state.args[0] == "--":
       return {}, state.acceptingOpts(False).argPopped()
-    if len(state.args) > 0 and self._isOptional(state.args[0]) and \
-        state.acceptOpts:
+    if state.nextArgIsOptional:
       if not firstMayBeOptional:
         raise _UnexpectedOptionalAsFirstArgException(_buildGrammarString(
           state.posOpts))
       return self._parseOptional(state.args[0], state.argPopped())
-    if len(state.posOpts) == 0 and len(state.args) == 0:
-      return {}, state
     if len(state.args) == 0 and not state.posOpts[0].noOfArgs == "*":
       raise TooFewArgsException(_buildGrammarString(state.posOpts))
-    if len(state.posOpts) == 0:
-      return {}, state
 
     nextPositional = state.posOpts[0]
     if nextPositional.noOfArgs in ["*", "+"]:
@@ -288,7 +293,7 @@ class CliParser(object):
     resultOpts = {}
     parsedArgs = []
     while len(state.args) > 0:
-      if self._isOptional(state.args[0]) and state.acceptOpts:
+      if state.nextArgIsOptional:
         if positional._allowInterruption and state.args[0] != "--":
           break
         result, state = self._parseOne(state)
