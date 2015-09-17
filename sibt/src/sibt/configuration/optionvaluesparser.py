@@ -88,8 +88,8 @@ class OptionValuesParser(object):
     unitNames = ["seconds", "minutes", "hours", "days", "weeks"]
     def splitField(string):
       firstNonDigit = next((i for i, c in 
-        enumerate(string) if not (c.isdigit() or c == ".")), None)
-      if firstNonDigit is None:
+        enumerate(string) if not (c.isdigit() or c == "." or c == "-")), None)
+      if firstNonDigit is None or firstNonDigit == 0:
         raise _ParseException(typeDesc, "units must follow numbers")
       else:
         try:
@@ -97,6 +97,8 @@ class OptionValuesParser(object):
         except ValueError:
           raise _ParseException(typeDesc, "‘{0}’ is no number".format(
             string[:firstNonDigit]))
+        if value < 0:
+          raise _ParseException(typeDesc, "‘{0}’ is negative".format(value))
         unitName = string[firstNonDigit:].lower()
         for existingUnit in unitNames:
           if existingUnit.startswith(unitName):

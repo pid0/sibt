@@ -30,7 +30,7 @@ class RulesFinder(object):
         raise RulePatternMismatchException(pattern)
 
     return [self.findRuleByName(name, onlySyncRules, keepUnloadedRules) for 
-        name in _flatten(matchingNamesLists)]
+        name in set(_flatten(matchingNamesLists))]
 
   def findRuleByName(self, name, onlySyncRules, keepUnloadedRule):
     if onlySyncRules:

@@ -3,6 +3,7 @@
 AdditionalSyncOpts=
 RemoteShellCommand=
 AdditionalOptsBothWays=
+ExcludedDirs=
 
 TimestampFileName=".sibt-rsync-timestamp"
 
@@ -11,6 +12,7 @@ cat <<EOF
 AdditionalSyncOpts
 AdditionalOptsBothWays
 RemoteShellCommand
+ExcludedDirs
 EOF
 }
 
@@ -28,6 +30,35 @@ info-of-port() {
   fi
 }
 
+get-reanchored-exclude-opts() {
+  local excludeAnchor="$1"
+  local anchorOneLevelDeeper="$2"
+  if [ "$anchorOneLevelDeeper" != 1 ]; then
+    excludeAnchor="$(dirname "$excludeAnchor")"
+  fi
+  declare -n destArray="$3"
+
+  declare -a excludedDirsArray=()
+  eval args-to-array excludedDirsArray "$ExcludedDirs"
+  
+  for excludedDir in "${excludedDirsArray[@]:+${excludedDirsArray[@]}}"; do 
+    local normalizedExcludePath="$(echo "$excludedDir" | \
+        sed -r -e 's,/+,/,g; s,/\./,/,g; s,/$,,')"
+    local numberOfSlashes="$(echo "$excludeAnchor" | sed -e 's/[^/]//g' | \
+      wc --bytes)"
+    if [ $numberOfSlashes -gt 0 ]; then
+      local normalizedExcludePath="${normalizedExcludePath:1}"
+      local oldPath="$normalizedExcludePath"
+      normalizedExcludePath="${normalizedExcludePath#"${excludeAnchor}"}"
+      if [ "$oldPath" = "$normalizedExcludePath" ]; then
+        normalizedExcludePath=/"$normalizedExcludePath"
+      fi
+    fi
+    local trailingSlash=/
+    destArray+=(--exclude "$normalizedExcludePath""$trailingSlash")
+  done
+}
+
 run-rsync() {
   local srcLoc="$1"
   local destLoc="$2"
@@ -35,18 +66,22 @@ run-rsync() {
   if [ $3 = 1 ]; then
     srcLoc+=/
   fi
+  local excludeAnchor="$5"
 
   declare -a RemoteShellArgs=()
   if [ -n "$RemoteShellCommand" ]; then
     RemoteShellArgs=(--rsh "$(rsh-command-with-socket-port $remotePort)")
   fi
 
-  declare -a AddOptsArray=()
-  eval args-to-array AddOptsArray "$AdditionalOptsBothWays"
+  declare -a addOptsArray=()
+  eval args-to-array addOptsArray "$AdditionalOptsBothWays"
+  declare -a excludeOptsArray=()
+  get-reanchored-exclude-opts "$excludeAnchor" "$3" excludeOptsArray
 
-  rsync --protect-args -a --acls --xattrs "${@:5:$#}" "$srcLoc" "$destLoc" \
+  rsync --protect-args -a --acls --xattrs "${@:6:$#}" "$srcLoc" "$destLoc" \
     "${RemoteShellArgs[@]:+${RemoteShellArgs[@]}}" \
-    "${AddOptsArray[@]:+${AddOptsArray[@]}}"
+    "${addOptsArray[@]:+${addOptsArray[@]}}" \
+    "${excludeOptsArray[@]:+${excludeOptsArray[@]}}"
 }
 
 loc-syntax-of() {
@@ -61,12 +96,12 @@ loc-syntax-of() {
 }
 
 sync() {
-  declare -a AddOptsArray=()
-  eval args-to-array AddOptsArray "$AdditionalSyncOpts"
+  declare -a addOptsArray=()
+  eval args-to-array addOptsArray "$AdditionalSyncOpts"
 
   run-rsync "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)" 1 \
-    "$(get-first-rsh-port Loc1 Loc2)" --delete \
-    "${AddOptsArray[@]:+${AddOptsArray[@]}}"
+    "$(get-first-rsh-port Loc1 Loc2)" "." --delete \
+    "${addOptsArray[@]:+${addOptsArray[@]}}"
 
   declare -a cmd=(bash -c 'date +%s >"$1"' '' "$Loc2Path"/"$TimestampFileName")
   execute-at-port Loc2 cmd
@@ -136,7 +171,7 @@ restore() {
   
   run-rsync "$(loc-syntax-of Loc2 "$srcPath")" \
     "$(loc-syntax-of "$destPort" "$destPath")" \
-    "$withSlash" "$(get-first-rsh-port "$destPort" Loc2)" \
+    "$withSlash" "$(get-first-rsh-port "$destPort" Loc2)" "$path" \
     "${options[@]:+${options[@]}}"
 }
 

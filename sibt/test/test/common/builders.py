@@ -13,6 +13,7 @@ from sibt.domain.syncrule import LocCheckLevel
 from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure import types
 from sibt.domain.synchronizeroptions import SynchronizerOptions 
+from sibt.domain.ruleset import RuleSet
 
 def randstring():
   return str(random())[2:] 
@@ -32,12 +33,22 @@ class SchedulingBuilder(object):
   def withOption(self, key, value):
     self.options[key] = value
     return self
+  def withOptions(self, **options):
+    self.options = dict(options)
+    return self
     
   def build(self):
     return Scheduling(self.ruleName, self.options)
 
-def anyScheduling(): return SchedulingBuilder().build()
-def scheduling(): return SchedulingBuilder()
+def anyScheduling(): return buildScheduling()
+def buildScheduling(ruleName=None, **options):
+  retBuilder = scheduling()
+  if ruleName is not None:
+    retBuilder = retBuilder.withRuleName(ruleName)
+  return retBuilder.withOptions(**options).build()
+def scheduling():
+  return SchedulingBuilder()
+
 def existingRunner(tmpdir, name): 
   path = tmpdir.join(name)
   path.write("#!/bin/sh")
@@ -58,11 +69,15 @@ def mkSyncerOpts(**options):
 def location(path="/any"):
   return localLocation(path)
 def localLocation(path="/any"):
-  return LocalLocation(path)
+  return LocalLocation(str(path))
 def remoteLocation(protocol="rsync", login="", host="host", port="", 
     path="/"):
   return RemoteLocation(protocol, login, host, port, path)
 
+def mockSched(*args, sharedOptions=[], **kwargs):
+  ret = fakeConfigurable(*args, **kwargs)
+  ret.availableSharedOptions = sharedOptions
+  return ret
 def fakeConfigurable(*args, **kwargs):
   return mockSyncer(*args, **kwargs)
 def mockSyncer(name="foo", availableOptions=[],
@@ -78,24 +93,17 @@ def mockSyncer(name="foo", availableOptions=[],
 def version(rule, time=anyUTCDateTime()):
   return Version(rule, time)
 
-def mockRuleSet(rules, schedulerErrors=[]):
-  class Ret(object):
-    def __iter__(self):
-      for rule in rules:
-        yield rule
+def ruleSet(*rules):
+  return RuleSet(rules)
 
-  ret = Ret()
-  ret.schedulerErrors = schedulerErrors
-
-  return ret
-
-def mockRule(name, options=None, scheduler=None, loc1="/tmp/1", 
-    loc2="/tmp/2", writeLocs=[2]):
+def mockRule(name="foo", options=None, scheduler=None, loc1="/tmp/1", 
+    loc2="/tmp/2", writeLocs=[2], schedOpts=dict()):
   ret = mock.mock(name)
   if options is None:
     options = dict(LocCheckLevel=LocCheckLevel.Default)
   ret.options = options
   ret.name = name
+  ret.schedulerOptions = schedOpts
   ret.scheduler = scheduler
   ret.scheduling = object()
   ret.locs = [parseLocation(str(loc1)), parseLocation(str(loc2))]

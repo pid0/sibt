@@ -18,6 +18,11 @@ class LocationTest(object):
     if relPart is not None:
       assert container.relativePathTo(path) == relPart
 
+  def test_shouldImplementEqualsAndHashCode(self):
+    assert self.locWithPath("/tmp") == self.locWithPath("/tmp")
+    assert hash(self.locWithPath("/tmp")) == hash(self.locWithPath("/tmp"))
+    assert self.locWithPath("/var") != self.locWithPath("/tmp")
+
   def test_shouldNormalizeThePathWithoutChangingItsMeaning(self):
     assert self.locWithPath("//tmp///test/link/../foo//").path == \
         "/tmp/test/link/../foo"
@@ -50,6 +55,9 @@ class Test_RemoteLocationTest(LocationTest):
     with pytest.raises(LocationInvalidException) as ex:
       RemoteLocation("http", "", "host", "", "")
     assert "path" in ex.value.problem
+
+  def test_shouldTakeProtocolEtcIntoAccountWhenComparingWithRemoteLocs(self):
+    assert remoteLocation(protocol="a") != remoteLocation(protocol="b")
 
   def test_shouldTreatExclusivelyRelativeOrAbsolutePathsAsCompatible(self):
     self.assertIsWithin("foo/bar", "foo", relPart="bar")

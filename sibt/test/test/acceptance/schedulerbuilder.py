@@ -4,6 +4,7 @@ from test.common import mock
 
 SchedulerFormat = """
 availableOptions = {opts}
+availableSharedOptions = {sharedOpts}
 {initFunc}
 {checkFunc}
 {runFunc}
@@ -33,6 +34,8 @@ class SchedulerBuilder(ConfigObjectBuilder):
 
   def withOptions(self, *newOptions):
     return self._withParams(options=list(newOptions))
+  def withSharedOptions(self, *newOptions):
+    return self._withParams(sharedOptions=list(newOptions))
 
   def withInitFuncCode(self, initFuncCode):
     return self._withParams(initFuncCode=initFuncCode)
@@ -50,6 +53,7 @@ class SchedulerBuilder(ConfigObjectBuilder):
   def mock(self):
     mocked = mock.mock()
     mocked.availableOptions = self.options
+    mocked.availableSharedOptions = self.sharedOptions
     mocked.name = self.name
 
     mocked.init = self.kwParams["initFunc"]
@@ -75,13 +79,17 @@ class SchedulerBuilder(ConfigObjectBuilder):
         initFunc=self.kwParams["initFuncCode"],
         checkFunc=self.kwParams["checkFuncCode"],
         runFunc=self.kwParams["runFuncCode"],
-        opts=self.options)
+        opts=self.options,
+        sharedOpts=self.sharedOptions)
   @property
   def path(self):
     return local(self.configuredPaths.schedulersDir).join(self.name)
   @property
   def options(self):
     return self.kwParams.get("options", [])
+  @property
+  def sharedOptions(self):
+    return self.kwParams.get("sharedOptions", [])
 
   def newBasic(self, paths, sysPaths, foldersWriter, name, kwParams):
     return SchedulerBuilder(paths, sysPaths, foldersWriter, name, 

@@ -6,7 +6,8 @@ class Fixture(object):
   def __init__(self):
     self.maximumVerbosity = 0
 
-  def getLoggedOutput(self, logInput, *formatArgs, maxVerbosity=10, **kwargs):
+  def getLoggedOutput(self, logInput, *formatArgs, maxVerbosity=10, 
+      prefix="sibt", **kwargs):
     output = mock.mock()
     ret = [None]
     def storeResult(string):
@@ -14,7 +15,7 @@ class Fixture(object):
       return True
 
     output.expectCalls(mock.callMatching("println", storeResult))
-    logger = PrefixingErrorLogger(output, maxVerbosity)
+    logger = PrefixingErrorLogger(output, prefix, maxVerbosity)
 
     logger.log(logInput, *formatArgs, **kwargs)
     return ret[0]
@@ -30,8 +31,11 @@ def fixture():
   return Fixture()
 
 def test_shouldPrintFormattedLogMessagesWithAPrefixAndIndentation(fixture):
-  assert fixture.getLoggedOutput("foo {0} baz\nquux", "bar") == \
-      "sibt: foo bar baz\n      quux"
+  prefix = "master-control"
+  assert fixture.getLoggedOutput("foo {0} baz\nquux", "bar", prefix=prefix) == \
+        "master-control: foo bar baz\n" + \
+        (" " * len(prefix + ": ")) + \
+        "quux"
   assert fixture.getLoggedOutput("{0} {1}", "the", "rest", continued=True) == \
       "      the rest"
 

@@ -1,39 +1,50 @@
 from sibt.infrastructure.coprocessrunner import CoprocessRunner
-from sibt.infrastructure.intervalparser import IntervalParser
 import os
-from sibt.infrastructure.schedulerhelper import evalTruth
 import tempfile
 from contextlib import contextmanager
 import functools
+import shlex
+import subprocess
+import re
+from datetime import timedelta
 
-availableOptions = ["Interval", "LogFile", "ExecOnFailure", "AllowedHours",
-    "Syslog", "TmpDir"]
+availableSharedOptions = ["s AllowedHours", "f TmpDir"]
+availableOptions = ["t Interval", "f LogFile", "s ExecOnFailure", "b Syslog"]
 
 CommonFileNamePrefix = "sibt-anacron-"
 TabPrefix = CommonFileNamePrefix + "tab-"
 ScriptPrefix = CommonFileNamePrefix + "script-"
+AllowedHoursRegex = re.compile("([0-9]+)-([0-9]+)")
+SecondsInADay = 86400
 
-def quoted(options, optionKey):
-  string = options.get(optionKey, "")
-  return "'{0}'".format(string)
+def quoted(string):
+  return shlex.quote(string)
+
+def quotedOpt(options, optionKey):
+  string = str(options.get(optionKey, ""))
+  return quoted(string)
 
 class Anacron(object):
-  def init(self, initSibtCall, paths):
+  def init(self, args):
     self.processRunner = CoprocessRunner()
-    self.intervalParser = IntervalParser()
-    self.sibtCall = initSibtCall
-    self.varDir = os.path.join(paths.varDir, "anacron")
+    self.sibtCall = args.sibtInvocation
+    self.varDir = args.varDir
+    self.logger = args.logger
     self.spoolDir = os.path.join(self.varDir, "spool")
     if not os.path.isdir(self.spoolDir):
-      os.makedirs(self.spoolDir)
+      os.mkdir(self.spoolDir)
 
-  def getInterval(self, scheduling):
-    return str(self.intervalParser.parseNumberOfDays(scheduling.options.get(
-        "Interval", "3")))
+  def getIntervalInDays(self, scheduling):
+    interval = scheduling.options.get("Interval", timedelta(days=3))
+    days = int(interval / timedelta(seconds=1)) / SecondsInADay
+    roundedDays = round(days)
+    if days != roundedDays:
+      self.logger.log("warning: rounding interval of ‘{0}’ to days ({1})",
+          scheduling.ruleName, roundedDays)
+    return str(int(roundedDays))
 
   def run(self, schedulings):
-    tmpDir = schedulings[0].options["TmpDir"] if \
-        "TmpDir" in schedulings[0].options else tempfile.gettempdir()
+    tmpDir = str(schedulings[0].options.get("TmpDir", tempfile.gettempdir()))
 
     with writeAndCloseTemporaryFile(tmpDir, ScriptPrefix, 
         self.writeScript) as scriptPath:
@@ -53,25 +64,45 @@ class Anacron(object):
       self.writeTabEntry(scriptPath, tabFile, scheduling)
 
   def check(self, schedulings):
+    ret = []
+    ret.extend(self.checkOptionOfEachScheduling(schedulings, "AllowedHours",
+      lambda setting, ruleName: None if self.hasCorrectAllowedHoursSyntax(
+        setting) else "Syntax error in AllowedHours setting of ‘{0}’ (‘{1}’)".\
+            format(ruleName, setting)))
+
+    ret.extend(self.checkOptionOfEachScheduling(schedulings, "ExecOnFailure",
+      self.checkExecOnFailureSyntax))
+
+    return ret
+
+  def checkOptionOfEachScheduling(self, schedulings, optionName, checkFunc):
+    ret = []
     for scheduling in schedulings:
-      try:
-        self.getInterval(scheduling)
-      #TODO catch this exception more specifically (ParseException...)
-      except Exception as ex:
-        return [str(ex)]
+      if optionName not in scheduling.options:
+        continue
+      error = checkFunc(scheduling.options[optionName], 
+          scheduling.ruleName)
+      if error is not None:
+        ret.append(error)
+    return ret
 
-      for option in availableOptions:
-        if "'" in scheduling.options.get(option, ""):
-          return ["single quote not allowed in {0}".format(option)]
+  def hasCorrectAllowedHoursSyntax(self, string):
+    regexMatch = AllowedHoursRegex.fullmatch(string)
+    if regexMatch is None:
+      return False
+    startHour = int(regexMatch.group(1))
+    endHour = int(regexMatch.group(2))
+    return startHour < endHour and endHour < 25
 
-    allowedHours = None
-    allowedHoursSettings = [scheduling.options["AllowedHours"] for 
-        scheduling in schedulings if "AllowedHours" in scheduling.options]
-    if len(allowedHoursSettings) != 0 and not all(setting == 
-        allowedHoursSettings[0] for setting in allowedHoursSettings):
-      return ["contradictory AllowedHours setting"]
-
-    return []
+  def checkExecOnFailureSyntax(self, code, ruleName):
+    with subprocess.Popen(["bash", "-n", "-c", code + " | cat"], 
+        stderr=subprocess.PIPE) as process:
+      _, stderrBytes = process.communicate()
+      process.wait()
+    syntaxErrors = stderrBytes.decode()
+    if len(syntaxErrors) > 0:
+      return "syntax errors in ExecOnFailure code of ‘{0}’:\n{1}".format(
+        ruleName, syntaxErrors)
 
   def writeScript(self, scriptFile):
     scriptFile.write("""#!/usr/bin/env bash
@@ -80,9 +111,9 @@ declare -a sibtProgram=({sibtProg})
 ruleName="$1"
 logFile="$2"
 execOnFailure="$3"
-execOnFailure=${execOnFailure/'%r'/"$ruleName"}
 syslog="$4"
 syslogTestOpts="$5"
+declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled -- "$ruleName")
 
 set -o pipefail
 
@@ -91,34 +122,32 @@ if [ $syslog = 1 ]; then
   logCommand+=' >(logger -t sibt $syslogTestOpts)'
 fi
 if [ -n "$logFile" ]; then
-  logCommand+=' >>"$logFile"'
+  logCommand+=' >(cat >>"$logFile")'
 fi
 
-declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled -- "$ruleName")
-if [[ $syslog = 1 || -n "$logFile" ]]; then
-  (trap - INT TERM; "${sibtCall[@]}") 2>&1 | eval $logCommand
-else
-  (trap - INT TERM; "${sibtCall[@]}")
-fi
+(trap - INT TERM; "${sibtCall[@]}") 2>&1 | eval $logCommand
+exitCode=$?
 
-if [ $? != 0 ]; then
-  $execOnFailure
-fi""".replace("{sibtProg}", " ".join("'" + word + "'" for word in 
+if [ $exitCode != 0 ]; then
+  r="$ruleName"
+  eval "$execOnFailure" | eval $logCommand
+fi
+exit $exitCode""".replace("{sibtProg}", " ".join(quoted(word) for word in 
   self.sibtCall)))
 
   def writeTabEntry(self, scriptPath, tabFile, scheduling):
     for field in [
-        self.getInterval(scheduling),
+        self.getIntervalInDays(scheduling),
         "0", 
         scheduling.ruleName,
 
         "bash",
-        scriptPath,
+        quoted(scriptPath),
         scheduling.ruleName,
-        quoted(scheduling.options, "LogFile"),
-        quoted(scheduling.options, "ExecOnFailure"),
-        "1" if evalTruth(scheduling.options.get("Syslog", "")) else "1",
-        quoted(scheduling.options, "SyslogTestOpts")]:
+        quotedOpt(scheduling.options, "LogFile"),
+        quotedOpt(scheduling.options, "ExecOnFailure"),
+        "1" if scheduling.options.get("Syslog", False) else "0",
+        quotedOpt(scheduling.options, "SyslogTestOpts")]:
       tabFile.write(field)
       tabFile.write(" ")
 

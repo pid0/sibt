@@ -8,6 +8,7 @@ from test.common.builders import fakeConfigurable, port, optInfo, \
 from sibt.domain.syncrule import LocCheckLevel
 from sibt.infrastructure import types
 from test.common.assertutil import strToTest
+from contextlib import contextmanager
 
 class Fixture(object):
   def __init__(self):
@@ -17,13 +18,9 @@ class Fixture(object):
 def fixture():
   return Fixture()
 
+@contextmanager
 def noException():
-  class Ret(object):
-    def __enter__(self):
-      return self
-    def __exit__(self, x, y, z):
-      pass
-  return Ret()
+  yield None
 
 def test_shouldThrowExceptionIfRuleNameContainsInvalidCharacters(fixture):
   with pytest.raises(RuleNameInvalidException) as ex:

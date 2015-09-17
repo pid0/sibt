@@ -27,7 +27,7 @@ from sibt.application.exceptions import RuleNotFoundException
 import functools
 from sibt.application.dryscheduler import DryScheduler
 from sibt.configuration.optionvaluesparser import parseLocation
-from sibt.domain.rulescoordinator import RulesCoordinator
+from sibt.domain.ruleset import RuleSet
 from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
 import signal
 import os
@@ -76,14 +76,15 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
   testFatalSignalDispositions()
   setFatalSignalsHandler(signalHandler(raiseException=True))
 
-  errorLogger = PrefixingErrorLogger(stderr, 0)  
+  errorLogger = PrefixingErrorLogger(stderr, "sibt", 0)  
   try:
     argParser = SibtArgsParser()
     parserExitStatus, args = argParser.parseArgs(cmdLineArgs, stdout, stderr)
     if parserExitStatus is not None:
       return parserExitStatus
-    errorLogger = PrefixingErrorLogger(stderr, 
+    makeErrorLogger = lambda prefix: PrefixingErrorLogger(stderr, prefix,
         1 if args.options["verbose"] else 0)
+    errorLogger = makeErrorLogger("sibt")
 
     overridePaths(paths, args)
     createNotExistingDirs(paths)
@@ -94,12 +95,13 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
         moduleLoader, [sys.argv[0]] + args.globalOptionsArgs,
-        functools.partial(wrapScheduler, useDrySchedulers, stdout))
+        functools.partial(wrapScheduler, useDrySchedulers, stdout),
+        makeErrorLogger)
     rulesFinder = RulesFinder(configRepo)
     validator = constructRulesValidator()
 
     if args.action in ["schedule", "check"]:
-      matchingRuleSet = RulesCoordinator(rulesFinder.findRulesByPatterns(
+      matchingRuleSet = RuleSet(rulesFinder.findRulesByPatterns(
           args.options["rule-patterns"], onlySyncRules=True))
     if args.action in ["sync-uncontrolled"]:
       rule = rulesFinder.findRuleByName(args.options["rule-name"],

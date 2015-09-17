@@ -9,6 +9,8 @@ class Fixture(object):
     self.path = "/etc/foo.py"
     self.validModule = lambda x:x
     self.validModule.init = lambda *args: None
+    self.validModule.availableOptions = []
+    self.validModule.availableSharedOptions = []
 
   def loadScheduler(self, module, name, initArgs=[]):
     self.moduleLoader.expectCalls(
@@ -37,7 +39,7 @@ def test_shouldCallInitFunctionAsFinalStep(fixture):
     if args == expectedArgs:
       result[0] = 4
 
-  module = lambda x:x
+  module = fixture.validModule
   module.init = initFunc
   fixture.loadScheduler(module, "module", expectedArgs)
   assert result[0] == 4

@@ -1,4 +1,7 @@
-class OptionInfo(object):
+from sibt.infrastructure.caseclassequalityhashcode import \
+    CaseClassEqualityHashCode
+
+class OptionInfo(CaseClassEqualityHashCode):
   def __init__(self, name, optionType):
     self.name = name
     self.optionType = optionType

@@ -16,8 +16,9 @@ class Fixture(SSHSupportingSyncerFixture):
     self.load("rsync")
 
 @pytest.fixture(params=[
-  (sshLocationFromPath, localLocation, localLocation),
-  (localLocation, sshLocationFromPath, localLocation)])
+  (localLocation, localLocation, localLocation),])
+#  (sshLocationFromPath, localLocation, localLocation),
+#  (localLocation, sshLocationFromPath, localLocation)])
 def fixture(request, tmpdir, sshServerFixture):
   loc1Func, loc2Func, restoreFunc = request.param
   return Fixture(tmpdir, sshServerFixture, loc1Func, loc2Func, restoreFunc)
@@ -48,25 +49,68 @@ class Test_RsyncTest(MirrorSynchronizerTest,
     assert "AdditionalSyncOpts" in fixture.optionNames
     assert "AdditionalOptsBothWays" in fixture.optionNames
 
-    infoFile, = writeFileTree(fixture.loc1, [".",
-      ["proc",
-        "cpuinfo"],
-      ["foo",
-        ["proc",
-          "cpuinfo [1]"]]])
-    infoFile.write("blah")
+    options = dict(AdditionalSyncOpts="$(echo --update)",
+        AdditionalOptsBothWays="--exclude '*.o'")
 
-    options = { "AdditionalSyncOpts": "--exclude '/?roc/cpu*'",
-        "AdditionalOptsBothWays": "$(echo --no-t)" }
+    codeFile, binFile = writeFileTree(fixture.loc1, [".",
+      ["src",
+        "main.c [1]",
+        "main.o [2]"]])
+    fixture.changeMTime(codeFile, 20)
+    codeFileBackup = fixture.loc2 / "src" / "main.c"
+    binFileInBackup = fixture.loc2 / "src" / "main.o"
 
     fixture.sync(options)
-    assert "cpuinfo" not in os.listdir(str(fixture.loc2 / "proc"))
+    codeFileBackup.ensure(file=True)
+    assert not os.path.isfile(str(binFileInBackup))
+    codeFileBackup.write("//foo")
+    fixture.changeMTime(codeFileBackup, 40)
+    fixture.sync(options)
+    binFileInBackup.write("ELF")
 
-    fixture.changeMTime(fixture.loc2 / "foo" / "proc" / "cpuinfo", 20)
-    infoFile.remove()
-    fixture.restorePort1File("foo/proc", anyUTCDateTime(), None, options)
-    assert infoFile.read() == "blah"
-    assert os.stat(str(infoFile)).st_mtime != 20
+    codeFile.write("//bar")
+    fixture.changeMTime(codeFileBackup, 60)
+    fixture.restorePort1File(".", anyUTCDateTime(), None, options)
+    assert codeFile.read() == "//foo"
+    assert binFile.read() == ""
+
+  def test_shouldProvideOptionToCompletelyIgnoreCertainDirs(self, fixture):
+    assert "ExcludedDirs" in fixture.optionNames
+
+    backupDir, realFile, tempFile = writeFileTree(fixture.loc1, [".",
+      ["mnt",
+        ["hdd* .",
+          ["backup [1]"],
+          ["data", "file [2]"]]],
+      ["proc", 
+        ["proc", ["1", ["attr", "foo"]]],
+        ["1",
+          ["attr", "exec [3]"]]]])
+    fixture.loc2 = backupDir
+    tempFile.remove()
+
+    options = dict(ExcludedDirs="'/./mnt///./hdd* ./backup/' /proc/1/attr")
+    fixture.sync(options)
+    fixture.sync(options)
+
+    assert "attr" not in os.listdir(str(backupDir / "proc" / "1"))
+    assert "backup" not in os.listdir(str(backupDir / "mnt" / "hdd* ."))
+
+    tempFile.write("foo")
+    realFile.write("foo")
+    fixture.restorePort1File(".", anyUTCDateTime(), None, options)
+    fixture.restorePort1File("mnt/hdd* .", anyUTCDateTime(), None, options)
+    fixture.restorePort1File("proc/1", anyUTCDateTime(), None, options)
+    assert tempFile.read() == "foo"
+    assert realFile.read() == ""
+
+    destDir = fixture.tmpdir / "dest"
+    fixture.restorePort1File("proc", anyUTCDateTime(), destDir, options)
+    assert os.path.isfile(str(destDir / "proc" / "1" / "attr" / "foo"))
+    assert not os.path.isfile(str(destDir / "1" / "attr" / "exec"))
+
+  #shouldCheckIfResultingRsyncCommandHasValidSyntax <- AdditionalOpts, 
+  #  ExcludedDirs; show error; also rdiff-backup
 
   def test_shouldAcknowledgeThatItDoesntSupportTwoSSHLocsAtATime(self, fixture):
     assert fixture.syncer.onePortMustHaveFileProtocol

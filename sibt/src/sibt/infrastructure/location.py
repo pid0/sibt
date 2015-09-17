@@ -76,6 +76,13 @@ class RemoteLocation(object):
   def __repr__(self):
     return "RemoteLocation{0}".format((self.protocol,
       self.login, self.host, self.port, self.path))
+  @property
+  def _constituentFields(self):
+    return (self.path, self.protocol, self.login, self.host, self.port)
+  def __eq__(self, other):
+    return self._constituentFields == other._constituentFields
+  def __hash__(self):
+    return hash(self._constituentFields)
 
 class LocalLocation(object):
   def __init__(self, absolutePath):
@@ -113,6 +120,10 @@ class LocalLocation(object):
     return self.path
   def __repr__(self):
     return "LocalLocation({0})".format(repr(self._initialPath))
+  def __eq__(self, other):
+    return self.path == other.path
+  def __hash__(self):
+    return hash(self.path)
 
 class FilePath(object):
   @classmethod

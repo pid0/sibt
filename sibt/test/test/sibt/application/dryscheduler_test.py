@@ -1,7 +1,7 @@
 import pytest
 from sibt.application.dryscheduler import DryScheduler
 from test.common import mock
-from test.common.builders import anyScheduling, scheduling
+from test.common.builders import buildScheduling
 
 class Fixture(object):
   def __init__(self):
@@ -30,7 +30,6 @@ def test_shouldPrintLineForEachScheduledRuleButNotScheduleThem(fixture):
       mock.callMatching("println", lambda line: "second" in line))
 
   dry = DryScheduler(sub, output)
-  dry.run([scheduling().withRuleName("first").build(),
-    scheduling().withRuleName("second").build()])
+  dry.run([buildScheduling("first"), buildScheduling("second")])
 
   output.checkExpectedCalls()

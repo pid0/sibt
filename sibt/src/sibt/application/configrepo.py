@@ -20,6 +20,11 @@ from sibt.application.exceptions import RuleNameMismatchException
 from sibt.infrastructure.runnablefilefunctionmodule import \
     RunnableFileFunctionModule
 from sibt.configuration.optionvaluesparser import OptionValuesParser
+from collections import namedtuple
+import os
+
+SchedulerArgs = namedtuple("SchedulerArgs", [
+    "sibtInvocation", "varDir", "logger"])
 
 def readSynchronizers(dirs, processRunner):
   def load(path, fileName):
@@ -35,9 +40,22 @@ def loadSynchronizer(processRunner, executablePath, name):
   return DefaultValueSynchronizer(FunctionModuleSynchronizer(functionModule,
     name))
 
-def readSchedulers(dirs, loader, schedulerWrapper, initArgs):
+def loadScheduler(loader, modulePath, name, initArgs):
+  return loader.loadFromFile(modulePath, name, (initArgs,))
+
+def makeSchedulerVarDir(paths, schedulerName):
+  schedulerVarDir = os.path.join(paths.varDir, schedulerName)
+  if not os.path.isdir(schedulerVarDir):
+    os.mkdir(schedulerVarDir)
+  return schedulerVarDir
+
+def readSchedulers(dirs, loader, schedulerWrapper, initArgs,
+    paths, makeErrorLoggerWithPrefix):
   return collectFilesInDirs(dirs, lambda path, fileName:
-      schedulerWrapper(loader.loadFromFile(path, fileName, initArgs)))
+      schedulerWrapper(loadScheduler(loader, path, fileName, 
+        initArgs._replace(logger=makeErrorLoggerWithPrefix(
+          "sibt({0})".format(fileName)),
+          varDir=makeSchedulerVarDir(paths, fileName)))))
 
 def readRuleLoaders(rulesDir, enabledDir, factory, prefix):
   reader = DirBasedRulesReader(CachingIniFileListReader(rulesDir,
@@ -60,7 +78,8 @@ class ConfigRepo(object):
 
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
-      moduleLoader, sibtInvocation, schedulerWrapper):
+      moduleLoader, sibtInvocation, schedulerWrapper, 
+      makeErrorLoggerWithPrefix):
     processRunnerWrapper = createHashbangAwareProcessRunner(paths.runnersDir,
         processRunner)
 
@@ -71,7 +90,8 @@ class ConfigRepo(object):
         [paths.schedulersDir, paths.readonlySchedulersDir] + 
         ([sysPaths.schedulersDir] if readSysConf else []), 
         PyModuleSchedulerLoader(moduleLoader), schedulerWrapper,
-        (sibtInvocation, paths))
+        SchedulerArgs(sibtInvocation, None, None), paths,
+        makeErrorLoggerWithPrefix)
 
     factory = RuleFromStringOptionsReader(RuleFactory(),
         OptionValuesParser(), schedulers, synchronizers)

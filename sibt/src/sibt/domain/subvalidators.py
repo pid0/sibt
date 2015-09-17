@@ -34,8 +34,29 @@ class SetsOfTwoValidator(object):
   
 class SchedulerCheckValidator(object):
   def validate(self, ruleSet):
-    return ["‘{0}’ reported error: {1}".format(*error) for error in 
-        ruleSet.schedulerErrors]
+    ret = []
+    def checkScheduler(scheduler, rules):
+      ret.extend(["‘{0}’ reported error: {1}".format(scheduler.name, error) for 
+        error in scheduler.check([rule.scheduling for rule in rules])])
+    ruleSet.visitSchedulers(checkScheduler)
+    return ret
+
+class AllSharedOptsEqualValidator(object):
+  def checkOptsOfSched(self, sched, rulesOfSched):
+    ret = []
+    for option in (opt.name for opt in sched.availableSharedOptions):
+      values = set()
+      for rule in rulesOfSched:
+        values.add(rule.schedulerOptions.get(option, ""))
+      if len(values) > 1:
+        ret.append("Values of ‘{0}’ of scheduler ‘{1}’ differ: {2}".format(
+          option, sched.name, ", ".join("‘{0}’".format(value) for value 
+            in values)))
+    return None if len(ret) == 0 else ret 
+
+  def validate(self, ruleSet):
+    ret = ruleSet.visitSchedulers(self.checkOptsOfSched)
+    return [] if ret is None else ret
 
 class LocExistenceValidator(DiscreteValidator):
   def checkRule(self, rule, ruleSet, errors):

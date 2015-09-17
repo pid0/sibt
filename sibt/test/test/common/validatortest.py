@@ -1,5 +1,5 @@
 import pytest
-from test.common.builders import mockRuleSet, mockRule
+from test.common.builders import ruleSet, mockRule, mockSched
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -14,10 +14,12 @@ class Fixture(object):
     return ret
 
   def mockRule(self, loc1, loc2, name=None, **kwargs):
+    sched = mockSched()
+    sched.check = lambda *args: []
     self.nameCounter += 1
     return mockRule(loc1=loc1, loc2=loc2, 
         name=name or "rule-" + str(self.nameCounter),
-        **kwargs)
+        scheduler=sched, **kwargs)
 
   def validRule(self):
     return self.mockRule(self.validLocDir(), self.validLocDir())
@@ -29,6 +31,4 @@ def fix(tmpdir):
 class ValidatorTest(object):
   def test_validatorShouldReturnNoErrorsIfTheRulesAreOk(self, fix):
     validator = self.construct()
-    ruleSet = mockRuleSet([fix.validRule(), fix.validRule()],
-        schedulerErrors=[])
-    assert validator.validate(ruleSet) == []
+    assert validator.validate(ruleSet(fix.validRule(), fix.validRule())) == []

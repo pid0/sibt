@@ -406,17 +406,31 @@ def test_shouldFailWhenReadingARuleConfiguredWithARelativeLocPath(fixture):
 
 def test_shouldInitSchedulersCorrectlyIncludingSibtInvocationWithGlobalOpts(
     fixture):
-  fixture.conf.aSched().withInitFuncCode(
-"""def init(sibtInvocation, paths): print("{0},{1}".format(
-" ".join(sibtInvocation), paths.configDir))""").write()
+  fixture.conf.aSched("prints-warnings").withInitFuncCode(
+"""def init(args): args.logger.log(" ".join(args.sibtInvocation))""").write()
 
   newReadonlyDir = str(fixture.tmpdir)
 
   fixture.runSibtWithRealStreamsAndExec("--readonly-dir", newReadonlyDir,
       "list", "schedulers")
-  fixture.stdout.shouldInclude("{0} --readonly-dir {1}".format(sys.argv[0],
-      newReadonlyDir) + "," +
-      fixture.paths.configDir + "\n")
+  fixture.stderr.shouldInclude("{0} --readonly-dir {1}".format(sys.argv[0],
+      newReadonlyDir), "prints-warnings")
+
+def test_shouldGiveEachSchedulerAnUnchangingVarDirectory(fixture):
+  sched = fixture.conf.aSched("needs-lotta-space")
+  varDir = []
+  def firstCall(args):
+    assert os.path.basename(args.varDir) == "needs-lotta-space"
+    varDir.append(args.varDir)
+    return True
+  def secondCall(args):
+    assert args.varDir == varDir[0]
+    return True
+
+  sched.mock()[0].expectCalls(mock.callMatching("init", firstCall))
+  fixture.runSibt("list", "-f")
+  sched.mock()[0].expectCalls(mock.callMatching("init", secondCall))
+  fixture.runSibt("list", "-f")
 
 def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
     fixture):
@@ -445,6 +459,19 @@ def test_shouldExitWithErrorMessageIfNoRuleNamePatternMatches(fixture):
   fixture.stderr.shouldInclude("no rule matching", "foo")
   fixture.stderr.shouldNotInclude("valid-rule")
   fixture.shouldHaveExitedWithStatus(1)
+
+def test_shouldScheduleRulesMatchedByMultiplePatternsOnlyOnce(fixture):
+  schedMock, sched = fixture.conf.aSched().mock()
+
+  baseRule = fixture.conf.ruleWithSyncer().withScheduler(sched).enabled()
+  for name in ["a1", "a2", "b1", "b2", "c1", "c2"]:
+    baseRule.withName(name).write()
+
+  schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
+    len([scheduling for scheduling in schedulings if 
+      scheduling.ruleName == "a1"]) == 1))
+
+  fixture.runSibt("schedule", "?1", "a?")
 
 def test_shouldRequireAnExactRuleNameMatchWhenSyncing(fixture):
   syncer = fixture.conf.aSyncer().allowingSetupCalls()
@@ -1062,3 +1089,24 @@ def test_shouldPrintHelpMessageIfInvalidCliArgsAreGiven(fixture):
   fixture.shouldHaveExitedWithStatus(0)
   fixture.stdout.shouldNotInclude("unknown").andAlso.\
       shouldInclude("Usage", "[--full]")
+
+def test_shouldNotScheduleIfAnyRuleDiffersFromTheOthersInASharedOption(fixture):
+  schedMock, sched = fixture.conf.aSched().\
+      withSharedOptions("f TmpFolder").mock()
+
+  baseRule = fixture.conf.ruleWithSyncer().withScheduler(sched)
+  rule1 = baseRule.withAnyName().withSchedOpts(TmpFolder="/tmp").write()
+  rule2 = baseRule.withAnyName().withSchedOpts(TmpFolder="/tmp").write()
+
+  schedMock.expectCalls(mock.callMatching("run", lambda schedulings:
+    schedulings[0].options["TmpFolder"].path == "/tmp"))
+  fixture.runSibt("schedule", rule1.name, rule2.name)
+  fixture.stderr.shouldBeEmpty()
+  fixture.shouldHaveExitedWithStatus(0)
+
+  sched.mock()
+  rule2.withSchedOpts(TmpFolder="/var/tmp").write()
+  fixture.runSibt("schedule", rule1.name, rule2.name)
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("TmpFolder", "differ", "/tmp", "/var/tmp")
+

@@ -1,8 +1,8 @@
 class PrefixingErrorLogger(object):
-  def __init__(self, output, maximumVerbosity):
+  def __init__(self, output, prefix, maximumVerbosity):
     self.output = output
+    self.prefix = prefix + ": "
     self.maximumVerbosity = maximumVerbosity
-    self.prefix = "sibt: "
 
   def _prefixedLines(self, lines):
     return [self.prefix + line for line in lines]

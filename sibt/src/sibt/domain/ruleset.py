@@ -2,7 +2,7 @@ from sibt.infrastructure.caseclassequalityhashcode import \
     CaseClassEqualityHashCode
 from sibt.domain.exceptions import ValidationException
 
-class RulesCoordinator(object):
+class RuleSet(object):
   def __init__(self, rules):
     self.rules = rules
     self._groups = type(self).SchedulingGroup.divideRules(rules)
@@ -18,13 +18,11 @@ class RulesCoordinator(object):
   def __iter__(self):
     return iter(self.rules)
 
-  @property
-  def schedulerErrors(self):
-    ret = []
+  def visitSchedulers(self, visitor):
     for group in self._groups:
-      ret += [(group.scheduler.name, error) for error in 
-          group.scheduler.check(group.schedulings)]
-    return ret
+      ret = visitor(group.scheduler, group.rules)
+      if ret is not None:
+        return ret
 
   class SchedulingGroup(CaseClassEqualityHashCode):
     def __init__(self, scheduler, rules):
