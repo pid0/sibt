@@ -36,6 +36,7 @@ class SibtArgsParser(object):
         SubGroup("synchronizers"),
         SubGroup("rules", 
           OptArg("full", "f"),
+          OptArg("show-sys"),
           PosArg("rule-patterns", noOfArgs="*")),
         SubGroup("all"),
         default="rules")),

@@ -14,10 +14,13 @@ class ConfigScenarioConstructor(object):
     self._aRule = ruleBuilder
 
   def writeAnyRule(self, name, schedulerName, synchronizerName, 
-      sysConfig=False):
-    self.aRule().withName(name).withSchedulerName(schedulerName).\
+      sysConfig=False, allowedForTestUser=False):
+    ret = self.aRule().withName(name).withSchedulerName(schedulerName).\
         withSynchronizerName(synchronizerName).\
-        asSysConfig(sysConfig).write()
+        asSysConfig(sysConfig)
+    if allowedForTestUser:
+      ret = ret.allowedForTestUser()
+    return ret.write()
   def writeAnyScheduler(self, name, sysConfig=False):
     self.aSched().withName(name).asSysConfig(sysConfig).write()
   def writeAnySynchronizer(self, name, sysConfig=False):
@@ -42,8 +45,9 @@ class ConfigScenarioConstructor(object):
         withSynchronizer(self.aSyncer().asSysConfig(isSysConfig).write())
   def ruleWithSyncer(self, name=None):
     return self.aRule(name).withSynchronizer(self.aSyncer().write())
-  def ruleWithSched(self, name=None):
-    return self.aRule(name).withScheduler(self.aSched().write())
+  def ruleWithSched(self, name=None, isSysConfig=False):
+    return self.aRule(name).withScheduler(self.aSched().write()).\
+        asSysConfig(isSysConfig)
 
   def realRule(self, name, schedName, syncerName):
     return self.aRule(name).\
@@ -51,8 +55,8 @@ class ConfigScenarioConstructor(object):
         withSynchronizerName(syncerName).\
         withNewValidLocs(locsAreEmpty=True)
 
-  def syncerReturningVersions(self, forRelativeFile, ifWithinLoc1, 
-      ifWithinLoc2):
+  def syncerReturningVersions(self, forRelativeFile, ifWithinLoc1=[""], 
+      ifWithinLoc2=[""]):
     return self.aSyncer().withBashCode("""
 if [ $1 = info-of-port ]; then
   if [ $2 != specials ] && [ $2 -lt 3 ]; then

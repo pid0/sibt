@@ -35,6 +35,9 @@ class FunctionModuleSynchronizer(object):
     return self._callFunction(self.functions.callExact, "list-files", 
         options, path, str(locNumber), version, recursively)
 
+  def check(self, options):
+    return list(self._callFunction(self.functions.callExact, "check", options))
+
   @property
   def availableOptions(self):
     parser = OptionInfoParser()

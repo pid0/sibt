@@ -8,18 +8,37 @@ class FakeException(Exception):
 def dictIncludes(dictToTest, expectedItems):
   return all(dictToTest[key] == value for key, value in expectedItems.items())
 
+class AssertionToPredicateProxy(object):
+  def __init__(self, constructor):
+    self.constructor = constructor
+
+  def __getattr__(self, name):
+    def constructPredicate(*args):
+      def predicate(objectToTest):
+        assertionObject = self.constructor(objectToTest)
+        try:
+          getattr(assertionObject, name)(*args)
+        except AssertionError:
+          return False
+        return True
+      return predicate
+    return constructPredicate
+
 def iterToTest(iterable):
   return TestIterable(iterable)
 def strToTest(string):
   return TestString(string)
+stringThat = AssertionToPredicateProxy(strToTest)
 
 class TestIterable(object):
   def __init__(self, iterable):
     self.iterable = iterable
     self.andAlso = self
+    self.but = self
 
   def shouldContainMatchingInAnyOrder(self, *predicates):
-    assert iterableContainsInAnyOrder(self.iterable, *predicates)
+    assert iterableContainsInAnyOrder(self.iterable, *predicates), \
+        repr(self.iterable)
     return self
   def shouldContainMatching(self, *predicates):
     predicateList = list(predicates)

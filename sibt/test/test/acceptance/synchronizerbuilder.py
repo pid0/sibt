@@ -37,6 +37,9 @@ class SynchronizerBuilder(ConfigObjectBuilder):
       ret = allowing(str(i + 1), ret)
     return ret
 
+  def _allowingCheckCall(self):
+    return self.allowing(execmock.call(lambda args: 
+      args[0] == "check", delimiter="\0", returningNotImplementedStatus=True))
   def _allowingPortCalls(self):
     return self.allowing(execmock.call(lambda args: args[0] == "info-of-port",
       returningNotImplementedStatus=True))
@@ -51,12 +54,13 @@ class SynchronizerBuilder(ConfigObjectBuilder):
       allowing(execmock.call(lambda args: 
       args[0] == "info-of-port" and args[1] in ["3", "specials"], ret=[]))
   def allowingSetupCallsExceptOptions(self):
-    return self._allowingPortCalls()
+    return self._allowingPortCalls()._allowingCheckCall()
   def allowingSetupCallsExceptPorts(self):
-    return self._allowingOptionsCalls()
+    return self._allowingOptionsCalls()._allowingCheckCall()
   def allowingSetupCalls(self):
     return self._allowingPortCalls().\
-        _allowingOptionsCalls()
+        _allowingOptionsCalls().\
+        _allowingCheckCall()
 
   def expectingListFiles(self, matcher):
     return self.expecting(execmock.call(lambda args: args[0] == "list-files" and

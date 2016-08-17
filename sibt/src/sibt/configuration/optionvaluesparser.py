@@ -119,6 +119,8 @@ class OptionValuesParser(object):
           return contractFields(fields[1:], contracted + [fields[0]])
 
     fields = [field for field in string.split(" ") if len(field) > 0]
+    if len(fields) == 0:
+      raise _ParseException(typeDesc, "if defined, it must not be empty")
 
     unitsWithNumbers = [splitField(string) for string in 
         contractFields(fields, [])]

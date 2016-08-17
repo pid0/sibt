@@ -11,7 +11,8 @@ NumberOfPositionalArgs = { "availableOptions": 0,
     "versionsOf": 2,
     "restore": 4,
     "listFiles": 4,
-    "infoOfPort": 1 }
+    "infoOfPort": 1,
+    "check": 0 }
 
 def parseKeyValuePairs(pairs):
   def parsePair(string):

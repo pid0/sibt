@@ -71,3 +71,10 @@ class OptionParseError(object):
     return "OptionParseError{0}".format((self.optionName, self.stringToParse,
       self.expectedType, self.message))
 
+class NotReadableException(ConfigConsistencyException):
+  def __init__(self, filePath):
+    self.filePath = filePath
+
+  def __str__(self):
+    return "permission denied when trying to read file ‘{0}’".format(
+        self.filePath) + "; set appropriate mode to make it readable"

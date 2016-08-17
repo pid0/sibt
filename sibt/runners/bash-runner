@@ -38,6 +38,10 @@ sync() {
   return $notImplStatus
 }
 
+check() {
+  return $notImplStatus
+}
+
 #####
 # Library
 #####
@@ -116,6 +120,24 @@ print-error() {
   echo "$(basename "$fileToRun")"' synchronizer:' "$@" >&2
 }
 
+
+make-assertion-about-option() {
+  if ! "${@:2}"; then
+    echo -n ' ('in option ‘"$1"’')'
+    echo -n -e '\0'
+    return 1
+  fi
+
+  return 0
+}
+try-to-echo() {
+  "$BASH" -n -c 'echo '"$1" 2>&1 | sed -r -e 's/^.+line [0-9]+: //'
+}
+check-if-passable-as-argument() {
+  declare -n optionValue="$1"
+  make-assertion-about-option "$1" try-to-echo "$optionValue"
+}
+
 #####
 # Invocation
 #####
@@ -132,10 +154,11 @@ setup-variables() {
 
 case $action in
   available-options) available-options;;
-  sync) setup-variables "${@:1:$#}"; sync;;
-  versions-of) setup-variables "${@:3:$#}"; versions-of "$@";;
-  restore) setup-variables "${@:5:$#}"; restore "$@";;
-  list-files) setup-variables "${@:5:$#}"; list-files "$@";;
+  sync) setup-variables "${@:1}"; sync;;
+  versions-of) setup-variables "${@:3}"; versions-of "$@";;
+  restore) setup-variables "${@:5}"; restore "$@";;
+  list-files) setup-variables "${@:5}"; list-files "$@";;
   info-of-port) info-of-port "$@";;
+  check) setup-variables "${@:1}"; check;;
 esac
 

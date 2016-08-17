@@ -44,15 +44,17 @@ get-reanchored-exclude-opts() {
   for excludedDir in "${excludedDirsArray[@]:+${excludedDirsArray[@]}}"; do 
     local normalizedExcludePath="$(echo "$excludedDir" | \
         sed -r -e 's,/+,/,g; s,/\./,/,g; s,/$,,')"
-    local numberOfSlashes="$(echo "$excludeAnchor" | sed -e 's/[^/]//g' | \
-      wc --bytes)"
-    if [ $numberOfSlashes -gt 0 ]; then
-      local normalizedExcludePath="${normalizedExcludePath:1}"
-      local oldPath="$normalizedExcludePath"
-      normalizedExcludePath="${normalizedExcludePath#"${excludeAnchor}"}"
-      if [ "$oldPath" = "$normalizedExcludePath" ]; then
-        normalizedExcludePath=/"$normalizedExcludePath"
+    normalizedExcludePath="${normalizedExcludePath:1}"
+    local oldPath="$normalizedExcludePath"
+    normalizedExcludePath="${normalizedExcludePath#"${excludeAnchor}"}"
+    if [ "$oldPath" = "$normalizedExcludePath" ]; then
+      normalizedExcludePath=/"$normalizedExcludePath"
+      if [ "$excludeAnchor" != . ]; then
+        continue
       fi
+    fi
+    if [ "${normalizedExcludePath:0:1}" != / ]; then
+      continue
     fi
     local trailingSlash=/
     destArray+=(--exclude "$normalizedExcludePath""$trailingSlash")
@@ -68,9 +70,9 @@ run-rsync() {
   fi
   local excludeAnchor="$5"
 
-  declare -a RemoteShellArgs=()
+  declare -a remoteShellArgs=()
   if [ -n "$RemoteShellCommand" ]; then
-    RemoteShellArgs=(--rsh "$(rsh-command-with-socket-port $remotePort)")
+    remoteShellArgs=(--rsh "$(rsh-command-with-socket-port $remotePort)")
   fi
 
   declare -a addOptsArray=()
@@ -79,7 +81,7 @@ run-rsync() {
   get-reanchored-exclude-opts "$excludeAnchor" "$3" excludeOptsArray
 
   rsync --protect-args -a --acls --xattrs "${@:6:$#}" "$srcLoc" "$destLoc" \
-    "${RemoteShellArgs[@]:+${RemoteShellArgs[@]}}" \
+    "${remoteShellArgs[@]:+${remoteShellArgs[@]}}" \
     "${addOptsArray[@]:+${addOptsArray[@]}}" \
     "${excludeOptsArray[@]:+${excludeOptsArray[@]}}"
 }
@@ -95,13 +97,17 @@ loc-syntax-of() {
   echo "$(rsh-host-syntax-of $1)"':'"$path"
 }
 
-sync() {
+run-forward-rsync() {
   declare -a addOptsArray=()
   eval args-to-array addOptsArray "$AdditionalSyncOpts"
 
   run-rsync "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)" 1 \
     "$(get-first-rsh-port Loc1 Loc2)" "." --delete \
-    "${addOptsArray[@]:+${addOptsArray[@]}}"
+    "${addOptsArray[@]:+${addOptsArray[@]}}" "$@"
+}
+
+sync() {
+  run-forward-rsync
 
   declare -a cmd=(bash -c 'date +%s >"$1"' '' "$Loc2Path"/"$TimestampFileName")
   execute-at-port Loc2 cmd
@@ -207,4 +213,41 @@ list-files() {
     sed -zr -e 's,^d(.*)$,\1/,
       t
       s,^.(.*)$,\1,'
+}
+
+check() {
+  local hasInvalidSyntax=
+  check-syntax-of() {
+    if ! check-if-passable-as-argument "$1"; then
+      hasInvalidSyntax=yes
+    fi
+  }
+  assert-each-is-absolute() {
+    declare -a paths
+    eval args-to-array paths "$1"
+
+    for path in "${paths[@]:+${paths[@]}}"; do
+      if [ "${path:0:1}" != / ]; then
+        echo -n "$path" should be an absolute path
+        return 1
+      fi
+    done
+  }
+
+  check-syntax-of AdditionalSyncOpts
+  check-syntax-of AdditionalOptsBothWays
+  check-syntax-of ExcludedDirs
+  check-syntax-of RemoteShellCommand
+
+  if [ -n "$hasInvalidSyntax" ]; then
+    return
+  fi
+
+  make-assertion-about-option ExcludedDirs assert-each-is-absolute \
+    "$ExcludedDirs" || true
+
+  if ! run-forward-rsync --dry-run 2>&1; then
+    echo -n in rsync command line
+    echo -n -e '\0'
+  fi
 }

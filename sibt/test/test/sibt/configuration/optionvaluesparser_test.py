@@ -96,6 +96,7 @@ def test_shouldThrowExceptionIfSyntaxIsWrong(fixture):
   shouldNotParse(types.TimeDelta, "2s 3s", "twice")
   shouldNotParse(types.TimeDelta, "s 5", "follow")
   shouldNotParse(types.TimeDelta, "5 hours -5 s", "negative", "-5")
+  shouldNotParse(types.TimeDelta, "", "empty")
 
   shouldNotParse(types.File, "rsync://host/foo", typeDesc="local file")
 

@@ -2,7 +2,7 @@ import itertools
 import os.path
 import configparser
 from sibt.configuration.exceptions import ConfigSyntaxException, \
-    MissingConfigValuesException
+    MissingConfigValuesException, NotReadableException
 
 DefaultSec = configparser.DEFAULTSECT
 
@@ -86,8 +86,11 @@ class CachingIniFileListReader(object):
         instanceArgument is not None else None
     parser = self._makeParser(defaultValues=defaultValues)
 
-    self._readFilesInOrder(parser, _flatten(
-      [self._recursivelyResolvedReadListOf(path) for path in paths]))
+    try: 
+      self._readFilesInOrder(parser, _flatten(
+        [self._recursivelyResolvedReadListOf(path) for path in paths]))
+    except PermissionError as ex:
+      raise NotReadableException(ex.filename) from ex
 
     ret = self._parserToSectionsDict(parser, paths[-1], raw=False)
 

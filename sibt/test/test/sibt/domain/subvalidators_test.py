@@ -2,18 +2,27 @@ import os.path
 from sibt.domain.subvalidators import LocExistenceValidator, \
     LocNotEmptyValidator, NoOverlappingWritesValidator, \
     NoSourceDirOverwriteValidator, SchedulerCheckValidator, \
-    AllSharedOptsEqualValidator
-from test.common.validatortest import fix, ValidatorTest
+    AllSharedOptsEqualValidator, SynchronizerCheckValidator
+from test.common.validatortest import fix, ValidatorTest, schedCallWithRules
 from test.common.builders import mockSched, optInfo, mockRule, ruleSet
-from test.common.assertutil import iterToTest, strToTest
+from test.common.assertutil import iterToTest, strToTest, stringThat
 from sibt.domain.syncrule import LocCheckLevel
-from test.common import mock
 
-#refactor this shit
-def schedCallWithRules(action, *rules, **kwargs):
-  return mock.callMatching(action, lambda schedulings:
-      set(schedulings) == set(rule.scheduling for rule in rules),
-      **kwargs)
+class Test_SynchronizerCheckValidatorTest(ValidatorTest):
+  def construct(self):
+    return SynchronizerCheckValidator()
+
+  def test_shouldReturnEachSyncerCheckErrorWithAnAppropriatePrefix(self, fix):
+    rule1 = mockRule("first", syncerName="syncer1", 
+        syncerCheckErrors=["Wrong option syntax"])
+    rule2 = mockRule("second", syncerName="syncer2", 
+        syncerCheckErrors=["Contradictory values", "Unreadable File"])
+
+    iterToTest(self.construct().validate(ruleSet(rule1, rule2))).\
+        shouldContainMatchingInAnyOrder(
+            stringThat.shouldInclude("syntax", "first", "syncer1"),
+            stringThat.shouldInclude("Contradictory", "second", "syncer2"),
+            stringThat.shouldInclude("Unreadable", "second", "syncer2"))
 
 class Test_SchedulerCheckValidatorTest(ValidatorTest):
   def construct(self):
@@ -27,11 +36,11 @@ class Test_SchedulerCheckValidatorTest(ValidatorTest):
     sched1.expectCalls(schedCallWithRules("check", rule1, ret=["foo", "bar"]))
     sched2.expectCalls(schedCallWithRules("check", rule2, ret=["quux"]))
 
-    iterToTest(validator.validate(ruleSet(rule1, rule2))).shouldIncludeMatching(
-        lambda error: "first" in error and "reported error" in error and \
-            "foo" in error,
-        lambda error: "first" in error and "bar" in error,
-        lambda error: "second" in error and "quux" in error)
+    iterToTest(validator.validate(ruleSet(rule1, rule2))).\
+        shouldContainMatchingInAnyOrder(
+            stringThat.shouldInclude("first", "reported error", "foo"),
+            stringThat.shouldInclude("first", "bar"),
+            stringThat.shouldInclude("second", "quux"))
 
 class Test_AllSharedOptsEqualValidatorTest(ValidatorTest): 
   def construct(self):
@@ -54,10 +63,8 @@ class Test_AllSharedOptsEqualValidatorTest(ValidatorTest):
 
     iterToTest(validator.validate(ruleSet(*rules))).\
         shouldContainMatchingInAnyOrder(
-            lambda error: all(string in error for string in [
-              "ConfDir", "/home", "/etc", "/usr/share"]),
-            lambda error: all(string in error for string in [
-              "DestFile", "‘/etc/foo’", "‘’"]))
+            stringThat.shouldInclude("ConfDir", "/home", "/etc", "/usr/share"),
+            stringThat.shouldInclude("DestFile", "‘/etc/foo’", "‘’"))
 
   def test_shouldReturnTheErrorsOfTheFirstSchedulerThatHasSome(self, fix):
     sched = mockSched(sharedOptions=[optInfo("UseVarDir")])

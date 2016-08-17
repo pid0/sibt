@@ -14,6 +14,8 @@ def emptyFunc(name):
   return "def {0}(*args): pass".format(name)
 def failingFunc(name):
   return "def {0}(*args): assert False, 'unexpectedly called'".format(name)
+def assertFalse():
+  assert False
 
 class SchedulerBuilder(ConfigObjectBuilder):
   def __init__(self, paths, sysPaths, foldersWriter, name, mockRegistry, 
@@ -27,7 +29,7 @@ class SchedulerBuilder(ConfigObjectBuilder):
         runFuncCode=failingFunc("run"),
         initFunc=lambda *args: None,
         checkFunc=lambda *args: [],
-        runFunc=lambda *args: None)
+        runFunc=lambda *args: assertFalse())
 
   def withTestOptions(self):
     return self.withOptions("Interval", "Syslog")

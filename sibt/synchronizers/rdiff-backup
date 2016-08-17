@@ -4,7 +4,7 @@ AdditionalSyncOpts=
 RemoteShellCommand=
 
 available-options() {
-  echo RemoveOlderThan
+  echo t RemoveOlderThan
   echo AdditionalSyncOpts
   echo RemoteShellCommand
 }
@@ -48,9 +48,9 @@ sync() {
   run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
     "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)"
 
-  if [ -n "${RemoveOlderThan+a}" ]; then
+  if [ -n "${RemoveOlderThan:+a}" ]; then
     run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
-      --remove-older-than "$RemoveOlderThan" "$(loc-syntax-of Loc2)"
+      --remove-older-than "$RemoveOlderThan"s "$(loc-syntax-of Loc2)"
   fi
 }
 
@@ -189,4 +189,9 @@ list-files() {
     "$(loc-syntax-of Loc2 "$Loc2Path"/"$relativePath")" | sed -n -e '1!p' | \
     sed -r -e "$preprocessing" | sed -nr -e "$filter" | \
     append-slash-if-dir $timestamp | remove-prefix "$prefix"
+}
+
+check() {
+  check-if-passable-as-argument AdditionalSyncOpts || true
+  check-if-passable-as-argument RemoteShellCommand || true
 }

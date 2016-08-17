@@ -31,6 +31,7 @@ from sibt.domain.ruleset import RuleSet
 from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
 import signal
 import os
+import getpass
 
 class FatalSignalException(Exception):
   def __init__(self, signalNumber, childExitStatus):
@@ -72,7 +73,7 @@ def testFatalSignalDispositions():
     signalIgnored[signalNo] = signal.getsignal(signalNo) == signal.SIG_IGN
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
-    userId, moduleLoader):
+    userName, userId, moduleLoader):
   testFatalSignalDispositions()
   setFatalSignalsHandler(signalHandler(raiseException=True))
 
@@ -97,15 +98,16 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         moduleLoader, [sys.argv[0]] + args.globalOptionsArgs,
         functools.partial(wrapScheduler, useDrySchedulers, stdout),
         makeErrorLogger)
-    rulesFinder = RulesFinder(configRepo)
+    rulesFinder = RulesFinder(configRepo, (lambda rule: True) if \
+        args.options.get("show-sys", False) else \
+        (lambda rule: rule.options["AllowedForUsers"] == userName))
     validator = constructRulesValidator()
 
     if args.action in ["schedule", "check"]:
       matchingRuleSet = RuleSet(rulesFinder.findRulesByPatterns(
           args.options["rule-patterns"], onlySyncRules=True))
     if args.action in ["sync-uncontrolled"]:
-      rule = rulesFinder.findRuleByName(args.options["rule-name"],
-          args.action == "sync-uncontrolled", False)
+      rule = rulesFinder.getSyncRule(args.options["rule-name"])
 
     if args.action == "show":
       matchingRules = rulesFinder.findRulesByPatterns(
@@ -125,7 +127,8 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     elif args.action == "check":
       errors = validator.validate(matchingRuleSet)
-      printValidationErrors(stdout.println, matchingRuleSet, errors, False)
+      printValidationErrors(lambda *_: None, stdout.println, matchingRuleSet, 
+          errors)
       if len(errors) > 0:
         return 1
 
@@ -133,8 +136,8 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
       try:
         matchingRuleSet.schedule(validator)
       except ValidationException as ex:
-        printValidationErrors(errorLogger.log, matchingRuleSet, ex.errors, 
-            True)
+        printValidationErrors(errorLogger.log, functools.partial(
+          errorLogger.log, continued=True), matchingRuleSet, ex.errors)
         return 1
 
     elif args.action == "sync-uncontrolled":
@@ -157,7 +160,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         keepUnloadedRules=True) if \
         args.options["command2"] == "rules" and \
         len(args.options["rule-patterns"]) > 0 else \
-        configRepo.getAllRules(keepUnloadedRules=True)
+        rulesFinder.getAll(keepUnloadedRules=True)
       listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
           "full" if args.options["command2"] == "rules" and \
               args.options["full"] else args.options["command2"], 
@@ -165,7 +168,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           configRepo.synchronizers)
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
-      for rule in configRepo.getAllRules():
+      for rule in rulesFinder.getAll():
         for version in rule.versionsOf(locationFromArg(args.options["file"])):
           string = version.strWithUTCW3C if args.options["utc"] else \
               version.strWithLocalW3C
@@ -272,10 +275,10 @@ def showRule(rule, output):
   output.println(rule.name + ":")
   IniFileSyntaxRuleConfigPrinter(output).show(rule)
 
-def printValidationErrors(printFunc, ruleSet, errors, printRuleNames):
-  if len(errors) > 0 and printRuleNames:
-    printFunc("validation of " + ", ".join("‘{0}’".format(rule.name) for \
-        rule in ruleSet) + " failed:")
+def printValidationErrors(printFuncForRuleNames, printFunc, ruleSet, errors):
+  if len(errors) > 0:
+    printFuncForRuleNames("validation of " + ", ".join("‘{0}’".format(
+      rule.name) for rule in ruleSet) + " failed:")
   for error in errors:
     printFunc(error)
 
@@ -316,6 +319,6 @@ def main():
       FileObjOutput(sys.stderr),
       CoprocessRunner(beforeSubprocessRun, afterSubprocessRun), 
       Paths(UserBasePaths.forCurrentUser()),
-      Paths(UserBasePaths(0)), os.getuid(), 
+      Paths(UserBasePaths(0)), getpass.getuser(), os.getuid(), 
       PyModuleLoader("schedulers"))
   sys.exit(exitStatus)

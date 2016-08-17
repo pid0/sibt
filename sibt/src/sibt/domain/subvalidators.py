@@ -9,11 +9,13 @@ class ErrorsList(object):
     self.errors = []
 
   def add(self, message, *rules):
-    self.errors.append(self._errMsg(message, rules))
+    self.errors.append(self._errMsg(message, 
+      ("‘" + rule.name + "’" for rule in rules)))
+  def addWithRuleDescriptions(self, message, *ruleDescriptions):
+    self.errors.append(self._errMsg(message, ruleDescriptions))
 
-  def _errMsg(self, message, rules):
-    return "in " + ", ".join("‘" + rule.name + "’" for rule in rules) + \
-        ": " + message
+  def _errMsg(self, message, ruleDescriptions):
+    return "in " + ", ".join(ruleDescriptions) + ": " + message
 
 class DiscreteValidator(object):
   def validate(self, ruleSet):
@@ -31,6 +33,12 @@ class SetsOfTwoValidator(object):
         self.checkPair(rule, rule2, errorsList)
 
     return errorsList.errors
+
+class SynchronizerCheckValidator(DiscreteValidator):
+  def checkRule(self, rule, _, errors):
+    for syncerCheckError in rule.syncerCheckErrors:
+      errors.addWithRuleDescriptions(syncerCheckError, 
+          "‘{0}’ (synchronizer ‘{1}’)".format(rule.name, rule.syncerName))
   
 class SchedulerCheckValidator(object):
   def validate(self, ruleSet):

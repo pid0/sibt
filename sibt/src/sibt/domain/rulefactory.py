@@ -31,8 +31,7 @@ class RuleFactory(object):
         enabled, scheduler, synchronizer)
 
   def _throwIfLocOptionsNotPresent(self, syncerOpts, ports, ruleName):
-    diff = len(ports) - len(syncerOpts.locs)
-    if diff > 0:
+    if len(syncerOpts.locs) < len(ports):
       raise makeException(ruleName, 
           "does not have minimum options for synchronizer ({0})".format(
             ",".join("Loc" + str(i + 1) for i in range(len(syncerOpts.locs),
@@ -56,9 +55,6 @@ class RuleFactory(object):
     return [key for key in options.keys() if key not in supportedNames]
 
   def _setRuleOptionsDefaultValues(self, options):
-    if "LocCheckLevel" not in options:
-      options["LocCheckLevel"] = LocCheckLevel.Default
-    else:
-      for possibleOption in LocCheckLevel.values:
-        if options["LocCheckLevel"] == possibleOption.name:
-          options["LocCheckLevel"] = possibleOption
+    options["AllowedForUsers"] = options.get("AllowedForUsers", "")
+    options["LocCheckLevel"] = options.get("LocCheckLevel", 
+        LocCheckLevel.Default)

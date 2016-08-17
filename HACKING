@@ -1,1 +1,6 @@
 Concerning the configuration, there are syntax errors, coarse-grained semantic errors and  fine-grained semantic errors.
+
+in sibtspec: three run* functions:
+  * runSibt: all synchronizer operations are mocked as not implemented
+  * runSibtCheckingExecs
+  * runSibtWithRealStreamsAndExec

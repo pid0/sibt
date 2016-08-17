@@ -144,6 +144,7 @@ class SSHTestServer(threading.Thread):
   def stop(self):
     self._stopping = True
     self.join()
+    self._logFile.write("stopping\n")
     self._logFile.close()
 
   def _make_socket(self):

@@ -10,5 +10,6 @@ def constructRulesValidator():
       subvalidators.NoOverlappingWritesValidator(),
       subvalidators.NoSourceDirOverwriteValidator(),
       subvalidators.AllSharedOptsEqualValidator(),
-      subvalidators.SchedulerCheckValidator()
+      subvalidators.SchedulerCheckValidator(),
+      subvalidators.SynchronizerCheckValidator()
     ]])

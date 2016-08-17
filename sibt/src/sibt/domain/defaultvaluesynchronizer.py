@@ -6,11 +6,11 @@ from sibt.domain.optioninfo import OptionInfo
 
 class DefaultValueSynchronizer(object):
   def __init__(self, wrapped):
-    self.wrapped = wrapped
+    self._wrapped = wrapped
 
   def _getAvailableOptions(self):
     try:
-      return self.wrapped.availableOptions
+      return self._wrapped.availableOptions
     except SynchronizerFuncNotImplementedException:
       return []
 
@@ -25,23 +25,29 @@ class DefaultValueSynchronizer(object):
 
   def versionsOf(self, *args):
     try:
-      return self.wrapped.versionsOf(*args)
+      return self._wrapped.versionsOf(*args)
     except (SynchronizerFuncNotImplementedException, ExternalFailureException):
       return []
 
   @property
   def ports(self):
     try:
-      return self.wrapped.ports
+      return self._wrapped.ports
     except SynchronizerFuncNotImplementedException:
       return [Port(["file"], False), Port(["file"], True)]
 
   @property
   def onePortMustHaveFileProtocol(self):
     try:
-      return self.wrapped.onePortMustHaveFileProtocol
+      return self._wrapped.onePortMustHaveFileProtocol
     except SynchronizerFuncNotImplementedException:
       return False
 
+  def check(self, *args):
+    try:
+      return self._wrapped.check(*args)
+    except SynchronizerFuncNotImplementedException:
+      return []
+
   def __getattr__(self, name):
-    return getattr(self.wrapped, name)
+    return getattr(self._wrapped, name)

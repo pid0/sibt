@@ -97,7 +97,8 @@ def ruleSet(*rules):
   return RuleSet(rules)
 
 def mockRule(name="foo", options=None, scheduler=None, loc1="/tmp/1", 
-    loc2="/tmp/2", writeLocs=[2], schedOpts=dict()):
+    loc2="/tmp/2", writeLocs=[2], schedOpts=dict(), syncerName="foo",
+    syncerCheckErrors=[]):
   ret = mock.mock(name)
   if options is None:
     options = dict(LocCheckLevel=LocCheckLevel.Default)
@@ -111,6 +112,8 @@ def mockRule(name="foo", options=None, scheduler=None, loc1="/tmp/1",
       [parseLocation(str(loc2))] if 2 in writeLocs else []
   ret.nonWriteLocs = [parseLocation(str(loc1))] if 1 not in writeLocs else \
       [] + [parseLocation(str(loc2))] if 2 not in writeLocs else []
+  ret.syncerName = syncerName
+  ret.syncerCheckErrors = syncerCheckErrors
   return ret
 
 def writeFileTree(folder, fileList):

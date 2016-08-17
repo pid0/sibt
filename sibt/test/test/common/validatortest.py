@@ -1,5 +1,6 @@
 import pytest
 from test.common.builders import ruleSet, mockRule, mockSched
+from test.common import mock
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -23,6 +24,11 @@ class Fixture(object):
 
   def validRule(self):
     return self.mockRule(self.validLocDir(), self.validLocDir())
+
+def schedCallWithRules(action, *rules, **kwargs):
+  return mock.callMatching(action, lambda schedulings:
+      set(schedulings) == set(rule.scheduling for rule in rules),
+      **kwargs)
 
 @pytest.fixture
 def fix(tmpdir):

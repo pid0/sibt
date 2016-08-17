@@ -2,6 +2,7 @@ from sibt.configuration.dirbasedrulesreader import DirBasedRulesReader
 from sibt.configuration.cachinginifilelistreader import CachingIniFileListReader
 from sibt.configuration import dirbasedrulesreader
 from sibt.domain.defaultvaluesynchronizer import DefaultValueSynchronizer
+from sibt.infrastructure.cachingsynchronizer import CachingSynchronizer
 from sibt.infrastructure.functionmodulesynchronizer import \
     FunctionModuleSynchronizer
 from sibt.configuration.exceptions import MissingConfigValuesException, \
@@ -11,7 +12,6 @@ import sys
 from sibt.configuration.rulefromstringoptionsreader import \
     RuleFromStringOptionsReader
 from sibt.domain.rulefactory import RuleFactory
-import itertools
 from sibt.application.runner import Runner
 from sibt.application.hashbangawareprocessrunner import \
     HashbangAwareProcessRunner
@@ -37,8 +37,8 @@ def readSynchronizers(dirs, processRunner):
 
 def loadSynchronizer(processRunner, executablePath, name):
   functionModule = RunnableFileFunctionModule(processRunner, executablePath)
-  return DefaultValueSynchronizer(FunctionModuleSynchronizer(functionModule,
-    name))
+  return CachingSynchronizer(DefaultValueSynchronizer(
+    FunctionModuleSynchronizer(functionModule, name)))
 
 def loadScheduler(loader, modulePath, name, initArgs):
   return loader.loadFromFile(modulePath, name, (initArgs,))
@@ -101,10 +101,6 @@ class ConfigRepo(object):
 
     return clazz(schedulers, synchronizers, userRules, sysRules)
 
-  def getAllRules(self, keepUnloadedRules=False):
-    return itertools.chain(self.userRules.getAll(keepUnloadedRules), 
-        self.sysRules.getAll(keepUnloadedRules))
-
 class RulesRepo(object):
   def __init__(self, lazyRules):
     self._namesToRules = dict((rule.name, rule) for rule in lazyRules)
@@ -125,6 +121,4 @@ class RulesRepo(object):
       return self._namesToRules[name]
     except KeyError:
       raise RuleNameMismatchException(name)
-  
-  def getAll(self, keepUnloadedRules):
     return [self.getRule(name, keepUnloadedRules) for name in self.names]

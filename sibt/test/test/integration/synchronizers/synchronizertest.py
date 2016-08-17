@@ -55,6 +55,8 @@ class SynchronizerTestFixture(object):
 
   def sync(self, additionalOptions=dict()):
     self.syncer.sync(self.optsWith(additionalOptions))
+  def check(self, additionalOptions=dict()):
+    return self.syncer.check(self.optsWith(additionalOptions))
 
   def changeMTime(self, path, newModiticationTime):
     os.utime(str(path), (0, newModiticationTime))
@@ -67,9 +69,11 @@ class SSHSupportingSyncerFixture(SynchronizerTestFixture):
     self.sshServerSetup = sshServerSetup
 
   def optsWith(self, options):
-    options["RemoteShellCommand"] = ("ssh -o UserKnownHostsFile={0} "
-        "-i {1}").format(self.sshServerSetup.knownHostsFile,
-            self.sshServerSetup.clientIdFile)
+    if not "RemoteShellCommand" in options:
+      options = dict(options)
+      options["RemoteShellCommand"] = ("ssh -o UserKnownHostsFile={0} "
+          "-i {1}").format(self.sshServerSetup.knownHostsFile,
+              self.sshServerSetup.clientIdFile)
     return super().optsWith(options)
 
 

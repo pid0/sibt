@@ -14,6 +14,10 @@ class Fixture(object):
   def __init__(self):
     self.factory = RuleFactory()
 
+  def buildRuleWithNoOpts(self):
+    return self.factory.build("name", fakeConfigurable(), 
+        fakeConfigurable(ports=[]), {}, {}, mkSyncerOpts(), False)
+
 @pytest.fixture
 def fixture():
   return Fixture()
@@ -71,7 +75,7 @@ def test_shouldTreatLocsCorrespondingToPortsAsMinimumOptions(fixture):
     fixture.factory.build("rule", sched, syncer, {}, {}, 
         mkSyncerOpts(Loc4=loc("/fourth"), **loc1Through3), True)
 
-def test_shouldHaveADefaultValueForTheLocCheckLevelOption(fixture):
-  assert fixture.factory.build("name", fakeConfigurable(), 
-      fakeConfigurable(ports=[]), {}, {}, mkSyncerOpts(), False).\
-          options["LocCheckLevel"] == LocCheckLevel.Default
+def test_shouldHaveDefaultValuesForTheRuleOptions(fixture):
+  rule = fixture.buildRuleWithNoOpts()
+  assert rule.options["LocCheckLevel"] == LocCheckLevel.Default
+  assert rule.options["AllowedForUsers"] == ""

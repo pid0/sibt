@@ -21,14 +21,14 @@ class RuleFromStringOptionsReader(object):
         synchronizerOptions, "synchronizer", ruleName)
 
     parsedRuleOpts, parsedSchedOpts, parsedSyncerOpts = \
-        self._collectingParseErrors(ruleName, ("[Rule]", "[Scheduler]", 
-          "[Synchronizer]"),
-        lambda: self._parseOptions(syncrule.AvailableOptions, ruleOptions, 
-          False), 
-        lambda: self._parseOptions(scheduler.availableOptions, schedulerOptions,
-          True), 
-        lambda: SynchronizerOptions.fromDict(self._parseOptions(
-          synchronizer.availableOptions, synchronizerOptions, True)))
+      self._collectingParseErrors(ruleName, 
+          ("[Rule]", "[Scheduler]", "[Synchronizer]"),
+          lambda: self._parseOptions(syncrule.AvailableOptions, ruleOptions, 
+            False), 
+          lambda: self._parseOptions(scheduler.availableOptions, 
+            schedulerOptions, True), 
+          lambda: SynchronizerOptions.fromDict(self._parseOptions(
+            synchronizer.availableOptions, synchronizerOptions, True)))
 
     return self.ruleFactory.build(ruleName, scheduler, synchronizer,
         parsedRuleOpts, parsedSchedOpts, parsedSyncerOpts, isEnabled)

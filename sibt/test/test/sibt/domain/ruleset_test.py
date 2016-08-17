@@ -4,6 +4,7 @@ from test.common.builders import mockRule, mockSched, optInfo
 from sibt.domain.ruleset import RuleSet
 from sibt.domain.exceptions import ValidationException
 from test.common.assertutil import iterToTest
+from test.common.validatortest import schedCallWithRules
 
 class Fixture(object):
   def __init__(self):
@@ -27,11 +28,6 @@ def fixture():
 class AcceptingValidator(object):
   def validate(self, ruleSet):
     return []
-
-def schedCallWithRules(action, *rules, **kwargs):
-  return mock.callMatching(action, lambda schedulings:
-      set(schedulings) == set(rule.scheduling for rule in rules),
-      **kwargs)
 
 def mockScheds(number):
   def makeSched(i):

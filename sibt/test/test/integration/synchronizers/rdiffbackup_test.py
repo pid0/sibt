@@ -1,6 +1,6 @@
-import time
 import pytest
-from test.common.assertutil import iterToTest
+from datetime import timedelta
+from test.common.assertutil import iterToTest, stringThat
 import os
 from test.integration.synchronizers.synchronizertest import \
     SSHSupportingSyncerFixture, MirrorSynchronizerTest, \
@@ -56,21 +56,31 @@ class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest,
     fixture.syncer.sync(withTime(0))
     firstFile.remove()
 
-    secondFile.write("")
+    secondFile.write("foo")
     fixture.syncer.sync(withTime(1 * oneDay))
 
+    latestTime = 2 * oneDay + 1
+    secondFile.write("quux")
     thirdFile.write("")
-    fixture.syncer.sync(withTime(2 * oneDay + 1, 
-        andAlso={"RemoveOlderThan": "2D"}))
+    fixture.syncer.sync(withTime(latestTime,
+        andAlso={"RemoveOlderThan": timedelta(days=2)}))
 
-    files = os.listdir(str(fixture.loc2)) 
-    assert "first" not in files
-    assert "second" in files
-    assert "third" in files
+    assert len(fixture.syncer.versionsOf("first", 1, withTime(latestTime))) == 0
+    assert len(fixture.syncer.versionsOf("second", 1, 
+      withTime(latestTime))) == 2
+    assert len(fixture.syncer.versionsOf("third", 1, withTime(latestTime))) == 1
 
   def test_shouldAcknowledgeWritingToPort2(self, fixture):
     iterToTest(fixture.syncer.ports).shouldContainMatching(
         lambda port: port.isWrittenTo == False,
         lambda port: port.isWrittenTo == True)
 
+  def test_shouldFindSyntaxErrorsInItsOptions(self, fixture):
+    assert fixture.check(dict(
+      AdditionalSyncOpts="--exclude '**/.*'")) == []
 
+    iterToTest(fixture.check(dict(
+      AdditionalSyncOpts="--exclude '",
+      RemoteShellCommand="("))).shouldContainMatchingInAnyOrder(
+          stringThat.shouldInclude("AdditionalSyncOpts", "unexpected"),
+          stringThat.shouldInclude("RemoteShellCommand", "unexpected"))

@@ -40,6 +40,7 @@ class RunnerTest(object):
             not port.isWrittenTo,
         lambda port: port.supportedProtocols == ["file"] and port.isWrittenTo)
     assert syncer.versionsOf("/mnt/data/bar", 1, dict()) == []
+    assert syncer.check({}) == []
 
   def test_shouldThrowExceptionForNonTrivialNotImplementedFunctions(self, 
       fixture):

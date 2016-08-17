@@ -3,10 +3,13 @@ from sibt.domain.version import Version
 from sibt.domain.exceptions import UnsupportedProtocolException
 from sibt.infrastructure.types import Enum
 from sibt.domain.optioninfo import OptionInfo
+from sibt.infrastructure import types
 
 LocCheckLevel = Enum("None", "Default", "Strict")
 
-AvailableOptions = [OptionInfo("LocCheckLevel", LocCheckLevel)]
+AvailableOptions = [
+    OptionInfo("LocCheckLevel", LocCheckLevel),
+    OptionInfo("AllowedForUsers", types.String)]
 
 class SyncRule(object):
   def __init__(self, name, options, schedulerOptions, synchronizerOptions, 
@@ -34,6 +37,7 @@ class SyncRule(object):
         not port.isWrittenTo]
 
     self.synchronizerOptions = synchronizerOptions
+    self.syncerName = synchronizer.name
 
   def _loc(self, index):
     return self.locs[index - 1]
@@ -75,6 +79,10 @@ class SyncRule(object):
     return self.synchronizer.listFiles(
         self._loc(locNumber).relativePathTo(location), 
         locNumber, version.time, recursively, self.synchronizerOptions)
+
+  @property
+  def syncerCheckErrors(self):
+    return self.synchronizer.check(self.synchronizerOptions)
 
   def _getLocNumber(self, path):
     for i, loc in enumerate(self.locs):

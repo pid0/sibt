@@ -1,5 +1,6 @@
 from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
+from collections import namedtuple
 
 RuleFormat = """
     [Rule]
@@ -19,6 +20,8 @@ RuleFormat = """
 def iniFileFormatted(keysToValues):
   return "\n".join(key + "=" + value for key, value in keysToValues.items())
 
+_InstanceFile = namedtuple("_InstanceFile", [
+  "name", "content", "mode"])
 
 class RuleBuilder(ConfigObjectBuilder):
   def __init__(self, paths, sysPaths, foldersWriter, name, kwParams):
@@ -59,16 +62,24 @@ class RuleBuilder(ConfigObjectBuilder):
     newOpts["Loc4"] = loc4
     return self.withSyncerOpts(**newOpts)
 
-  def enabled(self, instanceName="", instanceFileContent=""):
+  def enabled(self, instanceName="", instanceFileContent="", mode=None):
     return self._withParams(instanceFiles=self.instanceFiles + 
-        [_InstanceFile(instanceName, instanceFileContent)])
+        [_InstanceFile(instanceName, instanceFileContent, mode)])
+  def enabledWithUnreadableFile(self, instanceName):
+    return self.enabled(instanceName, mode=0o200)
 
   def withSchedOpts(self, **newOpts):
     return self._withParams(schedOpts=newOpts)
   def withSyncerOpts(self, **newOpts):
     return self._withParams(syncerOpts=newOpts)
   def withOpts(self, **newOpts):
-    return self._withParams(ruleOpts=newOpts)
+    ruleOpts = dict(self.ruleOpts)
+    ruleOpts.update(newOpts)
+    return self._withParams(ruleOpts=ruleOpts)
+  def allowedForTestUser(self):
+    return self.withOpts(AllowedForUsers="testUser")
+  def allowedFor(self, name):
+    return self.withOpts(AllowedForUsers=name)
 
   def write(self):
     format = self.kwParams.get("content", RuleFormat)
@@ -90,8 +101,11 @@ class RuleBuilder(ConfigObjectBuilder):
     return self
 
   def _writeInstanceFile(self, instanceFile):
-    local(self.configuredPaths.enabledDir).join(
-        instanceFile.name + "@" + self.name).write(instanceFile.content)
+    path = local(self.configuredPaths.enabledDir).join(
+        instanceFile.name + "@" + self.name)
+    path.write(instanceFile.content)
+    if instanceFile.mode is not None:
+      path.chmod(instanceFile.mode)
 
   @property
   def instanceFiles(self):
@@ -127,8 +141,3 @@ class RuleBuilder(ConfigObjectBuilder):
 
   def newBasic(self, paths, sysPaths, foldersWriter, name, kwParams):
     return RuleBuilder(paths, sysPaths, foldersWriter, name, kwParams)
-
-class _InstanceFile(object):
-  def __init__(self, name, content):
-    self.name = name
-    self.content = content
