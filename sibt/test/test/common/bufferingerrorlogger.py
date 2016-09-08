@@ -1,9 +1,9 @@
 from test.common.assertutil import strToTest
 import os
 
-class BufferingLogger(object):
+class BufferingErrorLogger(object):
   def __init__(self):
-    self.stringBuffer = ""
+    self.clear()
 
   @property
   def string(self):
@@ -11,3 +11,6 @@ class BufferingLogger(object):
   
   def log(self, messageFormat, *args):
     self.stringBuffer += messageFormat.format(*args) + os.linesep
+
+  def clear(self):
+    self.stringBuffer = ""

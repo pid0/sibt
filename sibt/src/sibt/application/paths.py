@@ -19,6 +19,9 @@ class Paths(object):
   def enabledDir(self):
     return os.path.join(self.configDir, "enabled")
   @property
+  def logDir(self):
+    return os.path.join(self.varDir, "log")
+  @property
   def readonlySchedulersDir(self):
     return os.path.join(self.readonlyDir, "schedulers")
   @property

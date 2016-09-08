@@ -1,5 +1,4 @@
 import pytest
-from test.common.servermock import ServerMock
 import socket
 import time
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
@@ -17,7 +16,7 @@ from test.common.assertutil import strToTest, iterToTest
 from sibt.application import configrepo
 from sibt.infrastructure import types
 from datetime import timedelta
-from test.common.bufferinglogger import BufferingLogger
+from test.common.bufferingerrorlogger import BufferingErrorLogger
 
 def loadModule(schedulerName, varDir, sibtCall=["/where/sibt/is"],
     logger=None):
@@ -76,7 +75,7 @@ def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
 
   fixture.runWithMockedSibt(r"""#!/usr/bin/env bash
   if [ $1 = --some-global-opt ] && [ "$2" = 'blah "'"'"'foo' ] && \
-      [ $3 = sync-uncontrolled ] && [ $4 = -- ] && [ "$5" = 'some*rule' ]; then
+      [ $3 = execute-rule ] && [ $4 = -- ] && [ "$5" = 'some*rule' ]; then
     touch {0}
   fi""".format(testFile), [buildScheduling("some*rule")], 
     sibtArgs=["--some-global-opt", "blah \"'foo"])
@@ -106,7 +105,7 @@ def test_shouldPutTemporaryTabAndScriptsIntoTmpDirAndDeleteThemAfterwards(
   assert len(fixture.tmpDir.listdir()) == 0
 
 def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
-  logger = BufferingLogger()
+  logger = BufferingErrorLogger()
   fixture.init(logger=logger)
   assert optInfo("Interval", types.TimeDelta) in fixture.optionInfos
 
@@ -116,7 +115,13 @@ def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
       buildScheduling("three-weeks", Interval=timedelta(weeks=3)),
       buildScheduling("no-interval")]
 
+  def shouldHaveWarned():
+    logger.string.shouldInclude("one-day", "rounding", "two-days").andAlso.\
+        shouldNotInclude("three-weeks")
+    logger.clear()
+
   assert fixture.check(schedulings) == []
+  shouldHaveWarned()
   
   def checkTab(tabPath):
     strToTest(local(tabPath).read()).shouldIncludeLinePatterns(
@@ -127,70 +132,14 @@ def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
     return True
 
   fixture.checkOption("-t", schedulings, checkTab)
-  logger.string.shouldInclude("one-day", "rounding", "two-days").andAlso.\
-      shouldNotInclude("three-weeks")
-
-def test_shouldSupportLoggingSibtOutputToFileBeforeAnacronSeesIt(fixture):
-  nameWithQuotesAndSpace = "user'\"s log"
-  logFile = fixture.miscDir / nameWithQuotesAndSpace
-  fixture.runWithMockedSibt("""#!/usr/bin/env bash
-  if [ $3 = not-logging ]; then
-    echo lorem ipsum
-  fi
-  if [ $3 = logging-2 ]; then
-    echo dolor sit
-  fi
-  if [ $3 = logging ]; then
-    echo lazy dog
-  fi
-  echo quick brown fox >&2
-  """, [
-      buildScheduling("not-logging"),
-      buildScheduling("logging", LogFile=localLocation(logFile)),
-      buildScheduling("logging-2", LogFile=localLocation(logFile))])
-
-  strToTest(logFile.read()).shouldContainLinePatterns(
-      "*quick brown fox",
-      "*quick brown fox",
-      "*lazy dog",
-      "*dolor sit").andAlso.shouldNotInclude("lorem ipsum")
-
-  assert optInfo("LogFile", types.File) in fixture.optionInfos
-
-def test_shouldSupportSysloggingSibtOutput(fixture):
-  fixture.init()
-  assert optInfo("Syslog", types.Bool) in fixture.optionInfos
-
-  logFile = fixture.tmpdir.join("log")
-
-  message1 = "goes to stdout"
-  message2 = "its an error"
-
-  syslogMock = None
-  with ServerMock("5024", socket.SOCK_DGRAM) as syslogMock:
-    fixture.runWithMockedSibt(
-    """#!/usr/bin/env bash
-    echo {0}
-    echo {1} >&2""".format(message1, message2), [buildScheduling(
-      LogFile=localLocation(logFile), Syslog=True,
-      SyslogTestOpts="--server localhost --port 5024")])
-    time.sleep(0.2)
-
-  strToTest(syslogMock.receivedBytes.decode("utf-8")).shouldInclude(
-      "sibt",
-      message1,
-      message2)
-  strToTest(logFile.read()).shouldInclude(
-      message1, message2)
+  shouldHaveWarned()
 
 def test_shouldHaveAnOptionThatTakesBashCodeToExecuteWhenSibtFails(fixture):
   testFile = fixture.miscDir / "test's file"
   normalSchedulingRunFlagFile = str(fixture.miscDir / "flag")
-  logFile = fixture.miscDir / "log"
 
   executingScheduling = scheduling().withOptions(
-      ExecOnFailure='echo failure; echo "$r" >"{0}"'.format(testFile),
-      LogFile=localLocation(logFile))
+      ExecOnFailure='echo failure; echo "$r" >"{0}"'.format(testFile))
 
   fixture.runWithMockedSibt("""#!/usr/bin/env bash
   if [ $3 = fails ]; then
@@ -203,7 +152,6 @@ def test_shouldHaveAnOptionThatTakesBashCodeToExecuteWhenSibtFails(fixture):
 
   assert os.path.isfile(normalSchedulingRunFlagFile)
   assert testFile.read() == "fails\n"
-  assert logFile.read() == "failure\n"
 
   assert "ExecOnFailure" in fixture.optionNames
 

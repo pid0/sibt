@@ -1,6 +1,37 @@
-Concerning the configuration, there are syntax errors, coarse-grained semantic errors and  fine-grained semantic errors.
+Concerning the configuration, there are syntax errors, coarse-grained semantic errors and fine-grained semantic errors.
+Some actions, like list, can work even if a disabled rule has missing options. 
+But this is a specific error that cannot be avoided under all circumstances. 
+Any other errors in rule configurations, like syntax errors, should result in the failure of any action that requires these rules.
+
+sibt philosophy regarding errors:
+Unless exceptions are part of the following categories, just let them bubble up and crash sibt.
+They should contain a pretty error message, but masking the traceback is only acceptable if the error is specific and common enough, and the message is informational enough, that aesthetics can trump debug info.
+Categories:
+  * Loss of data: An error should never cause this.
+  * Logging: Some parts of sibt are automated, that is, they are not run by the user directly.
+    Whenever an error happens there, it must be logged so as to be traceable.
+    This includes errors in the log system itself.
 
 in sibtspec: three run* functions:
   * runSibt: all synchronizer operations are mocked as not implemented
   * runSibtCheckingExecs
   * runSibtWithRealStreamsAndExec
+
+String encoding:
+When you do "abc".encode() in python, it uses utf-8 as its default and this done in several places in sibt.
+Sometimes, sibt depends on being able to detect certain characters like newlines in a byte string.
+So a system encoding other than utf-8 would require further adaptation.
+It could certainly be done, though.
+Instead of checking ‘b"\n" in chunk’ you could do ‘"\n".encode(systemEncoding) in chunk’.
+The CoprocessRunner would have to use the system encoding, as well.
+Whether the system's syslog protocol would accept utf-8 is another question.
+The util-linux logger program also doesn't have any specialized Unicode handling, i.e., the exact bytes that it gets via its CLI will end up in the packets.
+
+FilesDBSchedulingsLog has a race condition. 
+If the logging file is unfinished, it reads the output from after the length field until the end of the file. 
+If this happens in the process of finishing the file, the output will contain the endTime and succeeded fields.
+Since output is informational and supposed to be read by the user, this should be unlikely enough to not bother anyone.
+
+UtilLinuxSysLogger:
+There is a race condition in the tests: A datagram might arrive too late, depending on how fast it goes through the kernel. 
+The packets list should be thread-safe enough in any case.

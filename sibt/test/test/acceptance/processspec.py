@@ -2,6 +2,7 @@ import pytest
 from test.acceptance.sibtspec import SibtSpecFixture
 from py import path
 from test.common import relativeToProjectRoot
+from test.common.assertutil import strToTest
 import shutil
 import os
 import threading
@@ -207,10 +208,10 @@ def test_shouldHandleSigIntAndTermWithWifsignaledAndAnErrorMessage(fixture):
     trap 'echo from-syncer >&2; exit 1' INT TERM
     trap '' PIPE
     set +e
-    moreThanStdoutBuffer=10000
+    moreThanPythonStdoutBuffer=10000
 
     echo -n file-
-    head -c $moreThanStdoutBuffer /dev/zero | tr -c '' a
+    head -c $moreThanPythonStdoutBuffer /dev/zero | tr -c '' a
     echo -n -e '\0'
     sleep 2
   }""").write()
@@ -281,29 +282,61 @@ def test_shouldKeepIgnoringSignalsItsParentIgnored(fixture):
   fixture.stderr.shouldBeEmpty()
   fixture.shouldHaveExitedFromSignal(signal.SIGKILL)
 
-def test_shouldLogCleanUpAndRunErrorScriptUnderAnacronIfAndEvenIfSignaled(
-    fixture):
-  fixture.useActualSibtConfig()
+#TODO integrate with the spec below and test that Exec* output is logged
+#def test_shouldLogCleanUpAndRunErrorScriptUnderAnacronIfAndEvenIfSignaled(
+#    fixture):
+#  fixture.useActualSibtConfig()
+#
+#  logFile = fixture.tmpdir / "log-file"
+#  flagFile = fixture.tmpdir / "flag"
+#  tmpDir = fixture.tmpdir.mkdir("tmp")
+#
+#  syncer = fixture.conf.aSyncer("blocking").withContent(r"""#!bash-runner
+#  sync() {
+#    trap 'echo trapped; exit 1' INT
+#    echo foo
+#    sleep 3
+#    echo bar
+#  }""").write()
+#  rule = fixture.conf.realRule("rule", "anacron", "blocking").\
+#      withSchedOpts(LogFile=str(logFile), TmpDir=str(tmpDir),
+#          ExecOnFailure="touch {0}".format(flagFile)).write()
+#
+#  fixture.afterSeconds(0.3, fixture.sigIntToProcessGroup)
+#  fixture.runSibtAsAProcess("schedule", rule.name)
+#  time.sleep(0.3)
+#
+#  assert os.path.isfile(str(flagFile))
+#  strToTest(logFile.read()).shouldInclude("trapped", "SIGINT")
+#  assert len(tmpDir.listdir()) == 0
 
-  logFile = fixture.tmpdir / "log-file"
-  flagFile = fixture.tmpdir / "flag"
-  tmpDir = fixture.tmpdir.mkdir("tmp")
-
-  syncer = fixture.conf.aSyncer("blocking").withContent(r"""#!bash-runner
-  sync() {
-    trap 'echo trapped; exit 1' INT
+def test_shouldFinishLoggingSchedulingStatisticsEvenIfSignaled(fixture):
+  syncer = fixture.conf.aSyncer("blocking").withContent(r"""#!/usr/bin/env bash
+  if [ "$1" = sync ]; then
+    trap 'sleep 0.1; echo trapped; exit 1' INT
     echo foo
-    sleep 20
-    echo bar
-  }""").write()
-  rule = fixture.conf.realRule("rule", "anacron", "blocking").\
-      withSchedOpts(LogFile=str(logFile), TmpDir=str(tmpDir),
-          ExecOnFailure="touch {0}".format(flagFile)).write()
+    sleep 3
+  else
+    exit 200
+  fi
+  """).write()
+
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
   fixture.afterSeconds(0.3, fixture.sigIntToProcessGroup)
-  fixture.runSibtAsAProcess("schedule", rule.name)
-  time.sleep(0.1)
+  fixture.runSibtAsAProcess("execute-rule", rule.name)
 
-  assert os.path.isfile(str(flagFile))
-  strToTest(logFile.read()).shouldInclude("trapped", "SIGINT")
-  assert len(tmpDir.listdir()) == 0
+  from sibt.api import openLog
+
+  logging = None
+  for i in range(100):
+    time.sleep(0.05)
+    logging = openLog(fixture.paths, sibtSysPaths=None).loggingsOfRules(
+        "*")[rule.name][0]
+    if logging.finished:
+      break
+
+  assert logging.finished
+  assert not logging.succeeded
+  strToTest(logging.output).shouldInclude(
+      "foo\ntrapped\n", "SIGINT")

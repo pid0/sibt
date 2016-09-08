@@ -9,7 +9,7 @@ import re
 from datetime import timedelta
 
 availableSharedOptions = ["s AllowedHours", "f TmpDir"]
-availableOptions = ["t Interval", "f LogFile", "s ExecOnFailure", "b Syslog"]
+availableOptions = ["t Interval", "s ExecOnFailure"]
 
 CommonFileNamePrefix = "sibt-anacron-"
 TabPrefix = CommonFileNamePrefix + "tab-"
@@ -73,6 +73,9 @@ class Anacron(object):
     ret.extend(self.checkOptionOfEachScheduling(schedulings, "ExecOnFailure",
       self.checkExecOnFailureSyntax))
 
+    for scheduling in schedulings:
+      self.getIntervalInDays(scheduling)
+
     return ret
 
   def checkOptionOfEachScheduling(self, schedulings, optionName, checkFunc):
@@ -109,28 +112,17 @@ class Anacron(object):
 trap '' INT TERM
 declare -a sibtProgram=({sibtProg})
 ruleName="$1"
-logFile="$2"
-execOnFailure="$3"
-syslog="$4"
-syslogTestOpts="$5"
-declare -a sibtCall=("${sibtProgram[@]}" sync-uncontrolled -- "$ruleName")
+execOnFailure="$2"
+declare -a sibtCall=("${sibtProgram[@]}" execute-rule -- "$ruleName")
 
 set -o pipefail
 
-logCommand=tee
-if [ $syslog = 1 ]; then
-  logCommand+=' >(logger -t sibt $syslogTestOpts)'
-fi
-if [ -n "$logFile" ]; then
-  logCommand+=' >(cat >>"$logFile")'
-fi
-
-(trap - INT TERM; "${sibtCall[@]}") 2>&1 | eval $logCommand
+(trap - INT TERM; "${sibtCall[@]}")
 exitCode=$?
 
 if [ $exitCode != 0 ]; then
   r="$ruleName"
-  eval "$execOnFailure" | eval $logCommand
+  eval "$execOnFailure"
 fi
 exit $exitCode""".replace("{sibtProg}", " ".join(quoted(word) for word in 
   self.sibtCall)))
@@ -144,10 +136,7 @@ exit $exitCode""".replace("{sibtProg}", " ".join(quoted(word) for word in
         "bash",
         quoted(scriptPath),
         scheduling.ruleName,
-        quotedOpt(scheduling.options, "LogFile"),
-        quotedOpt(scheduling.options, "ExecOnFailure"),
-        "1" if scheduling.options.get("Syslog", False) else "0",
-        quotedOpt(scheduling.options, "SyslogTestOpts")]:
+        quotedOpt(scheduling.options, "ExecOnFailure")]:
       tabFile.write(field)
       tabFile.write(" ")
 

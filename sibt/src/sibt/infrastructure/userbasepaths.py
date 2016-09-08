@@ -2,10 +2,13 @@ import pwd
 import os.path
 import os
 
+def _sibtSubDir(parentDir):
+  return os.path.join(parentDir, "sibt")
+
 class UserBasePaths(object):
   def __init__(self, uid):
     self._uid = uid
-    self.readonlyDir = "/usr/share"
+    self.readonlyDir = _sibtSubDir("/usr/share")
 
   @classmethod
   def forCurrentUser(clazz):
@@ -17,14 +20,14 @@ class UserBasePaths(object):
   @property
   def varDir(self):
     if self.isRoot():
-      return "/var"
+      return _sibtSubDir("/var/lib")
     else:
       return os.path.join(self.getUserSibtDir(), "var")
 
   @property
   def configDir(self):
     if self.isRoot():
-      return "/etc"
+      return _sibtSubDir("/etc")
     else:
       return os.path.join(self.getUserSibtDir(), "config")
 

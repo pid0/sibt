@@ -8,6 +8,7 @@ class EmptyRepo(object):
   def __init__(self):
     self.enabledNames = []
     self.disabledNames = []
+    self.names = []
 
 class RuleNameMatch(object):
   def __init__(self, isDirect, isSysRule, name):
@@ -29,12 +30,13 @@ def _matchNamesAgainstPattern(pattern, enabledNames, disabledNames,
       fnmatchcase(name, pattern)]
 
 class RulesFinder(object):
-  def __init__(self, configRepo, sysRuleFilter):
-    self.configRepo = configRepo
+  def __init__(self, userRules, sysRules, sysRuleFilter):
+    self.userRules = userRules
+    self.sysRules = sysRules
     self.sysRuleFilter = sysRuleFilter
 
   def getSyncRule(self, name):
-    return self.configRepo.userRules.getRule(name, keepUnloaded=False)
+    return self.userRules.getRule(name, keepUnloaded=False)
 
   def findRulesByPatterns(self, patterns, onlySyncRules, 
       keepUnloadedRules=False):
@@ -57,10 +59,9 @@ class RulesFinder(object):
 
   def _findMatchesInBothRepos(self, onlySyncRules, patterns, 
       matchAgainstDisabled):
-    userRules = self.configRepo.userRules
-    sysRules = EmptyRepo() if onlySyncRules else self.configRepo.sysRules
+    sysRules = EmptyRepo() if onlySyncRules else self.sysRules
     return (
-        self._findMatchesInRepo(userRules, patterns, matchAgainstDisabled, 
+        self._findMatchesInRepo(self.userRules, patterns, matchAgainstDisabled,
           False), 
         self._findMatchesInRepo(sysRules, patterns, matchAgainstDisabled, True))
 
@@ -82,23 +83,28 @@ class RulesFinder(object):
       try:
         rule = self._findRuleByName(match.name, keepUnloadedRules)
       except MissingConfigValuesException:
-        if match.isDirect:
+        if match.isDirect or self._getUnloadedRule(match.name).enabled:
           raise
         continue
       except NotReadableException:
         if match.isDirect or not match.isSysRule:
           raise
         continue
+
       if match.isSysRule and not match.isDirect and \
           not self.sysRuleFilter(rule):
         continue
       yield rule
 
   def _findRuleByName(self, name, keepUnloadedRule):
-    if name in self.configRepo.userRules.names:
-      return self.configRepo.userRules.getRule(name, keepUnloadedRule)
-    else:
-      return self.configRepo.sysRules.getRule(name, keepUnloadedRule)
+    repo = self.userRules if name in self.userRules.names else \
+        self.sysRules
+    return repo.getRule(name, keepUnloadedRule)
+
+  def _getUnloadedRule(self, name):
+    repo = self.userRules if name in self.userRules.names else \
+        self.sysRules
+    return repo.getRuleWithoutLoading(name)
 
 def _flatten(xss):
   return (x for xs in xss for x in xs)

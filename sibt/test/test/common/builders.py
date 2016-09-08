@@ -14,6 +14,8 @@ from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure import types
 from sibt.domain.synchronizeroptions import SynchronizerOptions 
 from sibt.domain.ruleset import RuleSet
+from sibt.domain.schedulinglogging import SchedulingLogging, SchedulingResult
+from test.common.presetcyclingclock import PresetCyclingClock
 
 def randstring():
   return str(random())[2:] 
@@ -55,7 +57,34 @@ def existingRunner(tmpdir, name):
   return str(path), Runner(name, str(path))
 
 def anyUTCDateTime():
-  return datetime.now(timezone.utc) - timedelta(days=330)
+  return datetime.now(timezone.utc) - timedelta(days=int(random() * 330))
+
+def orderedDateTimes(numberOfDateTimes):
+  return [
+      datetime(2000, 1, 1, 0, 0, 0, 0, timezone.utc),
+      datetime(2002, 12, 31, 23, 59, 59, 0, timezone.utc),
+      datetime(2003, 12, 31, 23, 59, 59, 0, timezone.utc),
+      datetime(2005, 12, 31, 23, 59, 59, 0, timezone.utc)][:numberOfDateTimes]
+
+def clockWithOrderedTimes(numberOfDateTimes):
+  return PresetCyclingClock(*orderedDateTimes(numberOfDateTimes))
+
+def constantTimeClock(dateTime=None):
+  if dateTime is None:
+    dateTime = anyUTCDateTime()
+  return PresetCyclingClock(dateTime)
+
+def schedulingResult(endTime=None):
+  if endTime is None:
+    endTime = anyUTCDateTime()
+
+  return SchedulingResult(endTime, True)
+
+def schedulingLogging(startTime=None):
+  if startTime is None:
+    startTime = anyUTCDateTime()
+
+  return SchedulingLogging(startTime, "foobarüã", schedulingResult())
 
 def port(supportedProtocols=["file"], isWrittenTo=False):
   return Port(supportedProtocols, isWrittenTo)

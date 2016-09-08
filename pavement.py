@@ -2,6 +2,7 @@ from paver.easy import *
 import paver.doctools
 from paver.setuputils import install_distutils_tasks, find_packages
 import sys
+import shutil
 
 import pytest
 import os
@@ -52,10 +53,13 @@ def prependToPythonPath(newPath):
 
 @task
 def setup_testing():
+  # Note: pytest automatically imports the test root directory.
   prependToPythonPath(os.path.abspath("sibt/src"))
+
   testTempDir = local(tempfile.gettempdir()) / "sibt-test-temp-dir"
-  if not os.path.isdir(str(testTempDir)):
-    testTempDir.mkdir()
+  if os.path.isdir(str(testTempDir)):
+    shutil.rmtree(str(testTempDir))
+  testTempDir.mkdir()
   testTempDir.chdir()
   
 @task

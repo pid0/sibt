@@ -14,6 +14,7 @@ class DirTreeNormalizer(object):
         self.paths.synchronizersDir,
         self.paths.schedulersDir,
         self.paths.enabledDir,
-        self.paths.varDir]:
+        self.paths.varDir,
+        self.paths.logDir]:
       self._createIfDoesntExist(path)
 

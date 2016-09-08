@@ -20,11 +20,14 @@ from sibt.application.exceptions import RuleNameMismatchException
 from sibt.infrastructure.runnablefilefunctionmodule import \
     RunnableFileFunctionModule
 from sibt.configuration.optionvaluesparser import OptionValuesParser
+from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
+from sibt.application.rulesfinder import RulesFinder
 from collections import namedtuple
 import os
 
 SchedulerArgs = namedtuple("SchedulerArgs", [
     "sibtInvocation", "varDir", "logger"])
+SysRulePrefix = "+"
 
 def readSynchronizers(dirs, processRunner):
   def load(path, fileName):
@@ -68,18 +71,42 @@ def createHashbangAwareProcessRunner(runnersDir, processRunner):
       lambda path, fileName: Runner(fileName, path))
   return HashbangAwareProcessRunner(runners, processRunner)
   
+def readRulesIntoFinder(paths, sysPaths, factory, sysRuleFilter,
+    readUserConf=True, readSysConf=True):
+  userRules = [] if not readUserConf else readRuleLoaders(paths.rulesDir, 
+      paths.enabledDir, factory, "")
+  sysRules = [] if not readSysConf else readRuleLoaders(sysPaths.rulesDir, 
+      sysPaths.enabledDir, factory, "+")
+
+  return RulesFinder(RulesRepo(userRules), RulesRepo(sysRules), sysRuleFilter)
+
+def isSysRule(rule):
+  return rule.name.startswith(SysRulePrefix)
+
+class _EmptyLog(object):
+  def loggingsOfRules(self, _):
+    return dict()
+
+def openLogs(paths, sysPaths):
+  userLog = sysLog = _EmptyLog()
+  if paths is not None:
+    userLog = FilesDBSchedulingsLog(paths.logDir)
+  if sysPaths is not None:
+    sysLog = FilesDBSchedulingsLog(sysPaths.logDir, 
+        ruleNamePrefix=SysRulePrefix)
+  return userLog, sysLog
 
 class ConfigRepo(object):
-  def __init__(self, schedulers, synchronizers, lazyUserRules, lazySysRules):
+  def __init__(self, schedulers, synchronizers, rulesFinder, userLog):
     self.schedulers = schedulers
     self.synchronizers = synchronizers
-    self.userRules = RulesRepo(lazyUserRules)
-    self.sysRules = RulesRepo(lazySysRules)
+    self.rulesFinder = rulesFinder
+    self.userLog = userLog
 
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
       moduleLoader, sibtInvocation, schedulerWrapper, 
-      makeErrorLoggerWithPrefix):
+      makeErrorLoggerWithPrefix, sysRuleFilter):
     processRunnerWrapper = createHashbangAwareProcessRunner(paths.runnersDir,
         processRunner)
 
@@ -93,13 +120,16 @@ class ConfigRepo(object):
         SchedulerArgs(sibtInvocation, None, None), paths,
         makeErrorLoggerWithPrefix)
 
+    #userLog, sysLog = openLogs(paths, sysPaths)
+    userLog = FilesDBSchedulingsLog(paths.logDir)
+    #sysLog = FilesDBSchedulingsLog(paths.logDir)
+
     factory = RuleFromStringOptionsReader(RuleFactory(),
         OptionValuesParser(), schedulers, synchronizers)
-    userRules = readRuleLoaders(paths.rulesDir, paths.enabledDir, factory, "")
-    sysRules = [] if not readSysConf else readRuleLoaders(sysPaths.rulesDir, 
-        sysPaths.enabledDir, factory, "+")
+    rulesFinder = readRulesIntoFinder(paths, sysPaths, factory, sysRuleFilter,
+        readSysConf=readSysConf)
 
-    return clazz(schedulers, synchronizers, userRules, sysRules)
+    return clazz(schedulers, synchronizers, rulesFinder, userLog)
 
 class RulesRepo(object):
   def __init__(self, lazyRules):
@@ -110,15 +140,19 @@ class RulesRepo(object):
     self.disabledNames = [rule.name for rule in lazyRules if not rule.enabled]
   
   def getRule(self, name, keepUnloaded):
+    rule = self.getRuleWithoutLoading(name)
+    if not self._ruleRead[name]:
+      try:
+        self._namesToRules[name] = rule.load()
+        self._ruleRead[name] = True
+      except MissingConfigValuesException:
+        if not rule.enabled and keepUnloaded:
+          return rule
+        raise
+    return self.getRuleWithoutLoading(name)
+  
+  def getRuleWithoutLoading(self, name):
     try:
-      if not self._ruleRead[name]:
-        try:
-          self._namesToRules[name] = self._namesToRules[name].load()
-          self._ruleRead[name] = True
-        except MissingConfigValuesException:
-          if self._namesToRules[name].enabled or not keepUnloaded:
-            raise
       return self._namesToRules[name]
     except KeyError:
       raise RuleNameMismatchException(name)
-    return [self.getRule(name, keepUnloadedRules) for name in self.names]

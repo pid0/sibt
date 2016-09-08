@@ -22,9 +22,14 @@ from test.acceptance.synchronizerbuilder import SynchronizerBuilder
 from test.acceptance.schedulerbuilder import SchedulerBuilder
 from test.acceptance.rulebuilder import RuleBuilder
 from test.acceptance.configscenarioconstructor import ConfigScenarioConstructor
-from datetime import timedelta
+from test.common.builders import clockWithOrderedTimes, constantTimeClock, \
+    anyUTCDateTime
+from test.common.rfc3164syslogserver import Rfc3164SyslogServer
+from test.sibt.infrastructure.utillinuxsyslogger_test import loggerOptions
+from datetime import timedelta, datetime, timezone
 
 Utc0 = "1970-01-01T00:00:00"
+TestPort = 5326
 
 class SibtSpecFixture(object):
   def __init__(self, tmpdir, capfd):
@@ -51,12 +56,34 @@ class SibtSpecFixture(object):
     self.conf = ConfigScenarioConstructor(self.confFolders, aSynchronizer,
         aScheduler, aRule)
 
+    self.clock = constantTimeClock()
+    self.callToSyncUncontrolled = None
+
+    self.syslogOptions = loggerOptions(TestPort)
+
   @property
   def stdout(self):
     return self.result.stdout
   @property
   def stderr(self):
     return self.result.stderr
+
+  def writeScript(self, content):
+    path = self.tmpdir / "script"
+    path.write(content)
+    path.chmod(0o700)
+    return str(path)
+
+  def getSingleLogging(self, paths, sysPaths, ruleName):
+    from sibt.api import openLog
+    log = openLog(sibtPaths=paths, sibtSysPaths=sysPaths)
+    return log.loggingsOfRules("*")[ruleName][0]
+
+  def setClock(self, clock):
+    self.clock = clock
+
+  def replaceSyncUncontrolledCallsWith(self, newCallToSync):
+    self.callToSyncUncontrolled = lambda _: [newCallToSync]
 
   def shouldHaveExitedWithStatus(self, expectedStatus):
     if self.result.exitStatus != expectedStatus and expectedStatus == 0:
@@ -108,7 +135,8 @@ class SibtSpecFixture(object):
         len(self.mockedSchedulers) == 0 else \
         MockedModuleLoader(self.mockedSchedulers)
     exitStatus = main.run(arguments, stdout, stderr, processRunner,
-      self.paths, self.sysPaths, "testUser", self.userId, moduleLoader)
+      self.paths, self.sysPaths, "testUser", self.userId, moduleLoader,
+      self.clock, self.callToSyncUncontrolled)
 
     if len(self.mockedSchedulers) > 0:
       try:
@@ -354,13 +382,13 @@ def test_shouldPassParsedAndFormattedOptionsToSyncersAndSchedsBasedOnType(
   fixture.runSibtCheckingExecs("sync-uncontrolled", rule.name)
 
 def test_shouldFailIfOptionValuesHaveAnInvalidSyntax(fixture):
-  sched = fixture.conf.aSched().withOptions("b Syslog").write()
+  sched = fixture.conf.aSched().withOptions("b StopAfterFailure").write()
   syncer = fixture.conf.aSyncer().allowingSetupCallsExceptOptions().\
       withOptions("p NoOfCopies").write()
 
   baseRule = fixture.conf.aRule().\
       withOpts(LocCheckLevel="None").\
-      withSchedOpts(Syslog="Yes").\
+      withSchedOpts(StopAfterFailure="Yes").\
       withSyncerOpts(NoOfCopies="3").\
       withScheduler(sched).\
       withSynchronizer(syncer).write()
@@ -378,10 +406,12 @@ def test_shouldFailIfOptionValuesHaveAnInvalidSyntax(fixture):
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("pars", "opt", "LocCheckLevel", "dffd")
 
-  baseRule.withSyncerOpts(NoOfCopies="-5").withSchedOpts(Syslog="hmm").write()
+  baseRule.withSyncerOpts(NoOfCopies="-5").withSchedOpts(
+      StopAfterFailure="hmm").write()
   run()
   fixture.shouldHaveExitedWithStatus(1)
-  fixture.stderr.shouldInclude("NoOfCopies", "negative", "Syslog", "hmm")
+  fixture.stderr.shouldInclude("NoOfCopies", "negative", "StopAfterFailure", 
+      "hmm")
 
 def test_shouldNicelyFormatOptionValuesBasedOnTypeSoTheyCouldBeParsed(fixture):
   syncer = fixture.conf.aSyncer().allowingSetupCallsExceptOptions().\
@@ -482,7 +512,7 @@ def test_shouldGiveEachSchedulerAnUnchangingVarDirectory(fixture):
   sched.mock()[0].expectCalls(mock.callMatching("init", secondCall))
   fixture.runSibt("list", "-f")
 
-def test_shouldBeAbleToMatchRuleNameArgsAgainstListOfEnabledRulesAndRunThemAll(
+def test_shouldScheduleEnabledRulesIfMatchedByPatternsAndDisabledOnesIfExactly(
     fixture):
   schedMock, sched = fixture.conf.aSched().mock()
 
@@ -614,14 +644,14 @@ Name = {syncer}
 Loc1={loc1}
 Loc2={loc2}
 [Scheduler]
-Syslog = yes""").enabled().write()
+StopAfterFailure = yes""").enabled().write()
 
   fixture.runSibt("show", "[actual]-rule")
   fixture.shouldHaveExitedWithStatus(0)
   fixture.stdout.shouldIncludeLinePatterns(
       "*[[]actual]-rule*",
       "*Interval = 3w*",
-      "*Syslog = yes*",
+      "*StopAfterFailure = yes*",
       "*Loc1 =*")
 
   fixture.runSibt("show", "header.inc")
@@ -726,6 +756,14 @@ def test_shouldIgnoreOptionInterpolationErrorsWhenMatchingMultipleDisabledRules(
   fixture.runSibtCheckingExecs("schedule", "not-enough-options")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("instanceName")
+
+def test_shouldAlwaysTreatEnabledRulesWithMissingOptionsAsErrors(fixture):
+  fixture.conf.ruleWithSchedAndSyncer().enabled().\
+      withLoc1("%(_missingOption)s").write()
+
+  fixture.runSibt("schedule", "*")
+  fixture.shouldHaveExitedWithStatus(1)
+  fixture.stderr.shouldInclude("missingOption")
 
 def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
     fixture):
@@ -1207,3 +1245,111 @@ def test_shouldNotScheduleIfAnyRuleDiffersFromTheOthersInASharedOption(fixture):
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("TmpFolder", "differ", "/tmp", "/var/tmp")
 
+def test_shouldProvideAccessToExecutionStatisticsViaAPythonInterface(fixture):
+  fixture.setClock(clockWithOrderedTimes(4))
+  firstTime, secondTime, thirdTime, fourthTime = fixture.clock.dateTimes
+
+  rule = fixture.conf.ruleWithSchedAndSyncer("rule").write()
+
+  script = """#!/usr/bin/env bash
+  if [ "$1" != {0} ]; then
+    exit
+  fi
+  echo {{0}}
+  echo on stderr >&2
+  exit {{1}}""".format(rule.name)
+
+  fixture.replaceSyncUncontrolledCallsWith(fixture.writeScript(script.format(
+    "normal", "0")))
+  fixture.runSibtWithRealStreamsAndExec("execute-rule", rule.name)
+
+  fixture.replaceSyncUncontrolledCallsWith(fixture.writeScript(script.format(
+    "second", "1")))
+  fixture.runSibtWithRealStreamsAndExec("execute-rule", rule.name)
+  fixture.shouldHaveExitedWithStatus(3)
+  fixture.stderr.shouldBeEmpty()
+
+  from sibt.api import openLog
+
+#TODO executions, not loggings
+  log = openLog(sibtPaths=fixture.paths, sibtSysPaths=None)
+  iterToTest(log.loggingsOfRules("*")[rule.name]).shouldContainMatching(
+      lambda logging: 
+        logging.output == "normal\non stderr\n" and
+        logging.startTime == firstTime and
+        logging.endTime == secondTime and
+        logging.succeeded == True,
+      lambda logging: 
+        logging.output == "second\non stderr\n" and
+        logging.startTime == thirdTime and
+        logging.endTime == fourthTime and
+        logging.succeeded == False)
+
+def test_shouldReadSysAlongsideUserStatistics(fixture):
+  time = anyUTCDateTime()
+  fixture.setClock(constantTimeClock(time))
+
+  fixture.confFolders.createSysFolders()
+  fixture.setRootUserId()
+
+  fixture.conf.ruleWithSchedAndSyncer("shocked").write()
+
+  fixture.replaceSyncUncontrolledCallsWith("true")
+  fixture.runSibtWithRealStreamsAndExec("execute-rule", "shocked")
+
+  emptyPaths = fixture.sysPaths
+
+  fixture.setNormalUserId()
+  from sibt.api import openLog
+  assert openLog(sibtPaths=emptyPaths, sibtSysPaths=fixture.paths).\
+      loggingsOfRules("*")["+shocked"][0].endTime == time
+
+def test_shouldAllowLoggingOutputOfExecutionsToOtherPlacesAsWell(fixture):
+  script = fixture.writeScript(r"""#!/usr/bin/env bash
+  echo foo
+  echo bar >&2
+  """)
+  fixture.replaceSyncUncontrolledCallsWith(script)
+
+  logFile = fixture.tmpdir / "logfile"
+
+  rule = fixture.conf.ruleWithSchedAndSyncer("them-all").withSchedOpts(
+      LogFile=str(logFile),
+      Stderr="Yes",
+      Syslog="True",
+      SyslogOptions=fixture.syslogOptions).write()
+
+  with Rfc3164SyslogServer(TestPort) as syslogServer:
+    fixture.runSibtWithRealStreamsAndExec("execute-rule", rule.name)
+  fixture.shouldHaveExitedWithStatus(0)
+
+  fixture.stderr.shouldBe("foo\nbar\n")
+
+  strToTest(logFile.read()).shouldIncludeLinePatterns(
+      "*them-all*foo", "*them-all*bar")
+
+  iterToTest(syslogServer.packets).shouldContainMatching(
+      lambda packet: b"them-all: foo" in packet.message,
+      lambda packet: b"them-all: bar" in packet.message and
+        packet.facility == "user" and
+        packet.severity == "info" and
+        packet.tag == b"sibt")
+
+  from sibt.api import openLog
+  log = openLog(sibtPaths=fixture.paths, sibtSysPaths=None)
+  assert log.loggingsOfRules("*")[rule.name][0].output == "foo\nbar\n"
+
+def test_shouldLogInternalExceptionsToo(fixture):
+  logFile = fixture.tmpdir / "logfile"
+  logFile.write("")
+  logFile.chmod(0o400)
+
+  rule = fixture.conf.ruleWithSchedAndSyncer().withSchedOpts(
+      LogFile=str(logFile)).write()
+
+  with pytest.raises(PermissionError):
+    fixture.runSibt("execute-rule", rule.name)
+
+#singleExecution
+  strToTest(fixture.getSingleLogging(fixture.paths, None, rule.name).output).\
+      shouldInclude("permission denied")

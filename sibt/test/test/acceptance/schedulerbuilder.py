@@ -32,7 +32,7 @@ class SchedulerBuilder(ConfigObjectBuilder):
         runFunc=lambda *args: assertFalse())
 
   def withTestOptions(self):
-    return self.withOptions("Interval", "Syslog")
+    return self.withOptions("Interval", "StopAfterFailure")
 
   def withOptions(self, *newOptions):
     return self._withParams(options=list(newOptions))

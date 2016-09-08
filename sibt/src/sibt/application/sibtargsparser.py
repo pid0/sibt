@@ -74,6 +74,9 @@ class SibtArgsParser(object):
       SubGroup("disable", 
         PosArg("rule-name")),
 
+      SubGroup("execute-rule",
+        PosArg("rule-name"), description=None),
+
       default="list")])
 
   def parseArgs(self, args, stdout, stderr):

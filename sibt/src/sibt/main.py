@@ -29,9 +29,16 @@ from sibt.application.dryscheduler import DryScheduler
 from sibt.configuration.optionvaluesparser import parseLocation
 from sibt.domain.ruleset import RuleSet
 from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
+from sibt.application.outputcapturingscheduler import OutputCapturingScheduler
+from sibt.infrastructure.currenttimeclock import CurrentTimeClock
 import signal
 import os
 import getpass
+from datetime import datetime, timezone
+from contextlib import contextmanager
+
+from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
+import subprocess
 
 class FatalSignalException(Exception):
   def __init__(self, signalNumber, childExitStatus):
@@ -72,8 +79,30 @@ def testFatalSignalDispositions():
   for signalNo in FatalSignals:
     signalIgnored[signalNo] = signal.getsignal(signalNo) == signal.SIG_IGN
 
+@contextmanager
+def fatalSignalsIgnored():
+  setFatalSignalsHandler(signal.SIG_IGN)
+  try:
+    yield
+  finally:
+    setFatalSignalsHandler(signalHandler(raiseException=True))
+
+def logSubProcess(log, subProcessArgs):
+  with fatalSignalsIgnored():
+    streamRead, streamWrite = os.pipe()
+
+    with open(streamRead, "rb") as outputReader:
+      with subprocess.Popen(subProcessArgs,
+          stdout=streamWrite, stderr=streamWrite, 
+          preexec_fn=lambda: setFatalSignalsHandler(signal.SIG_DFL)) as process:
+        os.close(streamWrite)
+        for chunk in iter(lambda: outputReader.read1(2**10), b""):
+          log.write(chunk)
+
+    return process.returncode
+
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
-    userName, userId, moduleLoader):
+    userName, userId, moduleLoader, clock, callToSyncUncontrolled):
   testFatalSignalDispositions()
   setFatalSignalsHandler(signalHandler(raiseException=True))
 
@@ -94,23 +123,24 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     useDrySchedulers = args.options.get("dry", False)
 
+    currentSibtCall = [sys.argv[0]] + args.globalOptionsArgs
     configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
-        moduleLoader, [sys.argv[0]] + args.globalOptionsArgs,
-        functools.partial(wrapScheduler, useDrySchedulers, stdout),
-        makeErrorLogger)
-    rulesFinder = RulesFinder(configRepo, (lambda rule: True) if \
-        args.options.get("show-sys", False) else \
-        (lambda rule: rule.options["AllowedForUsers"] == userName))
+        moduleLoader, currentSibtCall,
+        functools.partial(wrapScheduler, useDrySchedulers, stdout, stderr, 
+          clock),
+        makeErrorLogger,
+        (lambda rule: True) if args.options.get("show-sys", False) else \
+            (lambda rule: rule.options["AllowedForUsers"] == userName))
     validator = constructRulesValidator()
 
     if args.action in ["schedule", "check"]:
-      matchingRuleSet = RuleSet(rulesFinder.findRulesByPatterns(
+      matchingRuleSet = RuleSet(configRepo.rulesFinder.findRulesByPatterns(
           args.options["rule-patterns"], onlySyncRules=True))
-    if args.action in ["sync-uncontrolled"]:
-      rule = rulesFinder.getSyncRule(args.options["rule-name"])
+    if args.action in ["sync-uncontrolled", "execute-rule"]:
+      rule = configRepo.rulesFinder.getSyncRule(args.options["rule-name"])
 
     if args.action == "show":
-      matchingRules = rulesFinder.findRulesByPatterns(
+      matchingRules = configRepo.rulesFinder.findRulesByPatterns(
           args.options["rule-patterns"], onlySyncRules=False, 
           keepUnloadedRules=False)
       for i, rule in enumerate(matchingRules):
@@ -154,13 +184,32 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         printKnownException(ex, errorLogger, 1)
         return 1
 
+    elif args.action == "execute-rule":
+      log = FilesDBSchedulingsLog(paths.logDir)
+
+      def runSibtSyncUncontrolled(logFile):
+        return logSubProcess(logFile, 
+            callToSyncUncontrolled(currentSibtCall) + [rule.name]) == 0
+
+      syncUncontrolledSucceeded = [False]
+      def makeSchedulerExecute(logFile):
+        succeeded = rule.scheduler.execute(rule.scheduling, 
+            logFile, runSibtSyncUncontrolled)
+        syncUncontrolledSucceeded[0] = succeeded
+        return succeeded
+
+      log.addLogging(rule.name, clock, makeSchedulerExecute)
+
+      if not syncUncontrolledSucceeded[0]:
+        return 3
+
     elif args.action == "list":
-      rules = rulesFinder.findRulesByPatterns(
+      rules = configRepo.rulesFinder.findRulesByPatterns(
         args.options["rule-patterns"], onlySyncRules=False, 
         keepUnloadedRules=True) if \
         args.options["command2"] == "rules" and \
         len(args.options["rule-patterns"]) > 0 else \
-        rulesFinder.getAll(keepUnloadedRules=True)
+        configRepo.rulesFinder.getAll(keepUnloadedRules=True)
       listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
           "full" if args.options["command2"] == "rules" and \
               args.options["full"] else args.options["command2"], 
@@ -168,7 +217,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           configRepo.synchronizers)
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
-      for rule in rulesFinder.getAll():
+      for rule in configRepo.rulesFinder.getAll():
         for version in rule.versionsOf(locationFromArg(args.options["file"])):
           string = version.strWithUTCW3C if args.options["utc"] else \
               version.strWithLocalW3C
@@ -282,8 +331,9 @@ def printValidationErrors(printFuncForRuleNames, printFunc, ruleSet, errors):
   for error in errors:
     printFunc(error)
 
-def wrapScheduler(useDrySchedulers, stdout, sched):
-  return DryScheduler(sched, stdout) if useDrySchedulers else sched
+def wrapScheduler(useDrySchedulers, stdout, stderr, clock, sched):
+  ret = DryScheduler(sched, stdout) if useDrySchedulers else sched
+  return OutputCapturingScheduler(ret, clock, stderr)
 
 def enableRule(output, baseName, paths, instanceName, configLines):
   instFilePath = os.path.join(paths.enabledDir, instanceName + "@" + baseName)
@@ -320,5 +370,7 @@ def main():
       CoprocessRunner(beforeSubprocessRun, afterSubprocessRun), 
       Paths(UserBasePaths.forCurrentUser()),
       Paths(UserBasePaths(0)), getpass.getuser(), os.getuid(), 
-      PyModuleLoader("schedulers"))
+      PyModuleLoader("schedulers"),
+      CurrentTimeClock(),
+      lambda currentSibtCall: currentSibtCall + ["sync-uncontrolled", "--"])
   sys.exit(exitStatus)
