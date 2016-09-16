@@ -1,11 +1,12 @@
 class CallParams(object):
-  def __init__(self, returnValue, anyNumber):
+  def __init__(self, returnValue, anyNumber, sideEffectFunc):
     self.returnValue = returnValue
     self.anyNumber = anyNumber
+    self.sideEffectFunc = sideEffectFunc
 
   @classmethod
-  def construct(clazz, ret=None, anyNumber=False):
-    return clazz(ret, anyNumber)
+  def construct(clazz, ret=None, sideEffectFunc=None, anyNumber=False):
+    return clazz(ret, anyNumber, sideEffectFunc)
 
   def __repr__(self):
     return "CallParams{0}".format((self.returnValue, self.anyNumber))
@@ -62,6 +63,7 @@ class ExpectationGroup(object):
 class Mock(object):
   def __init__(self, name):
     self._expectationGroups = []
+    self._expectedFuncNames = []
     self.__name = name
 
   def clearExpectedCalls(self):
@@ -74,11 +76,16 @@ class Mock(object):
     self._expectationGroups += [ExpectationGroup(
       list(finiteCountExpectations), not inAnyOrder),
       ExpectationGroup(anyNumberExpectations, False)]
+    self._updateExpectedNames()
 
   def expectCallsInOrder(self, *expectedCalls):
     self.expectCalls(*expectedCalls, inAnyOrder=False)
   def expectCallsInAnyOrder(self, *expectedCalls):
     self.expectCalls(*expectedCalls, inAnyOrder=True)
+
+  def _updateExpectedNames(self):
+    self._expectedFuncNames = [call.funcName for group in 
+        self._expectationGroups for call in group.expectedCalls]
 
   def checkExpectedCalls(self):
     remainingCalls = [call for group in self._expectationGroups for call in
@@ -88,11 +95,7 @@ class Mock(object):
         len(remainingCalls), descriptions)
 
   def __getattribute__(self, name):
-    expectationGroups = object.__getattribute__(self, "_expectationGroups")
-    funcNames = [call.funcName for group in expectationGroups
-        for call in group.expectedCalls]
-
-    if name in funcNames:
+    if name in object.__getattribute__(self, "_expectedFuncNames"):
       raise AttributeError
 
     return object.__getattribute__(self, name)
@@ -122,9 +125,14 @@ class Mock(object):
           group.expectedCalls.remove(nextCall)
         returnValue = nextCall.params.returnValue if returnValue is None else\
             returnValue
+        if nextCall.params.sideEffectFunc is not None:
+          nextCall.params.sideEffectFunc()
 
       assert callMatching, message
       return returnValue
+
+    if name not in self._expectedFuncNames:
+      raise AttributeError
 
     return callHandler
 

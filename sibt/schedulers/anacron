@@ -1,4 +1,5 @@
 from sibt.infrastructure.coprocessrunner import CoprocessRunner
+from sibt.infrastructure.schedulerhelper import checkOptionOfEachScheduling
 import os
 import tempfile
 from contextlib import contextmanager
@@ -9,11 +10,10 @@ import re
 from datetime import timedelta
 
 availableSharedOptions = ["s AllowedHours", "f TmpDir"]
-availableOptions = ["t Interval", "s ExecOnFailure"]
+availableOptions = ["t Interval"]
 
 CommonFileNamePrefix = "sibt-anacron-"
 TabPrefix = CommonFileNamePrefix + "tab-"
-ScriptPrefix = CommonFileNamePrefix + "script-"
 AllowedHoursRegex = re.compile("([0-9]+)-([0-9]+)")
 SecondsInADay = 86400
 
@@ -46,14 +46,12 @@ class Anacron(object):
   def run(self, schedulings):
     tmpDir = str(schedulings[0].options.get("TmpDir", tempfile.gettempdir()))
 
-    with writeAndCloseTemporaryFile(tmpDir, ScriptPrefix, 
-        self.writeScript) as scriptPath:
-      with writeAndCloseTemporaryFile(tmpDir, TabPrefix, functools.partial(
-          self.writeTabFile, scriptPath, schedulings)) as tabPath:
-        self.processRunner.execute("anacron", "-t", tabPath,
-            "-S", self.spoolDir, "-d")
+    with writeAndCloseTemporaryFile(tmpDir, TabPrefix, functools.partial(
+        self.writeTabFile, schedulings)) as tabPath:
+      self.processRunner.execute("anacron", "-t", tabPath,
+          "-S", self.spoolDir, "-d")
 
-  def writeTabFile(self, scriptPath, schedulings, tabFile):
+  def writeTabFile(self, schedulings, tabFile):
     for scheduling in schedulings:
       if "AllowedHours" in scheduling.options:
         tabFile.write("START_HOURS_RANGE={0}".format(
@@ -61,32 +59,18 @@ class Anacron(object):
         break
 
     for scheduling in schedulings:
-      self.writeTabEntry(scriptPath, tabFile, scheduling)
+      self.writeTabEntry(tabFile, scheduling)
 
   def check(self, schedulings):
     ret = []
-    ret.extend(self.checkOptionOfEachScheduling(schedulings, "AllowedHours",
-      lambda setting, ruleName: None if self.hasCorrectAllowedHoursSyntax(
+    ret.extend(checkOptionOfEachScheduling(schedulings, "AllowedHours",
+      lambda _, setting, ruleName: None if self.hasCorrectAllowedHoursSyntax(
         setting) else "Syntax error in AllowedHours setting of ‘{0}’ (‘{1}’)".\
             format(ruleName, setting)))
-
-    ret.extend(self.checkOptionOfEachScheduling(schedulings, "ExecOnFailure",
-      self.checkExecOnFailureSyntax))
 
     for scheduling in schedulings:
       self.getIntervalInDays(scheduling)
 
-    return ret
-
-  def checkOptionOfEachScheduling(self, schedulings, optionName, checkFunc):
-    ret = []
-    for scheduling in schedulings:
-      if optionName not in scheduling.options:
-        continue
-      error = checkFunc(scheduling.options[optionName], 
-          scheduling.ruleName)
-      if error is not None:
-        ret.append(error)
     return ret
 
   def hasCorrectAllowedHoursSyntax(self, string):
@@ -97,58 +81,19 @@ class Anacron(object):
     endHour = int(regexMatch.group(2))
     return startHour < endHour and endHour < 25
 
-  def checkExecOnFailureSyntax(self, code, ruleName):
-    with subprocess.Popen(["bash", "-n", "-c", code + " | cat"], 
-        stderr=subprocess.PIPE) as process:
-      _, stderrBytes = process.communicate()
-      process.wait()
-    syntaxErrors = stderrBytes.decode()
-    if len(syntaxErrors) > 0:
-      return "syntax errors in ExecOnFailure code of ‘{0}’:\n{1}".format(
-        ruleName, syntaxErrors)
-
-  def writeScript(self, scriptFile):
-    scriptFile.write("""#!/usr/bin/env bash
-trap '' INT TERM
-declare -a sibtProgram=({sibtProg})
-ruleName="$1"
-execOnFailure="$2"
-declare -a sibtCall=("${sibtProgram[@]}" execute-rule -- "$ruleName")
-
-set -o pipefail
-
-(trap - INT TERM; "${sibtCall[@]}")
-exitCode=$?
-
-if [ $exitCode != 0 ]; then
-  r="$ruleName"
-  eval "$execOnFailure"
-fi
-exit $exitCode""".replace("{sibtProg}", " ".join(quoted(word) for word in 
-  self.sibtCall)))
-
-  def writeTabEntry(self, scriptPath, tabFile, scheduling):
-    for field in [
+  def writeTabEntry(self, tabFile, scheduling):
+    fields = [
         self.getIntervalInDays(scheduling),
         "0", 
-        scheduling.ruleName,
+        scheduling.ruleName]
+    fields += [quoted(word) for word in self.sibtCall]
+    fields += ["execute-rule", "--", quoted(scheduling.ruleName)]
 
-        "bash",
-        quoted(scriptPath),
-        scheduling.ruleName,
-        quotedOpt(scheduling.options, "ExecOnFailure")]:
+    for field in fields:
       tabFile.write(field)
       tabFile.write(" ")
 
     tabFile.write("\n")
-
-  def findFileName(self, folder, prefix):
-    counter = 1
-    ret = None
-    while ret is None or os.path.isfile(ret):
-      ret = os.path.join(folder, prefix + "-" + str(counter))
-      counter += 1
-    return ret
 
 @contextmanager
 def writeAndCloseTemporaryFile(tmpDir, prefix, writeFunc):

@@ -1,7 +1,7 @@
 from sibt.infrastructure import types
 from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
-from sibt.domain.schedulinglogging import SchedulingResult
+from sibt.application.execenvironment import ExecEnvironment
 
 from sibt.infrastructure.teelogger import TeeLogger
 from sibt.infrastructure.filelogger import FileLogger
@@ -30,7 +30,7 @@ class _FileLikeOutputWrapper(object):
   def __init__(self, output):
     self.output = output
 
-  def write(self, chunk):
+  def write(self, chunk, **kwargs):
     self.output.println(chunk.decode(), lineSeparator="")
 
 class OutputCapturingScheduler(object):
@@ -57,17 +57,19 @@ class OutputCapturingScheduler(object):
 
     return ret
 
-  def execute(self, scheduling, subLogger, runSibtSyncUncontrolled):
+  def execute(self, execEnv, scheduling):
     with TeeLogger(
-        _UnclosableFile(subLogger, respectIgnore=True),
+        _UnclosableFile(execEnv.binaryLogger, respectIgnore=True),
         *self._makeSubLoggersFor(scheduling)) as logger:
       try:
-        succeeded = runSibtSyncUncontrolled(logger)
-      except:
+        succeeded = self._wrapped.execute(execEnv.withLoggerReplaced(logger), 
+            scheduling)
+      except BaseException as ex:
         logger.write("internal exception when executing rule ‘{0}’:\n".format(
           scheduling.ruleName).encode(), severity="err", ignore=True)
-        logger.write(traceback.format_exc().encode(), severity="err", 
-            ignore=True)
+        message = traceback.format_exc() if isinstance(ex, Exception) else \
+            str(ex)
+        logger.write(message.encode(), severity="err", ignore=True)
         raise
 
       if not succeeded:
@@ -79,7 +81,6 @@ class OutputCapturingScheduler(object):
           scheduling.ruleName).encode(), severity="notice", ignore=True)
 
       return succeeded
-
 
   def __getattr__(self, name):
     return getattr(self._wrapped, name)

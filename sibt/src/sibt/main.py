@@ -30,6 +30,8 @@ from sibt.configuration.optionvaluesparser import parseLocation
 from sibt.domain.ruleset import RuleSet
 from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
 from sibt.application.outputcapturingscheduler import OutputCapturingScheduler
+from sibt.application.defaultimplscheduler import DefaultImplScheduler
+from sibt.application.scriptrunningscheduler import ScriptRunningScheduler
 from sibt.infrastructure.currenttimeclock import CurrentTimeClock
 import signal
 import os
@@ -40,10 +42,14 @@ from contextlib import contextmanager
 from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
 import subprocess
 
-class FatalSignalException(Exception):
+class FatalSignalException(BaseException):
   def __init__(self, signalNumber, childExitStatus):
     self.signalNumber = signalNumber
     self.childExitStatus = childExitStatus
+  
+  def __str__(self):
+    return "terminating because of " + { signal.SIGINT: "SIGINT", 
+        signal.SIGTERM: "SIGTERM" }[self.signalNumber]
 
 signalIgnored = dict()
 FatalSignals = [signal.SIGINT, signal.SIGTERM]
@@ -66,9 +72,12 @@ def killSelf(signalNumber):
 def beforeSubprocessRun():
   setFatalSignalsHandler(signalHandler(raiseException=False))
 def afterSubprocessRun(exitStatus):
+  global receivedSignal
   setFatalSignalsHandler(signalHandler(raiseException=True))
   if receivedSignal is not None:
-    raise FatalSignalException(receivedSignal, exitStatus)
+    fatalSignalNo = receivedSignal
+    receivedSignal = None
+    raise FatalSignalException(fatalSignalNo, exitStatus)
 
 def setFatalSignalsHandler(handler):
   for signalNo in FatalSignals:
@@ -80,19 +89,23 @@ def testFatalSignalDispositions():
     signalIgnored[signalNo] = signal.getsignal(signalNo) == signal.SIG_IGN
 
 @contextmanager
-def fatalSignalsIgnored():
-  setFatalSignalsHandler(signal.SIG_IGN)
+def fatalSignalsRetained():
+  beforeSubprocessRun()
   try:
     yield
   finally:
     setFatalSignalsHandler(signalHandler(raiseException=True))
+  afterSubprocessRun(0)
 
-def logSubProcess(log, subProcessArgs):
-  with fatalSignalsIgnored():
+def logSubProcess(log, subProcessArgs, environmentVars=None, **kwargs):
+  if environmentVars is not None:
+    os.environ.update(environmentVars)
+
+  with fatalSignalsRetained():
     streamRead, streamWrite = os.pipe()
 
     with open(streamRead, "rb") as outputReader:
-      with subprocess.Popen(subProcessArgs,
+      with subprocess.Popen(subProcessArgs, **kwargs,
           stdout=streamWrite, stderr=streamWrite, 
           preexec_fn=lambda: setFatalSignalsHandler(signal.SIG_DFL)) as process:
         os.close(streamWrite)
@@ -173,7 +186,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     elif args.action == "sync-uncontrolled":
       try:
         rule.sync()
-      except Exception as ex:
+      except BaseException as ex:
         exitStatus = ex.exitStatus if isinstance(ex, ExternalFailureException) \
             else ex.childExitStatus if isinstance(ex, FatalSignalException) \
             else None
@@ -185,16 +198,16 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         return 1
 
     elif args.action == "execute-rule":
+      from sibt.application.execenvironment import ExecEnvironment
       log = FilesDBSchedulingsLog(paths.logDir)
-
-      def runSibtSyncUncontrolled(logFile):
-        return logSubProcess(logFile, 
-            callToSyncUncontrolled(currentSibtCall) + [rule.name]) == 0
 
       syncUncontrolledSucceeded = [False]
       def makeSchedulerExecute(logFile):
-        succeeded = rule.scheduler.execute(rule.scheduling, 
-            logFile, runSibtSyncUncontrolled)
+        execEnv = ExecEnvironment(callToSyncUncontrolled(currentSibtCall) +
+            [rule.name],
+            logFile,
+            logSubProcess)
+        succeeded = rule.scheduler.execute(execEnv, rule.scheduling)
         syncUncontrolledSucceeded[0] = succeeded
         return succeeded
 
@@ -258,8 +271,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     sys.stdout.flush()
     return 0
   except (FatalSignalException) as ex:
-    errorLogger.log("terminating because of " + { signal.SIGINT: 
-      "SIGINT", signal.SIGTERM: "SIGTERM" }[ex.signalNumber])
+    errorLogger.log(str(ex))
     killSelf(ex.signalNumber)
   except BrokenPipeError as ex:
     killSelf(signal.SIGPIPE)
@@ -333,6 +345,8 @@ def printValidationErrors(printFuncForRuleNames, printFunc, ruleSet, errors):
 
 def wrapScheduler(useDrySchedulers, stdout, stderr, clock, sched):
   ret = DryScheduler(sched, stdout) if useDrySchedulers else sched
+  ret = DefaultImplScheduler(ret)
+  ret = ScriptRunningScheduler(ret)
   return OutputCapturingScheduler(ret, clock, stderr)
 
 def enableRule(output, baseName, paths, instanceName, configLines):

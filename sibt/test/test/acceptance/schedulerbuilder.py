@@ -1,6 +1,7 @@
 from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 from test.common import mock
+import re
 
 SchedulerFormat = """
 availableOptions = {opts}
@@ -8,6 +9,7 @@ availableSharedOptions = {sharedOpts}
 {initFunc}
 {checkFunc}
 {runFunc}
+{executeFunc}
 """
 
 def emptyFunc(name):
@@ -52,6 +54,11 @@ class SchedulerBuilder(ConfigObjectBuilder):
   def withRunFuncCode(self, runFuncCode):
     return self._withParams(runFuncCode=runFuncCode)
 
+  def withExecuteFunc(self, newExecuteFunc):
+    return self._withParams(executeFunc=newExecuteFunc)
+  def withExecuteFuncCode(self, code):
+    return self._withParams(executeFuncCode=code)
+
   def mock(self):
     mocked = mock.mock()
     mocked.availableOptions = self.options
@@ -61,6 +68,8 @@ class SchedulerBuilder(ConfigObjectBuilder):
     mocked.init = self.kwParams["initFunc"]
     mocked.check = self.kwParams["checkFunc"]
     mocked.run = self.kwParams["runFunc"]
+    if "executeFunc" in self.kwParams:
+      mocked.execute = self.kwParams["executeFunc"]
 
     self.path.write("")
     self.reRegister(mocked)
@@ -75,12 +84,20 @@ class SchedulerBuilder(ConfigObjectBuilder):
     path.write(self.content)
     return self
 
+  def unIndent(self, code):
+    lines = [line for line in code.splitlines() if len(line.strip()) > 0]
+    spacePrefixLengths = [len(re.match(r"([ ]*)[^ ]", line).group(1)) for 
+        line in lines]
+    longestCommonPrefix = min(spacePrefixLengths, default=0)
+    return "\n".join(line[longestCommonPrefix:] for line in lines)
+
   @property
   def content(self):
     return SchedulerFormat.format(
-        initFunc=self.kwParams["initFuncCode"],
-        checkFunc=self.kwParams["checkFuncCode"],
-        runFunc=self.kwParams["runFuncCode"],
+        initFunc=self.unIndent(self.kwParams["initFuncCode"]),
+        checkFunc=self.unIndent(self.kwParams["checkFuncCode"]),
+        runFunc=self.unIndent(self.kwParams["runFuncCode"]),
+        executeFunc=self.unIndent(self.kwParams.get("executeFuncCode", "")),
         opts=self.options,
         sharedOpts=self.sharedOptions)
   @property

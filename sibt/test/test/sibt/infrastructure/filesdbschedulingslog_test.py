@@ -2,7 +2,7 @@ import pytest
 from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
 from test.common.builders import schedulingLogging, anyUTCDateTime, \
     constantTimeClock
-from test.common.assertutil import iterToTest
+from test.common.assertutil import iterToTest, strToTest
 from datetime import datetime, timezone
 from sibt.domain.schedulinglogging import SchedulingResult
 from test.common.presetcyclingclock import PresetCyclingClock
@@ -97,3 +97,17 @@ class Test_FilesDBSchedulingsLogTest(LineBufferedLoggerTest):
           "exception" in logging.output and
           "we have a problem" in logging.output and
           not logging.succeeded)
+  
+  def test_shouldLogSystemExceptionsInLessDetail(self, fixture):
+    class SysException(BaseException):
+      pass
+
+    def raiseException(logger):
+      raise SysException()
+
+    with pytest.raises(SysException):
+      fixture.log.addLogging("foo", constantTimeClock(), raiseException)
+
+    iterToTest(fixture.loggingsOf("foo")).shouldContainMatching(
+        lambda logging: strToTest(logging.output).shouldInclude("exception").\
+            but.shouldNotInclude("traceback"))

@@ -8,9 +8,12 @@ class Fixture(object):
 def fixture():
   return Fixture()
 
-def test_shouldThrowAppropriateExceptionIfCalledUnexpectedly(fixture):
+def test_shouldNotHaveAttributesThatArentAssignedOrExpected(fixture):
   mocked = mock.mock()
-  with pytest.raises(AssertionError):
+
+  assert not hasattr(mocked, "foo")
+
+  with pytest.raises(AttributeError):
     mocked.foo()
 
 def test_shouldAllowExactlyTheExpectedCalls(fixture):
@@ -79,8 +82,8 @@ def test_shouldMakeExpectationsOverrideNormalMethods(fixture):
   mocked.foo = lambda arg: None
 
   mocked.foo(5)
-  mocked.expectCalls(mock.call("foo", (2,)))
 
+  mocked.expectCalls(mock.call("foo", (2,)))
   with pytest.raises(AssertionError):
     mocked.foo(5)
 

@@ -1,34 +1,29 @@
 import pytest
+from test.sibt.application.intermediateschedulertest import \
+    IntermediateSchedulerTestFixture
 from sibt.application.outputcapturingscheduler import OutputCapturingScheduler
-from test.common import mock
 from test.common.builders import buildScheduling, constantTimeClock, \
-    mockSched, anyScheduling, localLocation
+    mockSched, anyScheduling, localLocation, execEnvironment
 from test.common.bufferingoutput import BufferingOutput
 from test.common.rfc3164syslogserver import Rfc3164SyslogServer
 from test.common.assertutil import iterToTest, strToTest
+from test.common.bufferinglogger import BufferingLogger
 from test.sibt.infrastructure.utillinuxsyslogger_test import loggerOptions
 
 TestPort = 6453
 
-class NullLogger(object):
-  def write(*args, **kwargs):
-    pass
-  def close():
-    pass
-
-class Fixture(object):
+class Fixture(IntermediateSchedulerTestFixture):
   def __init__(self, tmpdir):
-    wrapped = mockSched()
-    self.scheduler = OutputCapturingScheduler(wrapped, constantTimeClock(),
-        BufferingOutput())
-
     self.logFile = tmpdir / "logfile"
 
-  def execute(self, runSibtSyncUncontrolled, scheduling):
-    subLogger = NullLogger()
-
-    return self.scheduler.execute(scheduling, subLogger, 
-        runSibtSyncUncontrolled)
+  def construct(self, wrappedSched):
+    return OutputCapturingScheduler(wrappedSched, constantTimeClock(), 
+        BufferingOutput())
+  
+  def execute(self, wrappedExecuteFunc, scheduling):
+    self.scheduler = self.makeSched(subExecute=wrappedExecuteFunc)
+    return self.scheduler.execute(execEnvironment(logger=BufferingLogger()), 
+        scheduling)
 
   def executeWithSyslogServer(self, *args):
     with Rfc3164SyslogServer(TestPort) as self.syslogServer:
@@ -45,10 +40,6 @@ class Fixture(object):
   def allSyslogMessages(self):
     return b"".join(packet.message for packet in self.syslogServer.packets)
   
-  @property
-  def optionNames(self):
-    return [optInfo.name for optInfo in self.scheduler.availableOptions]
-
   def sysloggedScheduling(self, **options):
     return buildScheduling(**options,
         Syslog=True, SyslogOptions=loggerOptions(TestPort))
@@ -57,21 +48,28 @@ class Fixture(object):
 def fixture(tmpdir):
   return Fixture(tmpdir)
 
-def test_shouldRunSibtSyncUncontrolledWhenExecuted(fixture):
+def test_shouldRunTheWrappedSchedsExecuteWithTheNewLogger(fixture):
   returnedObject = object()
-  def run(logger):
+  scheduling = fixture.sysloggedScheduling()
+
+  def subExecute(execEnv, passedScheduling):
+    assert passedScheduling == scheduling
+    execEnv.logger.log("from sub-execute")
     return returnedObject
 
-  assert fixture.execute(run, anyScheduling()) is returnedObject
+  assert fixture.executeWithSyslogServer(subExecute, scheduling) is \
+      returnedObject
+  assert b"from sub-execute" in fixture.singleSyslogPacket.message
 
 def test_shouldLogAnErrorIfAnExecutionFails(fixture):
-  def syncUncontrolled(_):
+  def subExecute(*_):
     return False
 
   scheduling = fixture.sysloggedScheduling(
-      LogFile=localLocation(str(fixture.logFile)))
+      LogFile=localLocation(str(fixture.logFile)),
+      Stderr=True)
 
-  fixture.executeWithSyslogServer(syncUncontrolled, scheduling)
+  fixture.executeWithSyslogServer(subExecute, scheduling)
   
   assert b"failed" in fixture.singleSyslogPacket.message
   assert fixture.singleSyslogPacket.severity == "err"
@@ -83,11 +81,11 @@ def test_shouldLogAnErrorIfAnInternalExceptionOccurs(fixture):
   class TestException(Exception):
     def __str__(self):
       return "abyss"
-  def syncUncontrolled(_):
+  def subExecute(*_):
     raise TestException()
 
   with pytest.raises(TestException):
-    fixture.executeWithSyslogServer(syncUncontrolled, 
+    fixture.executeWithSyslogServer(subExecute, 
         fixture.sysloggedScheduling())
   
   strToTest(fixture.firstSyslogPacket.message).shouldInclude(
@@ -98,12 +96,12 @@ def test_shouldLogAnErrorIfAnInternalExceptionOccurs(fixture):
 def test_shouldLogSuccessesIfAskedTo(fixture):
   assert "LogSuccess" in fixture.optionNames
 
-  def syncUncontrolled(_):
+  def subExecute(*_):
     return True
 
   scheduling = fixture.sysloggedScheduling(LogSuccess=True)
 
-  fixture.executeWithSyslogServer(syncUncontrolled, scheduling)
+  fixture.executeWithSyslogServer(subExecute, scheduling)
   
   assert b"success" in fixture.singleSyslogPacket.message
   assert fixture.singleSyslogPacket.severity == "notice"

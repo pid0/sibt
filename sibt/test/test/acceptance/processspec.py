@@ -254,7 +254,7 @@ def test_shouldLetSyncersDecideHowToActOnSignalsAndWaitForThem(fixture):
 
   rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
-  fixture.afterSeconds(0.2, fixture.sigTermToProcessGroup)
+  fixture.afterSeconds(0.3, fixture.sigTermToProcessGroup)
   fixture.runSibtAsAProcess("sync-uncontrolled", rule.name)
   fixture.stderr.shouldInclude("syncer-cleaned-up", "SIGTERM").andAlso.\
       shouldIncludeInOrder("rule", rule.name, "failed", "-15")
@@ -282,35 +282,9 @@ def test_shouldKeepIgnoringSignalsItsParentIgnored(fixture):
   fixture.stderr.shouldBeEmpty()
   fixture.shouldHaveExitedFromSignal(signal.SIGKILL)
 
-#TODO integrate with the spec below and test that Exec* output is logged
-#def test_shouldLogCleanUpAndRunErrorScriptUnderAnacronIfAndEvenIfSignaled(
-#    fixture):
-#  fixture.useActualSibtConfig()
-#
-#  logFile = fixture.tmpdir / "log-file"
-#  flagFile = fixture.tmpdir / "flag"
-#  tmpDir = fixture.tmpdir.mkdir("tmp")
-#
-#  syncer = fixture.conf.aSyncer("blocking").withContent(r"""#!bash-runner
-#  sync() {
-#    trap 'echo trapped; exit 1' INT
-#    echo foo
-#    sleep 3
-#    echo bar
-#  }""").write()
-#  rule = fixture.conf.realRule("rule", "anacron", "blocking").\
-#      withSchedOpts(LogFile=str(logFile), TmpDir=str(tmpDir),
-#          ExecOnFailure="touch {0}".format(flagFile)).write()
-#
-#  fixture.afterSeconds(0.3, fixture.sigIntToProcessGroup)
-#  fixture.runSibtAsAProcess("schedule", rule.name)
-#  time.sleep(0.3)
-#
-#  assert os.path.isfile(str(flagFile))
-#  strToTest(logFile.read()).shouldInclude("trapped", "SIGINT")
-#  assert len(tmpDir.listdir()) == 0
-
 def test_shouldFinishLoggingSchedulingStatisticsEvenIfSignaled(fixture):
+  flagFile = fixture.tmpdir / "flag"
+
   syncer = fixture.conf.aSyncer("blocking").withContent(r"""#!/usr/bin/env bash
   if [ "$1" = sync ]; then
     trap 'sleep 0.1; echo trapped; exit 1' INT
@@ -321,7 +295,9 @@ def test_shouldFinishLoggingSchedulingStatisticsEvenIfSignaled(fixture):
   fi
   """).write()
 
-  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
+  logFile = fixture.tmpdir / "logfile"
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).withSchedOpts(
+      ExecOnFailure="touch {0}".format(flagFile), LogFile=str(logFile)).write()
 
   fixture.afterSeconds(0.3, fixture.sigIntToProcessGroup)
   fixture.runSibtAsAProcess("execute-rule", rule.name)
@@ -340,3 +316,18 @@ def test_shouldFinishLoggingSchedulingStatisticsEvenIfSignaled(fixture):
   assert not logging.succeeded
   strToTest(logging.output).shouldInclude(
       "foo\ntrapped\n", "SIGINT")
+
+  assert os.path.isfile(str(flagFile))
+
+def test_shouldExitFromSignalsWhenExecutingARule(fixture):
+  sched = fixture.conf.aSched().withExecuteFuncCode(r"""
+    def execute(execEnv, scheduling):
+      execEnv.logSubProcess("sleep 10", shell=True)
+      return execEnv.runSynchronizer()""").write()
+
+  rule = fixture.conf.ruleWithSyncer().withScheduler(sched).write()
+
+  fixture.afterSeconds(0.3, fixture.sigIntToProcessGroup)
+  fixture.runSibtAsAProcess("execute-rule", rule.name)
+
+  fixture.shouldHaveExitedFromSignal(signal.SIGINT)

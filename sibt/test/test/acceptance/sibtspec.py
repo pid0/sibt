@@ -57,7 +57,7 @@ class SibtSpecFixture(object):
         aScheduler, aRule)
 
     self.clock = constantTimeClock()
-    self.callToSyncUncontrolled = None
+    self.callToSyncUncontrolled = lambda _: []
 
     self.syslogOptions = loggerOptions(TestPort)
 
@@ -1353,3 +1353,46 @@ def test_shouldLogInternalExceptionsToo(fixture):
 #singleExecution
   strToTest(fixture.getSingleLogging(fixture.paths, None, rule.name).output).\
       shouldInclude("permission denied")
+
+def test_shouldAllowSchedulersToControlRuleExecutions(fixture):
+  def execute(execEnv, scheduling):
+    execEnv.logger.log("something smart about {0}", scheduling.ruleName)
+    succeeded = execEnv.runSynchronizer()
+    return not succeeded
+  
+  fixture.replaceSyncUncontrolledCallsWith(fixture.writeScript(
+  r"""#!/usr/bin/env bash
+  echo another thing
+  exit 2"""))
+
+  _, sched = fixture.conf.aSched().withExecuteFunc(execute).mock()
+  rule = fixture.conf.ruleWithSyncer("a-rule").withScheduler(sched).write()
+
+  fixture.runSibt("execute-rule", rule.name)
+
+  logging = fixture.getSingleLogging(fixture.paths, None, rule.name)
+  assert logging.succeeded is True
+  strToTest(logging.output).shouldIncludeInOrder(
+      "something smart about a-rule", "another thing")
+
+def test_shouldProvideVariousOtherOptionsForControllingRuleExecutions(fixture):
+  testFile = fixture.tmpdir / "testfile"
+  script = "#!/usr/bin/env bash\nexit {exitCode}"
+
+  rule = fixture.conf.ruleWithSchedAndSyncer("a-rule").withSchedOpts(
+      Stderr="Yes",
+      ExecOnFailure='echo an-error >&1; echo "$rule" >{0}'.format(
+        testFile)).write()
+  
+  fixture.replaceSyncUncontrolledCallsWith(fixture.writeScript(script.format(
+    exitCode="0")))
+  fixture.runSibtWithRealStreamsAndExec("execute-rule", rule.name)
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stderr.shouldBeEmpty()
+  assert not os.path.isfile(str(testFile))
+
+  fixture.replaceSyncUncontrolledCallsWith(fixture.writeScript(script.format(
+    exitCode="1")))
+  fixture.runSibtWithRealStreamsAndExec("execute-rule", rule.name)
+  assert testFile.read() == "a-rule\n"
+  fixture.stderr.shouldInclude("an-error")

@@ -1,6 +1,7 @@
 import pytest
 import socket
 import time
+from test.common.schedulertest import SchedulerTestFixture
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from test.common.builders import buildScheduling, anyScheduling, scheduling, \
@@ -18,15 +19,20 @@ from sibt.infrastructure import types
 from datetime import timedelta
 from test.common.bufferingerrorlogger import BufferingErrorLogger
 
+testPackageCounter = 0
+
 def loadModule(schedulerName, varDir, sibtCall=["/where/sibt/is"],
     logger=None):
-  loader = PyModuleSchedulerLoader(PyModuleLoader("testpackage"))
+  global testPackageCounter
+  testPackageCounter = testPackageCounter + 1
+  packageName = "testpackage{0}".format(testPackageCounter)
+  loader = PyModuleSchedulerLoader(PyModuleLoader(packageName))
   modulePath = relativeToProjectRoot(os.path.join("sibt", "schedulers", 
     schedulerName))
   return configrepo.loadScheduler(loader, modulePath, schedulerName, 
       configrepo.SchedulerArgs(sibtCall, str(varDir), logger))
 
-class Fixture(object):
+class Fixture(SchedulerTestFixture):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
     self.miscDir = tmpdir.mkdir("misc")
@@ -34,8 +40,11 @@ class Fixture(object):
     self.tmpDir = self.miscDir.mkdir("tmp dir")
 
   def init(self, **kwargs):
-    self.mod = loadModule("anacron", varDir=self.varDir, **kwargs)
+    self.mod = self.makeSched(**kwargs)
     self.execs = ExecMock()
+  
+  def makeSched(self, **kwargs):
+    return loadModule("anacron", varDir=self.varDir, **kwargs)
 
   def run(self, schedulings, mockingExecs=True):
     if mockingExecs:
@@ -45,13 +54,6 @@ class Fixture(object):
   def check(self, schedulings):
     return self.mod.check(schedulings)
   
-  @property
-  def optionNames(self):
-    return [optInfo.name for optInfo in self.mod.availableOptions]
-  @property
-  def optionInfos(self):
-    return self.mod.availableOptions
-
   def runWithMockedSibt(self, sibtProgram, schedulings, sibtArgs=[]):
     sibt = self.miscDir / "sibt"
     self.init(sibtCall=[str(sibt)] + sibtArgs)
@@ -90,13 +92,13 @@ def test_shouldPlaceTheAnacronSpoolDirInItsVarDir(fixture):
 
 def test_shouldPutTemporaryTabAndScriptsIntoTmpDirAndDeleteThemAfterwards(
     fixture):
-  fixture.init()
   assert "TmpDir" in fixture.optionNames
+
+  fixture.init()
 
   def checkTab(tab):
     assert len(fixture.tmpDir.listdir()) > 0
-    strToTest(local(tab).read()).shouldIncludeLinePatterns(
-        "*rule-id*{0}*".format(str(fixture.tmpDir)))
+    strToTest(local(tab).read()).shouldIncludeLinePatterns("*rule-id*")
     return True
 
   fixture.checkOption("-t", [buildScheduling("rule-id", 
@@ -105,9 +107,10 @@ def test_shouldPutTemporaryTabAndScriptsIntoTmpDirAndDeleteThemAfterwards(
   assert len(fixture.tmpDir.listdir()) == 0
 
 def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
+  assert optInfo("Interval", types.TimeDelta) in fixture.optionInfos
+
   logger = BufferingErrorLogger()
   fixture.init(logger=logger)
-  assert optInfo("Interval", types.TimeDelta) in fixture.optionInfos
 
   schedulings = [
       buildScheduling("one-day", Interval=timedelta(hours=22)),
@@ -134,39 +137,6 @@ def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
   fixture.checkOption("-t", schedulings, checkTab)
   shouldHaveWarned()
 
-def test_shouldHaveAnOptionThatTakesBashCodeToExecuteWhenSibtFails(fixture):
-  testFile = fixture.miscDir / "test's file"
-  normalSchedulingRunFlagFile = str(fixture.miscDir / "flag")
-
-  executingScheduling = scheduling().withOptions(
-      ExecOnFailure='echo failure; echo "$r" >"{0}"'.format(testFile))
-
-  fixture.runWithMockedSibt("""#!/usr/bin/env bash
-  if [ $3 = fails ]; then
-    exit 1
-  else
-    touch '{0}'
-  fi""".format(normalSchedulingRunFlagFile), [
-      executingScheduling.withRuleName("fails").build(),
-      executingScheduling.withRuleName("doesnt").build()])
-
-  assert os.path.isfile(normalSchedulingRunFlagFile)
-  assert testFile.read() == "fails\n"
-
-  assert "ExecOnFailure" in fixture.optionNames
-
-def test_shouldCheckSyntaxOfExecOnFailureCodeWithoutExecutingIt(fixture):
-  fixture.init()
-  flagFile = str(fixture.miscDir / "flag")
-
-  erroneousCode = "touch {0}\n(echo foo".format(flagFile)
-
-  iterToTest(fixture.check([buildScheduling("touching",
-    ExecOnFailure=erroneousCode)])).shouldContainMatching(
-          lambda error: strToTest(error).shouldInclude("unexpected", 
-            "ExecOnFailure", "syntax", "touching"))
-  assert not os.path.isfile(flagFile)
-
 def test_shouldNotSwallowExitCodeOfSibtButPassItOnToAnacron(fixture, capfd):
   fixture.runWithMockedSibt(r"""#!/usr/bin/env bash
   exit 4""", [anyScheduling()])
@@ -175,9 +145,10 @@ def test_shouldNotSwallowExitCodeOfSibtButPassItOnToAnacron(fixture, capfd):
   assert "status: 4" in stderr
 
 def test_shouldHaveAnInterfaceToAnacronsStartHoursRange(fixture):
+  assert "AllowedHours" in fixture.optionNames
+
   fixture.init()
 
-  assert "AllowedHours" in fixture.optionNames
   def checkTab(tabPath):
     strToTest(local(tabPath).read()).shouldIncludeLinePatterns(
         "*START_HOURS_RANGE=6-20")
@@ -206,8 +177,11 @@ def test_shouldCheckIfAllowedHoursSettingHasTheRightSyntax(fixture):
 def test_shouldReturnAsManyCheckErrorsAsItCanFind(fixture):
   fixture.init()
 
-  assert len(fixture.check([buildScheduling(
-    ExecOnFailure="(", AllowedHours="bar")])) > 1
+  schedulings = [
+      buildScheduling(AllowedHours="bar"),
+      buildScheduling(AllowedHours="3")]
+
+  assert len(fixture.check(schedulings)) > 1
 
 def test_shouldManageToBeInitializedMultipleTimesWithTheSameFolders(fixture):
   fixture.init()

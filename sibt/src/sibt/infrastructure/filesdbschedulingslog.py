@@ -32,9 +32,12 @@ def _decode(bytesObject):
 def _callCatchingExceptions(logFile, execute, succeeded):
   try:
     succeeded[0] = execute(logFile)
-  except:
+  except BaseException as ex:
     logFile.write(b"internal exception (caught in log):\n")
-    logFile.write(_encode(traceback.format_exc()))
+    if isinstance(ex, Exception):
+      logFile.write(_encode(traceback.format_exc()))
+    else:
+      logFile.write(_encode(str(ex)))
     succeeded[0] = False
     raise
 

@@ -23,10 +23,12 @@ def test_shouldForwardAnyCallsToSubScheduler(fixture):
 
 def test_shouldPrintLineForEachScheduledRuleButNotScheduleThem(fixture):
   sub = mock.mock()
+  sub.name = "sub-sched"
   output = mock.mock()
 
   output.expectCallsInAnyOrder(
-      mock.callMatching("println", lambda line: "first" in line),
+      mock.callMatching("println", lambda line: "first" in line and 
+        "sub-sched" in line),
       mock.callMatching("println", lambda line: "second" in line))
 
   dry = DryScheduler(sub, output)

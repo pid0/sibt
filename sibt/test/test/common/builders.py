@@ -16,6 +16,7 @@ from sibt.domain.synchronizeroptions import SynchronizerOptions
 from sibt.domain.ruleset import RuleSet
 from sibt.domain.schedulinglogging import SchedulingLogging, SchedulingResult
 from test.common.presetcyclingclock import PresetCyclingClock
+from sibt.application.execenvironment import ExecEnvironment
 
 def randstring():
   return str(random())[2:] 
@@ -41,6 +42,11 @@ class SchedulingBuilder(object):
     
   def build(self):
     return Scheduling(self.ruleName, self.options)
+
+def execEnvironment(syncUncontrolledCall=[],
+    logger=None,
+    logSubProcessWith=lambda *args, **kwargs: None):
+  return ExecEnvironment(syncUncontrolledCall, logger, logSubProcessWith)
 
 def anyScheduling(): return buildScheduling()
 def buildScheduling(ruleName=None, **options):
