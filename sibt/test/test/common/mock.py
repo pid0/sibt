@@ -48,6 +48,8 @@ def callMatchingTuple(funcName, matcher, **kwargs):
   return CallMatcher(funcName, lambda args, kwargs: matcher(args), 
       CallParams.construct(**kwargs))
 
+AnyArgs = lambda *args, **kwargs: True
+
 def mock(name="mock object"):
   return Mock(name)
 

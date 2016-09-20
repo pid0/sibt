@@ -71,12 +71,12 @@ def createHashbangAwareProcessRunner(runnersDir, processRunner):
       lambda path, fileName: Runner(fileName, path))
   return HashbangAwareProcessRunner(runners, processRunner)
   
-def readRulesIntoFinder(paths, sysPaths, factory, sysRuleFilter,
-    readUserConf=True, readSysConf=True):
+def readRulesIntoFinder(paths, sysPaths, userFactory, sysFactory,
+    sysRuleFilter, readUserConf=True, readSysConf=True):
   userRules = [] if not readUserConf else readRuleLoaders(paths.rulesDir, 
-      paths.enabledDir, factory, "")
+      paths.enabledDir, userFactory, "")
   sysRules = [] if not readSysConf else readRuleLoaders(sysPaths.rulesDir, 
-      sysPaths.enabledDir, factory, "+")
+      sysPaths.enabledDir, sysFactory, SysRulePrefix)
 
   return RulesFinder(RulesRepo(userRules), RulesRepo(sysRules), sysRuleFilter)
 
@@ -120,14 +120,15 @@ class ConfigRepo(object):
         SchedulerArgs(sibtInvocation, None, None), paths,
         makeErrorLoggerWithPrefix)
 
-    #userLog, sysLog = openLogs(paths, sysPaths)
-    userLog = FilesDBSchedulingsLog(paths.logDir)
-    #sysLog = FilesDBSchedulingsLog(paths.logDir)
+    userLog, sysLog = openLogs(paths, sysPaths)
 
-    factory = RuleFromStringOptionsReader(RuleFactory(),
-        OptionValuesParser(), schedulers, synchronizers)
-    rulesFinder = readRulesIntoFinder(paths, sysPaths, factory, sysRuleFilter,
-        readSysConf=readSysConf)
+    valuesParser = OptionValuesParser()
+    userFactory = RuleFromStringOptionsReader(RuleFactory(userLog),
+        valuesParser, schedulers, synchronizers)
+    sysFactory = RuleFromStringOptionsReader(RuleFactory(sysLog),
+        valuesParser, schedulers, synchronizers)
+    rulesFinder = readRulesIntoFinder(paths, sysPaths, userFactory,
+        sysFactory, sysRuleFilter, readSysConf=readSysConf)
 
     return clazz(schedulers, synchronizers, rulesFinder, userLog)
 

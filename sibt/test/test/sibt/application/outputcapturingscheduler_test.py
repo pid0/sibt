@@ -18,7 +18,7 @@ class Fixture(IntermediateSchedulerTestFixture):
 
   def construct(self, wrappedSched):
     return OutputCapturingScheduler(wrappedSched, constantTimeClock(), 
-        BufferingOutput())
+        BufferingOutput(), False)
   
   def execute(self, wrappedExecuteFunc, scheduling):
     self.scheduler = self.makeSched(subExecute=wrappedExecuteFunc)

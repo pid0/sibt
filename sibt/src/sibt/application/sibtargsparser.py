@@ -7,7 +7,7 @@ GlobalOpts = [OptArg("config-dir", noOfArgs="1"),
   OptArg("var-dir", noOfArgs="1"), 
   OptArg("readonly-dir", noOfArgs="1"), 
   OptArg("no-sys-config"),
-  OptArg("verbose"),
+  OptArg("verbose", "v"),
   OptArg("utc")]
 
 class CmdLineArgs(object):
@@ -45,7 +45,7 @@ class SibtArgsParser(object):
         OptArg("dry"),
         rulePatterns),
 
-      SubGroup("sync-uncontrolled", 
+      SubGroup("sync", 
         PosArg("rule-name"), description=None),
 
       SubGroup("versions-of",
@@ -53,6 +53,7 @@ class SibtArgsParser(object):
 
       SubGroup("restore", 
         OptArg("to", noOfArgs="1"),
+        OptArg("force"),
         *listFilesLike),
 
       SubGroup("list-files", 

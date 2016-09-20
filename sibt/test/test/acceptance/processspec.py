@@ -68,13 +68,15 @@ class ForkExecSubProcess(object):
       self.pid = pid
 
   def wait(self):
-    pid, exitStatus = os.wait()
-    assert pid == self.pid
+    pid, exitStatus = os.waitpid(self.pid, 0)
     if os.WIFSIGNALED(exitStatus):
       self.returncode = -os.WTERMSIG(exitStatus)
     elif os.WIFEXITED(exitStatus):
       self.returncode = os.WEXITSTATUS(exitStatus)
     return self.returncode
+
+  def sigKill(self):
+    os.kill(self.pid, signal.SIGKILL)
 
   def __enter__(self):
     return self
@@ -110,6 +112,9 @@ class ProcessSpecFixture(SibtSpecFixture):
         "--readonly-dir", self.paths.readonlyDir,
         "--no-sys-config",
         "--utc"]
+
+  def startSibtProcess(self, *args):
+    return ForkExecSubProcess(self._buildSibtCall() + list(args), False, False)
 
   def runSibtAsAProcess(self, *args, blockingStdout=False, 
       stdoutReadFdClosed=False):
@@ -255,7 +260,7 @@ def test_shouldLetSyncersDecideHowToActOnSignalsAndWaitForThem(fixture):
   rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
   fixture.afterSeconds(0.3, fixture.sigTermToProcessGroup)
-  fixture.runSibtAsAProcess("sync-uncontrolled", rule.name)
+  fixture.runSibtAsAProcess("sync", rule.name)
   fixture.stderr.shouldInclude("syncer-cleaned-up", "SIGTERM").andAlso.\
       shouldIncludeInOrder("rule", rule.name, "failed", "-15")
 
@@ -277,7 +282,7 @@ def test_shouldKeepIgnoringSignalsItsParentIgnored(fixture):
   fixture.afterSeconds(0.2, fixture.sigTermToProcessGroup)
   fixture.afterSeconds(0.3, fixture.sigKill)
   with SigHandler(signal.SIGTERM, signal.SIG_IGN):
-    fixture.runSibtAsAProcess("sync-uncontrolled", rule.name)
+    fixture.runSibtAsAProcess("sync", rule.name)
 
   fixture.stderr.shouldBeEmpty()
   fixture.shouldHaveExitedFromSignal(signal.SIGKILL)
@@ -331,3 +336,19 @@ def test_shouldExitFromSignalsWhenExecutingARule(fixture):
   fixture.runSibtAsAProcess("execute-rule", rule.name)
 
   fixture.shouldHaveExitedFromSignal(signal.SIGINT)
+  fixture.shouldNotHaveTakenMoreSecondsThan(1)
+
+def test_shouldNotAllowSyncingTwoRulesAtTheSameTime(fixture):
+  syncer = fixture.conf.aSyncer().withContent(r"""#!/usr/bin/env bash
+  if [ "$1" = sync ]; then
+    sleep 3
+  else exit 200; fi""").write()
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
+  
+  with fixture.startSibtProcess("sync", rule.name):
+    time.sleep(0.2)
+    fixture.runSibtAsAProcess("sync", rule.name)
+    fixture.shouldNotHaveTakenMoreSecondsThan(0.5)
+    fixture.shouldHaveExitedWithStatus(1)
+    fixture.stderr.shouldIncludeInOrder("could not", "lock",
+        "running", "failed")

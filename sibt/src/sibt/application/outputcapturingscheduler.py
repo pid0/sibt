@@ -34,10 +34,11 @@ class _FileLikeOutputWrapper(object):
     self.output.println(chunk.decode(), lineSeparator="")
 
 class OutputCapturingScheduler(object):
-  def __init__(self, wrapped, clock, stderr):
+  def __init__(self, wrapped, clock, stderr, forceLoggingToStderr):
     self._wrapped = wrapped
     self._clock = clock
     self._stderr = stderr
+    self._forceLoggingToStderr = forceLoggingToStderr
 
     self.availableOptions = wrapped.availableOptions + Options
   
@@ -48,7 +49,7 @@ class OutputCapturingScheduler(object):
       ret.append(FileLogger(str(scheduling.options["LogFile"]),
         self._clock, scheduling.ruleName))
 
-    if scheduling.options.get("Stderr", False):
+    if scheduling.options.get("Stderr", False) or self._forceLoggingToStderr:
       ret.append(_FileLikeOutputWrapper(self._stderr))
 
     if scheduling.options.get("Syslog", False):

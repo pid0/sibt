@@ -21,7 +21,7 @@ from sibt.domain import subvalidators
 from sibt.application.prefixingerrorlogger import PrefixingErrorLogger
 from sibt.domain.exceptions import ValidationException, \
     UnsupportedProtocolException, LocationInvalidException, \
-    LocationNotAbsoluteException
+    LocationNotAbsoluteException, UnstablePhaseException, LockException
 from sibt.application.rulesfinder import RulesFinder
 from sibt.application.exceptions import RuleNotFoundException
 import functools
@@ -33,10 +33,15 @@ from sibt.application.outputcapturingscheduler import OutputCapturingScheduler
 from sibt.application.defaultimplscheduler import DefaultImplScheduler
 from sibt.application.scriptrunningscheduler import ScriptRunningScheduler
 from sibt.infrastructure.currenttimeclock import CurrentTimeClock
+from sibt.application.executionclosenessdetector import \
+    ExecutionClosenessDetector
+from sibt.domain.negativeunstablephasedetector import \
+    NegativeUnstablePhaseDetector
+from sibt.infrastructure.fcntlmutexmanager import FcntlMutexManager
 import signal
 import os
 import getpass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
 
 from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
@@ -115,7 +120,7 @@ def logSubProcess(log, subProcessArgs, environmentVars=None, **kwargs):
     return process.returncode
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
-    userName, userId, moduleLoader, clock, callToSyncUncontrolled):
+    userName, userId, moduleLoader, clock, callToSibtSync):
   testFatalSignalDispositions()
   setFatalSignalsHandler(signalHandler(raiseException=True))
 
@@ -140,16 +145,18 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
         moduleLoader, currentSibtCall,
         functools.partial(wrapScheduler, useDrySchedulers, stdout, stderr, 
-          clock),
+          clock, args.options["verbose"]),
         makeErrorLogger,
         (lambda rule: True) if args.options.get("show-sys", False) else \
             (lambda rule: rule.options["AllowedForUsers"] == userName))
     validator = constructRulesValidator()
+    unstablePhaseDetector = ExecutionClosenessDetector(clock,
+        timedelta(hours=1))
 
     if args.action in ["schedule", "check"]:
       matchingRuleSet = RuleSet(configRepo.rulesFinder.findRulesByPatterns(
           args.options["rule-patterns"], onlySyncRules=True))
-    if args.action in ["sync-uncontrolled", "execute-rule"]:
+    if args.action in ["sync", "execute-rule"]:
       rule = configRepo.rulesFinder.getSyncRule(args.options["rule-name"])
 
     if args.action == "show":
@@ -183,37 +190,60 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           errorLogger.log, continued=True), matchingRuleSet, ex.errors)
         return 1
 
-    elif args.action == "sync-uncontrolled":
+    elif args.action == "sync":
+      BeforeRunning = object()
+      exitStatus = None
       try:
-        rule.sync()
-      except BaseException as ex:
-        exitStatus = ex.exitStatus if isinstance(ex, ExternalFailureException) \
-            else ex.childExitStatus if isinstance(ex, FatalSignalException) \
-            else None
-        errorLogger.log("running rule ‘{0}’ failed ({1})", rule.name,
-          str(exitStatus) if exitStatus is not None else "<unexpected error>")
-        if not isinstance(ex, ExternalFailureException):
+        try:
+          rule.sync(validator, FcntlMutexManager(paths.lockDir))
+        except ExternalFailureException as ex:
+          exitStatus = ex.exitStatus
+          printKnownException(ex, errorLogger, 1)
           raise
-        printKnownException(ex, errorLogger, 1)
-        return 1
+        except FatalSignalException as ex:
+          exitStatus = ex.childExitStatus
+          raise
+        except ValidationException as ex:
+          exitStatus = BeforeRunning
+          printValidationErrors(errorLogger.log, functools.partial(
+            errorLogger.log, continued=True), [rule], ex.errors)
+          raise
+        except LockException as ex:
+          exitStatus = BeforeRunning
+          errorLogger.log(
+            "‘{0}’ is already synchronizing, could not acquire lock",
+            rule.name)
+          raise
+      except BaseException as ex:
+        errorDesc = str(exitStatus)
+        if exitStatus is BeforeRunning:
+          errorDesc = "before syncing could start"
+        if exitStatus is None:
+          errorDesc = "<unexpected error>"
+        errorLogger.log("running rule ‘{0}’ failed ({1})", rule.name, errorDesc)
+
+        if isinstance(ex, (ExternalFailureException, ValidationException,
+          LockException)):
+          return 1
+        raise
 
     elif args.action == "execute-rule":
       from sibt.application.execenvironment import ExecEnvironment
-      log = FilesDBSchedulingsLog(paths.logDir)
+      log = configRepo.userLog
 
-      syncUncontrolledSucceeded = [False]
+      syncCallSucceeded = [False]
       def makeSchedulerExecute(logFile):
-        execEnv = ExecEnvironment(callToSyncUncontrolled(currentSibtCall) +
+        execEnv = ExecEnvironment(callToSibtSync(currentSibtCall) +
             [rule.name],
             logFile,
             logSubProcess)
         succeeded = rule.scheduler.execute(execEnv, rule.scheduling)
-        syncUncontrolledSucceeded[0] = succeeded
+        syncCallSucceeded[0] = succeeded
         return succeeded
 
       log.addLogging(rule.name, clock, makeSchedulerExecute)
 
-      if not syncUncontrolledSucceeded[0]:
+      if not syncCallSucceeded[0]:
         return 3
 
     elif args.action == "list":
@@ -231,7 +261,9 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
       for rule in configRepo.rulesFinder.getAll():
-        for version in rule.versionsOf(locationFromArg(args.options["file"])):
+        for version in getVersionsFromRule(errorLogger, clock, rule, 
+            locationFromArg(args.options["file"]), 
+            args.action != "restore", unstablePhaseDetector):
           string = version.strWithUTCW3C if args.options["utc"] else \
               version.strWithLocalW3C
           stringsToVersions[string] = version
@@ -257,8 +289,16 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         version = stringsToVersions[matchingVersions[0]]
 
         if args.action == "restore":
-          version.rule.restore(locationFromArg(args.options["file"]), version,
-              locationFromArg(args.options.get("to", None)))
+          try:
+            detectorForRestoring = NegativeUnstablePhaseDetector() if \
+                args.options["force"] else unstablePhaseDetector
+            version.rule.restore(locationFromArg(args.options["file"]), version,
+                locationFromArg(args.options.get("to", None)), 
+                detectorForRestoring)
+          except UnstablePhaseException:
+            printUnstablePhaseWarning(errorLogger, rule.name, 
+                "pass --force to restore anyway", isError=True)
+            return 1
         if args.action == "list-files":
           files = version.rule.listFiles(locationFromArg(args.options["file"]), 
               version, args.options["recursive"])
@@ -332,6 +372,23 @@ def overridePaths(paths, cmdLineArgs):
 def createNotExistingDirs(paths):
   DirTreeNormalizer(paths).createNotExistingDirs()
 
+def printUnstablePhaseWarning(errorLogger, ruleName, suffix=None, 
+    isError=False):
+  prefix = "error" if isError else "warning"
+  if suffix is not None:
+    suffix = ", " + suffix
+  errorLogger.log("{0}: execution of rule ‘{1}’ in less than 1 hour{2}",
+      prefix, ruleName, suffix)
+
+def getVersionsFromRule(errorLogger, clock, rule, location,
+    printWarnings, unstablePhaseDetector):
+  try:
+    return rule.versionsOf(location, unstablePhaseDetector)
+  except UnstablePhaseException:
+    if printWarnings:
+      printUnstablePhaseWarning(errorLogger, rule.name)
+    return rule.versionsOf(location, NegativeUnstablePhaseDetector())
+
 def showRule(rule, output):
   output.println(rule.name + ":")
   IniFileSyntaxRuleConfigPrinter(output).show(rule)
@@ -343,11 +400,12 @@ def printValidationErrors(printFuncForRuleNames, printFunc, ruleSet, errors):
   for error in errors:
     printFunc(error)
 
-def wrapScheduler(useDrySchedulers, stdout, stderr, clock, sched):
+def wrapScheduler(useDrySchedulers, stdout, stderr, clock, 
+    forceLoggingToStderr, sched):
   ret = DryScheduler(sched, stdout) if useDrySchedulers else sched
   ret = DefaultImplScheduler(ret)
   ret = ScriptRunningScheduler(ret)
-  return OutputCapturingScheduler(ret, clock, stderr)
+  return OutputCapturingScheduler(ret, clock, stderr, forceLoggingToStderr)
 
 def enableRule(output, baseName, paths, instanceName, configLines):
   instFilePath = os.path.join(paths.enabledDir, instanceName + "@" + baseName)
@@ -386,5 +444,5 @@ def main():
       Paths(UserBasePaths(0)), getpass.getuser(), os.getuid(), 
       PyModuleLoader("schedulers"),
       CurrentTimeClock(),
-      lambda currentSibtCall: currentSibtCall + ["sync-uncontrolled", "--"])
+      lambda currentSibtCall: currentSibtCall + ["sync", "--"])
   sys.exit(exitStatus)

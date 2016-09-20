@@ -3,12 +3,37 @@ from test.common import mock
 from sibt.domain.syncrule import SyncRule
 from datetime import datetime, timedelta, timezone
 from test.common.builders import remoteLocation, location, version, port, \
-  mockSyncer, mkSyncerOpts
-from sibt.domain.exceptions import UnsupportedProtocolException
+  mockSyncer, mkSyncerOpts, orderedDateTimes, schedulingLogging, \
+  anyUTCDateTime, mockSched
+from sibt.domain.exceptions import UnsupportedProtocolException, \
+    UnstablePhaseException
+from sibt.domain.negativeunstablephasedetector import \
+    NegativeUnstablePhaseDetector
+
+class MockExecutionsLog(object):
+  def __init__(self):
+    self.executions = None
+  
+  def loggingsOfRules(self, ruleNames):
+    return dict((name, self.executions) for name in ruleNames)
+
+class PositiveUnstablePhaseDetector(object):
+  def isInUnstablePhase(self, ruleToTest):
+    return True
+
+def detector():
+  return NegativeUnstablePhaseDetector()
+
+def versionsOf(rule, path):
+  return rule.versionsOf(path, detector())
 
 class Fixture(object):
-  def ruleWith(self, name="some-rule", mockedSynchronizer=None, 
-      schedOptions={}, syncerOptions=mkSyncerOpts()):
+  def __init__(self):
+    self.log = MockExecutionsLog()
+
+  def ruleWith(self, name="some-rule", scheduler=None,
+      mockedSynchronizer=None, schedOptions={}, 
+      syncerOptions=mkSyncerOpts()):
     if mockedSynchronizer is None:
       mockedSynchronizer = mockSyncer()
 
@@ -17,7 +42,7 @@ class Fixture(object):
     if "Loc2" not in syncerOptions:
       syncerOptions["Loc2"] = location("/etc")
     return SyncRule(name, {}, schedOptions, syncerOptions, 
-        False, None, mockedSynchronizer)
+        False, scheduler, mockedSynchronizer, self.log)
 
 @pytest.fixture
 def fixture():
@@ -43,21 +68,38 @@ def test_shouldReturnVersionsGotFromSynchronizerIfFileIsWithinAPort(fixture):
   rule = fixture.ruleWith(mockedSynchronizer=syncer, 
       syncerOptions=syncerOptions)
 
-  ret = [datetime.now(timezone.utc), 
-      datetime.now(timezone.utc) + timedelta(days=1)]
+  ret = orderedDateTimes(2)
   def check(path, expectedRelativePath, expectedLoc):
     syncer.expectCalls(mock.callMatching("versionsOf", 
         lambda path, locNumber, options: path == expectedRelativePath and 
         locNumber == expectedLoc and options == syncerOptions,
         ret=ret))
-    assert set(rule.versionsOf(path)) == { version(rule, ret[0]),
+    assert set(versionsOf(rule, path)) == { version(rule, ret[0]),
         version(rule, ret[1]) }
     syncer.checkExpectedCalls()
 
   check(location("/mnt/data/loc1/blah"), "blah", 1)
   check(location("/mnt/backup/loc2/one/two/"), "one/two", 2)
   check(location("/mnt/foo/loc3/bar/../"), ".", 3)
-  assert len(rule.versionsOf(location("/mnt/data/quux"))) == 0
+  assert len(versionsOf(rule, location("/mnt/data/quux"))) == 0
+
+def test_shouldThrowExceptionIfInUnstablePhaseWhileGettingVersions(fixture):
+  syncer = mockSyncer()
+  syncer.versionsOf = lambda *_: [anyUTCDateTime()]
+  rule = fixture.ruleWith(mockedSynchronizer=syncer, syncerOptions=mkSyncerOpts(
+    Loc1=location("/loc1")))
+  
+  rule.versionsOf(location("/not-in-a-port"), PositiveUnstablePhaseDetector())
+
+  with pytest.raises(UnstablePhaseException):
+    rule.versionsOf(location("/loc1"), PositiveUnstablePhaseDetector())
+
+def test_shouldThrowExceptionIfInUnstablePhaseWhenRestoring(fixture):
+  rule = fixture.ruleWith(syncerOptions=mkSyncerOpts(Loc1=location("/data")))
+
+  with pytest.raises(UnstablePhaseException):
+    rule.restore(location("/data"), version(rule), None, 
+        PositiveUnstablePhaseDetector())
 
 def test_shouldDistinguishLocOptionsCorrespondingToPortsThatAreWrittenTo(
     fixture):
@@ -96,7 +138,7 @@ def test_shouldThrowAnExceptionIfLocOptionsHaveProtocolsNotSupportedBySyncer(
   assert ex.value.protocol == "d"
   assert ex.value.supportedProtocols == ["c"]
 
-def test_shouldAssignRestoreTargetToThePortWhereToBeRestoredFileWasFoundIn(
+def test_shouldAssignRestoreTargetToThePortTheFileToBeRestoredWasFoundIn(
     fixture):
   syncer = mockSyncer()
   syncer.ports = [port(["a"]), port(["b"])]
@@ -107,7 +149,7 @@ def test_shouldAssignRestoreTargetToThePortWhereToBeRestoredFileWasFoundIn(
         Loc2=remoteLocation(protocol="b", path="/bar")))
  
   with pytest.raises(UnsupportedProtocolException) as ex:
-    rule.restore(loc1, version(rule), remoteLocation(protocol="b"))
+    rule.restore(loc1, version(rule), remoteLocation(protocol="b"), detector())
   assert ex.value.supportedProtocols == ["a"]
 
 def test_shouldEnforceSpecialInvariantThatOnePortMustHaveFileProtocol(fixture):
@@ -127,5 +169,41 @@ def test_shouldEnforceSpecialInvariantThatOnePortMustHaveFileProtocol(fixture):
         Loc2=remoteLocation(protocol="file", path="/bar")))
   with pytest.raises(UnsupportedProtocolException) as ex:
     rule.restore(remoteLocation(protocol="file", path="/bar/file"),
-        version(rule), remoteLocation(protocol="remote"))
+        version(rule), remoteLocation(protocol="remote"), detector())
 
+def test_shouldReturnItsLastLoggedExecutionIfItExists(fixture):
+  firstTime, lastTime = orderedDateTimes(2)
+  first, latest = schedulingLogging(firstTime), schedulingLogging(lastTime)
+  
+  fixture.log.executions = [first, latest]
+  rule = fixture.ruleWith()
+  assert rule.latestExecution == latest
+
+  fixture.log.executions = []
+  assert rule.latestExecution is None
+
+def test_shouldBeAbleToPredictItsNextExecutionWithHelpOfTheScheduler(fixture):
+  lastEndTime, nextTime = orderedDateTimes(2)
+  sched = mockSched()
+  def rule():
+    return fixture.ruleWith(scheduler=sched)
+
+  fixture.log.executions = [schedulingLogging(endTime=lastEndTime)]
+
+  sched.expectCalls(mock.call("nextExecutionTime", 
+    (rule().scheduling, lastEndTime), ret=nextTime))
+  nextExecution = rule().nextExecution
+  assert not nextExecution.finished
+  assert nextExecution.startTime == nextTime
+
+  sched.expectCalls(mock.callMatching("nextExecutionTime", 
+    mock.AnyArgs, ret=None))
+  assert rule().nextExecution is None
+
+  fixture.log.executions = []
+  sched.expectCalls(mock.callMatching("nextExecutionTime", 
+    lambda _, passedLastEndTime: passedLastEndTime is None, ret=nextTime))
+  assert rule().nextExecution.startTime == nextTime
+
+  fixture.log.executions = [schedulingLogging(unfinished=True)]
+  assert rule().nextExecution is None

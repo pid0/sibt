@@ -1,7 +1,7 @@
 from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 from test.common import mock
-import re
+from test.common import unIndentCode
 
 SchedulerFormat = """
 availableOptions = {opts}
@@ -59,6 +59,9 @@ class SchedulerBuilder(ConfigObjectBuilder):
   def withExecuteFuncCode(self, code):
     return self._withParams(executeFuncCode=code)
 
+  def withNextExecutionTimeFunc(self, nextExecutionTime):
+    return self._withParams(nextExecutionTimeFunc = nextExecutionTime)
+
   def mock(self):
     mocked = mock.mock()
     mocked.availableOptions = self.options
@@ -70,6 +73,8 @@ class SchedulerBuilder(ConfigObjectBuilder):
     mocked.run = self.kwParams["runFunc"]
     if "executeFunc" in self.kwParams:
       mocked.execute = self.kwParams["executeFunc"]
+    if "nextExecutionTimeFunc" in self.kwParams:
+      mocked.nextExecutionTime = self.kwParams["nextExecutionTimeFunc"]
 
     self.path.write("")
     self.reRegister(mocked)
@@ -84,20 +89,13 @@ class SchedulerBuilder(ConfigObjectBuilder):
     path.write(self.content)
     return self
 
-  def unIndent(self, code):
-    lines = [line for line in code.splitlines() if len(line.strip()) > 0]
-    spacePrefixLengths = [len(re.match(r"([ ]*)[^ ]", line).group(1)) for 
-        line in lines]
-    longestCommonPrefix = min(spacePrefixLengths, default=0)
-    return "\n".join(line[longestCommonPrefix:] for line in lines)
-
   @property
   def content(self):
     return SchedulerFormat.format(
-        initFunc=self.unIndent(self.kwParams["initFuncCode"]),
-        checkFunc=self.unIndent(self.kwParams["checkFuncCode"]),
-        runFunc=self.unIndent(self.kwParams["runFuncCode"]),
-        executeFunc=self.unIndent(self.kwParams.get("executeFuncCode", "")),
+        initFunc=unIndentCode(self.kwParams["initFuncCode"]),
+        checkFunc=unIndentCode(self.kwParams["checkFuncCode"]),
+        runFunc=unIndentCode(self.kwParams["runFuncCode"]),
+        executeFunc=unIndentCode(self.kwParams.get("executeFuncCode", "")),
         opts=self.options,
         sharedOpts=self.sharedOptions)
   @property

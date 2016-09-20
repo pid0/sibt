@@ -43,10 +43,10 @@ class SchedulingBuilder(object):
   def build(self):
     return Scheduling(self.ruleName, self.options)
 
-def execEnvironment(syncUncontrolledCall=[],
+def execEnvironment(syncCall=[],
     logger=None,
     logSubProcessWith=lambda *args, **kwargs: None):
-  return ExecEnvironment(syncUncontrolledCall, logger, logSubProcessWith)
+  return ExecEnvironment(syncCall, logger, logSubProcessWith)
 
 def anyScheduling(): return buildScheduling()
 def buildScheduling(ruleName=None, **options):
@@ -86,11 +86,15 @@ def schedulingResult(endTime=None):
 
   return SchedulingResult(endTime, True)
 
-def schedulingLogging(startTime=None):
+def schedulingLogging(startTime=None, endTime=None, unfinished=False):
   if startTime is None:
     startTime = anyUTCDateTime()
 
-  return SchedulingLogging(startTime, "foobarüã", schedulingResult())
+  result = schedulingResult(endTime=endTime)
+  if unfinished:
+    result = None
+
+  return SchedulingLogging(startTime, "foobarüã", result)
 
 def port(supportedProtocols=["file"], isWrittenTo=False):
   return Port(supportedProtocols, isWrittenTo)

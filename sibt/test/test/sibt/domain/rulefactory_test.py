@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 class Fixture(object):
   def __init__(self):
-    self.factory = RuleFactory()
+    self.factory = RuleFactory(None)
 
   def buildRuleWithNoOpts(self):
     return self.factory.build("name", fakeConfigurable(), 

@@ -11,6 +11,9 @@ def makeException(ruleName, message):
   return ConfigConsistencyException("rule", ruleName, message)
 
 class RuleFactory(object):
+  def __init__(self, log):
+    self.log = log
+
   def build(self, name, scheduler, synchronizer, ruleOptions, 
       schedulerOptions, synchronizerOptions, enabled):
     self._throwIfRuleNameInvalid(name)
@@ -28,7 +31,7 @@ class RuleFactory(object):
     self._setRuleOptionsDefaultValues(ruleOptions)
 
     return SyncRule(name, ruleOptions, schedulerOptions, synchronizerOptions,
-        enabled, scheduler, synchronizer)
+        enabled, scheduler, synchronizer, self.log)
 
   def _throwIfLocOptionsNotPresent(self, syncerOpts, ports, ruleName):
     if len(syncerOpts.locs) < len(ports):

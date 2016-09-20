@@ -229,8 +229,12 @@ class CliParser(object):
         result, state = self._parseUntil(choiceArg, state)
         newGroup = groupsObj.choose(result[choiceArg.name])
         if newGroup is None:
-          newGroup = groupsObj.default
-          state = state.argsPrepended(*result[choiceArg.name].source)
+          if groupLevel == 0:
+            raise NoSubGroupNameException(" ".join(
+              result[choiceArg.name].source))
+          else:
+            newGroup = groupsObj.default
+            state = state.argsPrepended(*result[choiceArg.name].source)
       except (TooFewArgsException, UnknownOptionalException) as ex:
         newGroup = groupsObj.default if isinstance(ex, TooFewArgsException) \
             else groupsObj.groupWithOpt(ex.nameOfOpt)
@@ -423,6 +427,14 @@ class UnexpectedOptionalValueException(ParseException):
   def __str__(self):
     return "option {0} doesn't take a value ({1} given)".format(self.optName,
         self.value)
+
+class NoSubGroupNameException(ParseException):
+  def __init__(self, givenName):
+    super().__init__()
+    self.givenName = givenName
+
+  def __str__(self):
+    return "{0} is not a valid command".format(self.givenName)
 
 def standardParse(parser, progName, args, stdout, stderr):
   prefix = "Usage: " + progName

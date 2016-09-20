@@ -1,9 +1,12 @@
 from sibt.domain.scheduling import Scheduling
 from sibt.domain.version import Version
-from sibt.domain.exceptions import UnsupportedProtocolException
+from sibt.domain.exceptions import UnsupportedProtocolException, \
+    UnstablePhaseException, ValidationException
 from sibt.infrastructure.types import Enum
 from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure import types
+from sibt.domain.schedulinglogging import SchedulingLogging, SchedulingResult
+from sibt.domain.ruleset import RuleSet
 
 LocCheckLevel = Enum("None", "Default", "Strict")
 
@@ -13,12 +16,13 @@ AvailableOptions = [
 
 class SyncRule(object):
   def __init__(self, name, options, schedulerOptions, synchronizerOptions, 
-      enabled, scheduler, synchronizer):
+      enabled, scheduler, synchronizer, log):
     self.name = name
     self.schedulerOptions = schedulerOptions
     self.enabled = enabled
     self.scheduler = scheduler
     self.synchronizer = synchronizer
+    self.log = log
     self.ports = synchronizer.ports
     self.options = options
     self._onePortMustHaveFileProtocol = synchronizer.onePortMustHaveFileProtocol
@@ -46,19 +50,61 @@ class SyncRule(object):
   def scheduling(self):
     return Scheduling(self.name, self.schedulerOptions)
 
-  def sync(self):
-    self.synchronizer.sync(self.synchronizerOptions)
+  @property
+  def latestExecution(self):
+    executions = self.log.loggingsOfRules([self.name])[self.name]
+    if len(executions) == 0:
+      return None
+    return executions[-1]
 
-  def versionsOf(self, location):
+  @property
+  def executing(self):
+    lastExecution = self.latestExecution
+    try:
+      return not lastExecution.finished
+    except AttributeError:
+      return False
+
+  @property
+  def nextExecution(self):
+    if self.executing:
+      return None
+    try:
+      lastExecutionTime = self.latestExecution.endTime
+    except AttributeError:
+      lastExecutionTime = None
+
+    nextExecutionTime = self.scheduler.nextExecutionTime(self.scheduling, 
+        lastExecutionTime)
+    if nextExecutionTime is None:
+      return None
+    return SchedulingLogging(nextExecutionTime, b"", None)
+
+  def sync(self, validator, mutexManager):
+    validationErrors = validator.validate(RuleSet([self]))
+    if len(validationErrors) > 0:
+      raise ValidationException(validationErrors)
+
+    with mutexManager.lockForId(self.name):
+      self.synchronizer.sync(self.synchronizerOptions)
+
+  def versionsOf(self, location, unstablePhaseDetector):
     locNumber = self._getLocNumber(location)
     if locNumber is None:
       return []
+    if unstablePhaseDetector.isInUnstablePhase(self):
+      raise UnstablePhaseException()
+
     return [Version(self, time) for time in 
         self.synchronizer.versionsOf(
           self._loc(locNumber).relativePathTo(location), 
           locNumber, self.synchronizerOptions)]
 
-  def restore(self, location, version, destinationLocation):
+  def restore(self, location, version, destinationLocation, 
+      unstablePhaseDetector):
+    if unstablePhaseDetector.isInUnstablePhase(self):
+      raise UnstablePhaseException()
+
     locNumber = self._getLocNumber(location)
     locIndex = locNumber - 1
 

@@ -17,6 +17,12 @@ class LocationNotAbsoluteException(LocationInvalidException):
   def __init__(self, stringRepresentation):
     super().__init__(stringRepresentation, "is not absolute")
 
+class UnstablePhaseException(Exception):
+  pass
+
+class LockException(Exception):
+  pass
+
 class UnsupportedProtocolException(Exception):
   def __init__(self, ruleName, optionName, protocol, supportedProtocols=[],
       explanation=""):

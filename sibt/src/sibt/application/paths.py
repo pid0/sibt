@@ -22,6 +22,9 @@ class Paths(object):
   def logDir(self):
     return os.path.join(self.varDir, "log")
   @property
+  def lockDir(self):
+    return os.path.join(self.varDir, "locks")
+  @property
   def readonlySchedulersDir(self):
     return os.path.join(self.readonlyDir, "schedulers")
   @property

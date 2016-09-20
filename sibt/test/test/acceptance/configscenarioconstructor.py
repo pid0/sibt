@@ -1,4 +1,5 @@
 from py.path import local
+from test.common import execmock
 
 def initName(builder, name):
   return builder.withAnyName() if name is None else builder.withName(name)
@@ -36,8 +37,8 @@ class ConfigScenarioConstructor(object):
     return self.aSched().asSysConfig()
   def aSysSyncer(self):
     return self.aSyncer().asSysConfig()
-  def aSysRule(self):
-    return self.aRule().asSysConfig()
+  def aSysRule(self, name=None):
+    return self.aRule(name).asSysConfig()
 
   def ruleWithSchedAndSyncer(self, name=None, isSysConfig=False):
     return self.aRule(name).asSysConfig(isSysConfig).\
@@ -54,6 +55,10 @@ class ConfigScenarioConstructor(object):
         withSchedulerName(schedName).\
         withSynchronizerName(syncerName).\
         withNewValidLocs(locsAreEmpty=True)
+
+  def syncerHavingAnyVersions(self):
+    return self.aSyncer().allowingSetupCalls().allowing(
+        execmock.call(lambda args: args[0] == "versions-of", ret=["0"]))
 
   def syncerReturningVersions(self, forRelativeFile, ifWithinLoc1=[""], 
       ifWithinLoc2=[""]):

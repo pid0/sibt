@@ -22,8 +22,6 @@ class ConfigFoldersWriter(object):
       ret.join("file").write("")
     return str(ret)
 
-  def createSysFolders(self):
-    self.sysPaths = existingPaths(self.sysPaths)
   def createReadonlyFolders(self):
     for folder in [self.paths.readonlySchedulersDir, 
         self.paths.readonlySynchronizersDir]:

@@ -16,7 +16,7 @@ from test.common import relativeToProjectRoot
 from test.common.assertutil import strToTest, iterToTest
 from sibt.application import configrepo
 from sibt.infrastructure import types
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from test.common.bufferingerrorlogger import BufferingErrorLogger
 
 testPackageCounter = 0
@@ -143,6 +143,22 @@ def test_shouldNotSwallowExitCodeOfSibtButPassItOnToAnacron(fixture, capfd):
 
   _, stderr = capfd.readouterr()
   assert "status: 4" in stderr
+
+def test_shouldCopyAnacronsBehaviorWhenDeterminingTheNextExecutionTime(fixture):
+  fixture.init()
+
+  assert fixture.mod.nextExecutionTime(
+      buildScheduling(Interval=timedelta(days=2)),
+      datetime(2010, 1, 1, 0, 0, 0, 0, timezone.utc)) == datetime(
+          2010, 1, 3, 0, 0, 0, 0, timezone.utc)
+
+  assert fixture.mod.nextExecutionTime(
+      buildScheduling(Interval=timedelta(days=3, hours=5)),
+      datetime(2010, 1, 1, 20, 0, 0, 0, timezone.utc)) == datetime(
+          2010, 1, 4, 0, 0, 0, 0, timezone.utc)
+
+  assert abs(fixture.mod.nextExecutionTime(buildScheduling(), None) -
+      datetime.now(timezone.utc)) < timedelta(seconds=1)
 
 def test_shouldHaveAnInterfaceToAnacronsStartHoursRange(fixture):
   assert "AllowedHours" in fixture.optionNames

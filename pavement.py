@@ -53,8 +53,8 @@ def prependToPythonPath(newPath):
 
 @task
 def setup_testing():
-  # Note: pytest automatically imports the test root directory.
   prependToPythonPath(os.path.abspath("sibt/src"))
+  prependToPythonPath(os.path.abspath("sibt/test"))
 
   testTempDir = local(tempfile.gettempdir()) / "sibt-test-temp-dir"
   if os.path.isdir(str(testTempDir)):
@@ -64,8 +64,13 @@ def setup_testing():
   
 @task
 @needs(["setup_testing"])
-def acceptance_test():
+def quick_acceptance_test():
   runPyTest([str(Root / "sibt/test/test/acceptance/sibtspec.py")])
+  runPyTest([str(Root / "sibt/test/test/acceptance/schedulerusagespec.py")])
+
+@task
+@needs(["quick_acceptance_test"])
+def acceptance_test():
   runPyTest([str(Root / "sibt/test/test/acceptance/processspec.py")])
 
 @task

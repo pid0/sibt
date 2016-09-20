@@ -44,3 +44,6 @@ def test_shouldAllowForListingShortcuts(fixture):
   assertListAction(result)
   assert result.options["full"] == False
   assert result.options["rule-patterns"] == ["foo", "bar"]
+
+def test_shouldNotDefaultToListingIfANonsenseActionIsGiven(fixture):
+  assert fixture.parseArgs(["this-action-is-not-defined"]) is None

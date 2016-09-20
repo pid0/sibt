@@ -1,6 +1,8 @@
 from test.common import mock
 from sibt.infrastructure.exceptions import ExternalFailureException
 
+DontCheck = object()
+
 def call(*args, **kwargs):
   return (args, kwargs)
 
@@ -17,7 +19,8 @@ def makeMockCall(program, predicateOrTuple, ret=[], delimiter="\n",
   matcher = (lambda calledProgram, args, delimiter="\n": 
       calledProgram == program and
       (predicateOrTuple(args) if callable(predicateOrTuple) else 
-        args == predicateOrTuple) and delimiter == expectedDelimiter) 
+        args == predicateOrTuple) and 
+      (delimiter == expectedDelimiter or expectedDelimiter is DontCheck)) 
 
   return mock.callMatching("getOutput", 
       matcherThrowingNotImplementedFailure(matcher) if \

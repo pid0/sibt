@@ -18,7 +18,7 @@ class TopLevelLogInterface(object):
     self.userLog, self.sysLog = openLogs(paths, sysPaths)
 
     self.rulesFinder = readRulesIntoFinder(paths, sysPaths, _ThinRuleFactory(),
-        lambda rule: True, 
+        _ThinRuleFactory(), lambda rule: True,
         readUserConf=paths is not None,
         readSysConf=sysPaths is not None)
 

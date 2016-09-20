@@ -25,7 +25,11 @@ class Fixture(object):
         SubGroups(
         SubGroup("sub1", OptArg("rest", noOfArgs="*"), 
           SubGroups(SubGroup("sub21"), SubGroup("sub22"))),
-        SubGroup("sub2", OptArg("abc")))), default="foo")
+        SubGroup("sub2", OptArg("abc")))), 
+      SubGroup("quux", SubGroups(
+        SubGroup("quuxsub1"),
+        SubGroup("quuxsub2", PosArg("rest", noOfArgs="*")), 
+          default="quuxsub2")), default="foo")
       ])
 
   def inFilesParser(self, noOfArgs="*", addOpts=[]):
@@ -185,12 +189,20 @@ def test_shouldChooseSubGroupsBasedOnASinglePositional(fixture):
 def test_shouldChooseDefaultGroupIfTheChoiceDoesntMatch(fixture):
   assert fixture.parserWithGroups.parseArgs([]).values == \
       dict(command="foo", first=False, rest=[])
-  result = fixture.parserWithGroups.parseArgs(["nothing"])
-  assert result.values == dict(command="foo", first=False, rest=["nothing"])
-  assert result.options["command"].source == ["foo"]
+
+  result = fixture.parserWithGroups.parseArgs(["quux", "nothing"])
+  assert result.values == dict(command="quux", command2="quuxsub2", 
+      rest=["nothing"])
+  assert result.options["command2"].source == ["quuxsub2"]
+
+def test_shouldRequireTheTopLevelChoiceToMatchAGroupIfGiven(fixture):
+  with pytest.raises(cliparser.NoSubGroupNameException) as ex:
+    fixture.parserWithGroups.parseArgs(["nothing"])
+  assert ex.value.givenName == "nothing"
 
 def test_shouldNotNotMatchAGroupIfThePositionalIsJustOneChar(fixture):
-  assert fixture.parserWithGroups.parseArgs(["b"]).values["command"] == "foo"
+  with pytest.raises(cliparser.NoSubGroupNameException):
+    fixture.parserWithGroups.parseArgs(["b"])
 
 def test_shouldChooseGroupThatContainsAnUnknownOptional(fixture):
   assert fixture.parserWithGroups.parseArgs(["-s", "sub1", "sub21"]).values == \

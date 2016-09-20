@@ -62,9 +62,15 @@ class SynchronizerBuilder(ConfigObjectBuilder):
         _allowingOptionsCalls().\
         _allowingCheckCall()
 
-  def expectingListFiles(self, matcher):
+  def expectingListFiles(self, matcher=lambda _: True):
     return self.expecting(execmock.call(lambda args: args[0] == "list-files" and
       matcher(args), delimiter="\0"))
+  def expectingRestore(self, matcher=lambda _: True):
+    return self.expecting(execmock.call(lambda args: args[0] == "restore" and
+      matcher(args)))
+  def expectingSync(self, matcher=lambda _: True):
+    return self.expecting(execmock.call(lambda args: args[0] == "sync" and
+      matcher(args)))
 
   def withOptions(self, *options):
     return self.allowing(execmock.call(lambda args: args[0] == 
