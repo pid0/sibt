@@ -14,7 +14,8 @@ from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure import types
 from sibt.domain.synchronizeroptions import SynchronizerOptions 
 from sibt.domain.ruleset import RuleSet
-from sibt.domain.schedulinglogging import SchedulingLogging, SchedulingResult
+from sibt.domain.schedulingset import SchedulingSet
+from sibt.domain.execution import Execution, ExecutionResult
 from test.common.presetcyclingclock import PresetCyclingClock
 from sibt.application.execenvironment import ExecEnvironment
 
@@ -80,21 +81,21 @@ def constantTimeClock(dateTime=None):
     dateTime = anyUTCDateTime()
   return PresetCyclingClock(dateTime)
 
-def schedulingResult(endTime=None):
+def executionResult(endTime=None):
   if endTime is None:
     endTime = anyUTCDateTime()
 
-  return SchedulingResult(endTime, True)
+  return ExecutionResult(endTime, True)
 
-def schedulingLogging(startTime=None, endTime=None, unfinished=False):
+def execution(startTime=None, endTime=None, unfinished=False):
   if startTime is None:
     startTime = anyUTCDateTime()
 
-  result = schedulingResult(endTime=endTime)
+  result = executionResult(endTime=endTime)
   if unfinished:
     result = None
 
-  return SchedulingLogging(startTime, "foobarüã", result)
+  return Execution(startTime, "foobarüã", result)
 
 def port(supportedProtocols=["file"], isWrittenTo=False):
   return Port(supportedProtocols, isWrittenTo)
@@ -134,6 +135,9 @@ def version(rule, time=anyUTCDateTime()):
 
 def ruleSet(*rules):
   return RuleSet(rules)
+
+def schedulingSet(schedulings):
+  return SchedulingSet(schedulings)
 
 def mockRule(name="foo", options=None, scheduler=None, loc1="/tmp/1", 
     loc2="/tmp/2", writeLocs=[2], schedOpts=dict(), syncerName="foo",

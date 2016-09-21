@@ -1,6 +1,5 @@
 from sibt.infrastructure import types
 from sibt.domain.optioninfo import OptionInfo
-from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
 from sibt.application.execenvironment import ExecEnvironment
 
 from sibt.infrastructure.teelogger import TeeLogger
@@ -33,7 +32,7 @@ class _FileLikeOutputWrapper(object):
   def write(self, chunk, **kwargs):
     self.output.println(chunk.decode(), lineSeparator="")
 
-class OutputCapturingScheduler(object):
+class LoggingScheduler(object):
   def __init__(self, wrapped, clock, stderr, forceLoggingToStderr):
     self._wrapped = wrapped
     self._clock = clock

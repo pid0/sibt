@@ -287,7 +287,7 @@ def test_shouldKeepIgnoringSignalsItsParentIgnored(fixture):
   fixture.stderr.shouldBeEmpty()
   fixture.shouldHaveExitedFromSignal(signal.SIGKILL)
 
-def test_shouldFinishLoggingSchedulingStatisticsEvenIfSignaled(fixture):
+def test_shouldFinishLoggingExecutionStatisticsEvenIfSignaled(fixture):
   flagFile = fixture.tmpdir / "flag"
 
   syncer = fixture.conf.aSyncer("blocking").withContent(r"""#!/usr/bin/env bash
@@ -309,17 +309,17 @@ def test_shouldFinishLoggingSchedulingStatisticsEvenIfSignaled(fixture):
 
   from sibt.api import openLog
 
-  logging = None
+  execution = None
   for i in range(100):
     time.sleep(0.05)
-    logging = openLog(fixture.paths, sibtSysPaths=None).loggingsOfRules(
+    execution = openLog(fixture.paths, sibtSysPaths=None).executionsOfRules(
         "*")[rule.name][0]
-    if logging.finished:
+    if execution.finished:
       break
 
-  assert logging.finished
-  assert not logging.succeeded
-  strToTest(logging.output).shouldInclude(
+  assert execution.finished
+  assert not execution.succeeded
+  strToTest(execution.output).shouldInclude(
       "foo\ntrapped\n", "SIGINT")
 
   assert os.path.isfile(str(flagFile))

@@ -5,7 +5,7 @@ from sibt.domain.exceptions import UnsupportedProtocolException, \
 from sibt.infrastructure.types import Enum
 from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure import types
-from sibt.domain.schedulinglogging import SchedulingLogging, SchedulingResult
+from sibt.domain.execution import Execution
 from sibt.domain.ruleset import RuleSet
 
 LocCheckLevel = Enum("None", "Default", "Strict")
@@ -52,7 +52,7 @@ class SyncRule(object):
 
   @property
   def latestExecution(self):
-    executions = self.log.loggingsOfRules([self.name])[self.name]
+    executions = self.log.executionsOfRules([self.name])[self.name]
     if len(executions) == 0:
       return None
     return executions[-1]
@@ -78,7 +78,7 @@ class SyncRule(object):
         lastExecutionTime)
     if nextExecutionTime is None:
       return None
-    return SchedulingLogging(nextExecutionTime, b"", None)
+    return Execution(nextExecutionTime, b"", None)
 
   def sync(self, validator, mutexManager):
     validationErrors = validator.validate(RuleSet([self]))
@@ -87,6 +87,18 @@ class SyncRule(object):
 
     with mutexManager.lockForId(self.name):
       self.synchronizer.sync(self.synchronizerOptions)
+
+  def execute(self, execEnv, clock):
+    syncCallSucceeded = [False]
+    def makeSchedulerExecute(logger):
+      newExecEnv = execEnv.withLoggerReplaced(logger)
+      succeeded = self.scheduler.execute(newExecEnv, self.scheduling)
+      syncCallSucceeded[0] = succeeded
+      return succeeded
+
+    self.log.logExecution(self.name, clock, makeSchedulerExecute)
+
+    return syncCallSucceeded[0]
 
   def versionsOf(self, location, unstablePhaseDetector):
     locNumber = self._getLocNumber(location)

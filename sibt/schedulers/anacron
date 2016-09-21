@@ -1,5 +1,4 @@
 from sibt.infrastructure.coprocessrunner import CoprocessRunner
-from sibt.infrastructure.schedulerhelper import checkOptionOfEachScheduling
 import os
 import tempfile
 from contextlib import contextmanager
@@ -43,8 +42,8 @@ class Anacron(object):
           scheduling.ruleName, roundedDays)
     return int(roundedDays)
 
-  def run(self, schedulings):
-    tmpDir = str(schedulings[0].options.get("TmpDir", tempfile.gettempdir()))
+  def schedule(self, schedulings):
+    tmpDir = str(schedulings.getSharedOption("TmpDir", tempfile.gettempdir()))
 
     with writeAndCloseTemporaryFile(tmpDir, TabPrefix, functools.partial(
         self.writeTabFile, schedulings)) as tabPath:
@@ -52,21 +51,19 @@ class Anacron(object):
           "-S", self.spoolDir, "-d")
 
   def writeTabFile(self, schedulings, tabFile):
-    for scheduling in schedulings:
-      if "AllowedHours" in scheduling.options:
-        tabFile.write("START_HOURS_RANGE={0}".format(
-            scheduling.options["AllowedHours"]) + "\n")
-        break
+    allowedHours = schedulings.getSharedOption("AllowedHours", None)
+    if allowedHours is not None:
+      tabFile.write("START_HOURS_RANGE={0}".format(allowedHours) + "\n")
 
     for scheduling in schedulings:
       self.writeTabEntry(tabFile, scheduling)
 
   def check(self, schedulings):
     ret = []
-    ret.extend(checkOptionOfEachScheduling(schedulings, "AllowedHours",
-      lambda _, setting, ruleName: None if self.hasCorrectAllowedHoursSyntax(
-        setting) else "Syntax error in AllowedHours setting of ‘{0}’ (‘{1}’)".\
-            format(ruleName, setting)))
+    ret.extend(schedulings.checkOptionsOfEach(lambda _, setting, ruleName: 
+      None if self.hasCorrectAllowedHoursSyntax(setting) else 
+      "Syntax error in AllowedHours setting of ‘{0}’ (‘{1}’)".format(
+        ruleName, setting), "AllowedHours"))
 
     for scheduling in schedulings:
       self.getIntervalInDays(scheduling, warn=True)
@@ -121,9 +118,9 @@ impl = Anacron()
 def init(*args):
   global impl
   impl.init(*args)
-def run(*args):
+def schedule(*args):
   global impl
-  impl.run(*args)
+  impl.schedule(*args)
 def check(*args):
   global impl
   return impl.check(*args)

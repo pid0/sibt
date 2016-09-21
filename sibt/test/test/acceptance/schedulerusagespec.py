@@ -67,8 +67,8 @@ def test_shouldMakeSchedulersCheckOptionsBeforeSchedulingAndAbortIfErrorsOccur(
       "uncontent-sched", "this problem cannot be solved")
   fixture.shouldHaveExitedWithStatus(1)
 
-  permissiveSchedMock.run = lambda *args: None
-  errorSchedMock.run = lambda *args: None
+  permissiveSchedMock.schedule = lambda *args: None
+  errorSchedMock.schedule = lambda *args: None
   errorSched.reRegister(errorSchedMock)
   permissiveSched.reRegister(permissiveSchedMock)
   fixture.runSibt("schedule", "*-with-2nd", "*without*")
@@ -82,7 +82,7 @@ def test_shouldNotScheduleIfAnyRuleDiffersFromTheOthersInASharedOption(fixture):
   rule1 = baseRule.withAnyName().withSchedOpts(TmpFolder="/tmp").write()
   rule2 = baseRule.withAnyName().withSchedOpts(TmpFolder="/tmp").write()
 
-  schedMock.expectCalls(mock.callMatching("run", lambda schedulings:
+  schedMock.expectCalls(mock.callMatching("schedule", lambda schedulings:
     schedulings[0].options["TmpFolder"].path == "/tmp"))
   fixture.runSibt("schedule", rule1.name, rule2.name)
   fixture.stderr.shouldBeEmpty()
@@ -109,9 +109,9 @@ def test_shouldAllowSchedulersToControlRuleExecutions(fixture):
 
   fixture.runSibt("execute-rule", rule.name)
 
-  logging = fixture.getSingleLogging(fixture.paths, None, rule.name)
-  assert logging.succeeded is True
-  strToTest(logging.output).shouldIncludeInOrder(
+  execution = fixture.getSingleExecution(fixture.paths, None, rule.name)
+  assert execution.succeeded is True
+  strToTest(execution.output).shouldIncludeInOrder(
       "something smart about a-rule", "another thing")
 
 def test_shouldProvideVariousOtherOptionsForControllingRuleExecutions(fixture):

@@ -44,8 +44,8 @@ def test_shouldScheduleRulesWithACommonSchedulerTogetherInASingleOperation(
     fixture.ruleWithSched(sched2), \
     fixture.ruleWithSched(sched1)
 
-  sched1.expectCalls(schedCallWithRules("run", rule1, rule3))
-  sched2.expectCalls(schedCallWithRules("run", rule2))
+  sched1.expectCalls(schedCallWithRules("schedule", rule1, rule3))
+  sched2.expectCalls(schedCallWithRules("schedule", rule2))
 
   fixture.schedule(rule1, rule2, rule3)
 

@@ -29,7 +29,7 @@ from sibt.application.dryscheduler import DryScheduler
 from sibt.configuration.optionvaluesparser import parseLocation
 from sibt.domain.ruleset import RuleSet
 from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
-from sibt.application.outputcapturingscheduler import OutputCapturingScheduler
+from sibt.application.loggingscheduler import LoggingScheduler
 from sibt.application.defaultimplscheduler import DefaultImplScheduler
 from sibt.application.scriptrunningscheduler import ScriptRunningScheduler
 from sibt.infrastructure.currenttimeclock import CurrentTimeClock
@@ -38,13 +38,12 @@ from sibt.application.executionclosenessdetector import \
 from sibt.domain.negativeunstablephasedetector import \
     NegativeUnstablePhaseDetector
 from sibt.infrastructure.fcntlmutexmanager import FcntlMutexManager
+from sibt.application.execenvironment import ExecEnvironment
 import signal
 import os
 import getpass
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
-
-from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
 import subprocess
 
 class FatalSignalException(BaseException):
@@ -228,22 +227,11 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         raise
 
     elif args.action == "execute-rule":
-      from sibt.application.execenvironment import ExecEnvironment
-      log = configRepo.userLog
+      execEnv = ExecEnvironment(callToSibtSync(currentSibtCall) + [rule.name],
+          None, logSubProcess)
+      succeeded = rule.execute(execEnv, clock)
 
-      syncCallSucceeded = [False]
-      def makeSchedulerExecute(logFile):
-        execEnv = ExecEnvironment(callToSibtSync(currentSibtCall) +
-            [rule.name],
-            logFile,
-            logSubProcess)
-        succeeded = rule.scheduler.execute(execEnv, rule.scheduling)
-        syncCallSucceeded[0] = succeeded
-        return succeeded
-
-      log.addLogging(rule.name, clock, makeSchedulerExecute)
-
-      if not syncCallSucceeded[0]:
+      if not succeeded:
         return 3
 
     elif args.action == "list":
@@ -405,7 +393,7 @@ def wrapScheduler(useDrySchedulers, stdout, stderr, clock,
   ret = DryScheduler(sched, stdout) if useDrySchedulers else sched
   ret = DefaultImplScheduler(ret)
   ret = ScriptRunningScheduler(ret)
-  return OutputCapturingScheduler(ret, clock, stderr, forceLoggingToStderr)
+  return LoggingScheduler(ret, clock, stderr, forceLoggingToStderr)
 
 def enableRule(output, baseName, paths, instanceName, configLines):
   instFilePath = os.path.join(paths.enabledDir, instanceName + "@" + baseName)

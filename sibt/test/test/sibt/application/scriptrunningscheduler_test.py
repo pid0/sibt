@@ -83,9 +83,6 @@ class Fixture(IntermediateSchedulerTestFixture):
       self.callsMock.clearExpectedCalls()
     return ret
 
-  def check(self, schedulings, subErrors=[]):
-    return self.makeSched(subErrors).check(schedulings)
-
 @pytest.fixture
 def fixture():
   return Fixture()
@@ -176,7 +173,7 @@ def test_shouldCheckSyntaxOfScriptsWithoutExecutingThem(fixture, tmpdir):
 
 def test_shouldReturnTheWrappedSchedsCheckErrors(fixture):
   iterToTest(fixture.check([buildScheduling(ExecOnSuccess="(")], 
-    subErrors=["foo", "bar"])).shouldContainMatching(
+    subCheckErrors=["foo", "bar"])).shouldContainMatching(
         lambda error: "ExecOnSuccess" in error,
         lambda error: error == "foo",
         lambda error: error == "bar")

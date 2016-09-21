@@ -1,7 +1,7 @@
 from sibt.infrastructure.caseclassequalityhashcode import \
     CaseClassEqualityHashCode
 
-class SchedulingLogging(CaseClassEqualityHashCode):
+class Execution(CaseClassEqualityHashCode):
   def __init__(self, startTime, output, result):
     self.startTime = startTime
     self.output = output
@@ -13,13 +13,12 @@ class SchedulingLogging(CaseClassEqualityHashCode):
       self.succeeded = result.succeeded
   
   def __repr__(self):
-    return "SchedulingLogging{0}".format((self.startTime, self.output, 
-      self._result))
+    return "Execution{0}".format((self.startTime, self.output, self._result))
 
-class SchedulingResult(CaseClassEqualityHashCode):
+class ExecutionResult(CaseClassEqualityHashCode):
   def __init__(self, endTime, succeeded):
     self.endTime = endTime
     self.succeeded = succeeded
   
   def __repr__(self):
-    return "SchedulingResult{0}".format((self.endTime, self.succeeded))
+    return "ExecutionResult{0}".format((self.endTime, self.succeeded))

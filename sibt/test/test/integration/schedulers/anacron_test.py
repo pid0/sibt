@@ -5,7 +5,7 @@ from test.common.schedulertest import SchedulerTestFixture
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from test.common.builders import buildScheduling, anyScheduling, scheduling, \
-    optInfo, localLocation
+    optInfo, localLocation, schedulingSet
 from test.common import mock
 import os.path
 from py.path import local
@@ -46,26 +46,24 @@ class Fixture(SchedulerTestFixture):
   def makeSched(self, **kwargs):
     return loadModule("anacron", varDir=self.varDir, **kwargs)
 
-  def run(self, schedulings, mockingExecs=True):
+  def schedule(self, schedulings, mockingExecs=True):
     if mockingExecs:
       self.mod.impl.processRunner = self.execs
-    self.mod.run(schedulings)
+    self.mod.schedule(schedulingSet(schedulings))
     self.execs.check()
-  def check(self, schedulings):
-    return self.mod.check(schedulings)
   
-  def runWithMockedSibt(self, sibtProgram, schedulings, sibtArgs=[]):
+  def scheduleWithMockedSibt(self, sibtProgram, schedulings, sibtArgs=[]):
     sibt = self.miscDir / "sibt"
     self.init(sibtCall=[str(sibt)] + sibtArgs)
     sibt.write(sibtProgram)
     sibt.chmod(0o700)
     assert self.check(schedulings) == []
-    self.run(schedulings, mockingExecs=False)
+    self.schedule(schedulings, mockingExecs=False)
 
   def checkOption(self, optionName, schedulings, matcher):
     self.execs.expect("anacron", execmock.call(
       lambda args: matcher(args[1 + args.index(optionName)])))
-    self.run(schedulings)
+    self.schedule(schedulings)
 
 @pytest.fixture
 def fixture(tmpdir):
@@ -75,7 +73,7 @@ def test_shouldInvokeAnacronWithGeneratedTabToCallBackToSibt(fixture):
   testFile = str(fixture.miscDir / "test")
   assert not os.path.isfile(testFile)
 
-  fixture.runWithMockedSibt(r"""#!/usr/bin/env bash
+  fixture.scheduleWithMockedSibt(r"""#!/usr/bin/env bash
   if [ $1 = --some-global-opt ] && [ "$2" = 'blah "'"'"'foo' ] && \
       [ $3 = execute-rule ] && [ $4 = -- ] && [ "$5" = 'some*rule' ]; then
     touch {0}
@@ -123,7 +121,7 @@ def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
         shouldNotInclude("three-weeks")
     logger.clear()
 
-  assert fixture.check(schedulings) == []
+  assert fixture.check(schedulings, logger=logger) == []
   shouldHaveWarned()
   
   def checkTab(tabPath):
@@ -138,7 +136,7 @@ def test_shouldRoundTheIntervalsToDaysAndWarnAboutLostParts(fixture):
   shouldHaveWarned()
 
 def test_shouldNotSwallowExitCodeOfSibtButPassItOnToAnacron(fixture, capfd):
-  fixture.runWithMockedSibt(r"""#!/usr/bin/env bash
+  fixture.scheduleWithMockedSibt(r"""#!/usr/bin/env bash
   exit 4""", [anyScheduling()])
 
   _, stderr = capfd.readouterr()
@@ -169,7 +167,7 @@ def test_shouldHaveAnInterfaceToAnacronsStartHoursRange(fixture):
     strToTest(local(tabPath).read()).shouldIncludeLinePatterns(
         "*START_HOURS_RANGE=6-20")
     return True
-  schedulings = [buildScheduling(AllowedHours="6-20"), anyScheduling()]
+  schedulings = [buildScheduling(AllowedHours="6-20")]
   fixture.checkOption("-t", schedulings, checkTab)
 
 def test_shouldCheckIfAllowedHoursSettingHasTheRightSyntax(fixture):

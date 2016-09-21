@@ -3,8 +3,8 @@ from test.common import mock
 from sibt.domain.syncrule import SyncRule
 from datetime import datetime, timedelta, timezone
 from test.common.builders import remoteLocation, location, version, port, \
-  mockSyncer, mkSyncerOpts, orderedDateTimes, schedulingLogging, \
-  anyUTCDateTime, mockSched
+  mockSyncer, mkSyncerOpts, orderedDateTimes, execution, anyUTCDateTime, \
+  mockSched
 from sibt.domain.exceptions import UnsupportedProtocolException, \
     UnstablePhaseException
 from sibt.domain.negativeunstablephasedetector import \
@@ -14,7 +14,7 @@ class MockExecutionsLog(object):
   def __init__(self):
     self.executions = None
   
-  def loggingsOfRules(self, ruleNames):
+  def executionsOfRules(self, ruleNames):
     return dict((name, self.executions) for name in ruleNames)
 
 class PositiveUnstablePhaseDetector(object):
@@ -173,7 +173,7 @@ def test_shouldEnforceSpecialInvariantThatOnePortMustHaveFileProtocol(fixture):
 
 def test_shouldReturnItsLastLoggedExecutionIfItExists(fixture):
   firstTime, lastTime = orderedDateTimes(2)
-  first, latest = schedulingLogging(firstTime), schedulingLogging(lastTime)
+  first, latest = execution(firstTime), execution(lastTime)
   
   fixture.log.executions = [first, latest]
   rule = fixture.ruleWith()
@@ -188,7 +188,7 @@ def test_shouldBeAbleToPredictItsNextExecutionWithHelpOfTheScheduler(fixture):
   def rule():
     return fixture.ruleWith(scheduler=sched)
 
-  fixture.log.executions = [schedulingLogging(endTime=lastEndTime)]
+  fixture.log.executions = [execution(endTime=lastEndTime)]
 
   sched.expectCalls(mock.call("nextExecutionTime", 
     (rule().scheduling, lastEndTime), ret=nextTime))
@@ -205,5 +205,5 @@ def test_shouldBeAbleToPredictItsNextExecutionWithHelpOfTheScheduler(fixture):
     lambda _, passedLastEndTime: passedLastEndTime is None, ret=nextTime))
   assert rule().nextExecution.startTime == nextTime
 
-  fixture.log.executions = [schedulingLogging(unfinished=True)]
+  fixture.log.executions = [execution(unfinished=True)]
   assert rule().nextExecution is None

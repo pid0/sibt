@@ -78,10 +78,10 @@ class SibtSpecFixture(object):
     path.chmod(0o700)
     return str(path)
 
-  def getSingleLogging(self, paths, sysPaths, ruleName):
+  def getSingleExecution(self, paths, sysPaths, ruleName):
     from sibt.api import openLog
     log = openLog(sibtPaths=paths, sibtSysPaths=sysPaths)
-    return log.loggingsOfRules("*")[ruleName][0]
+    return log.executionsOfRules("*")[ruleName][0]
 
   def setClock(self, clock):
     self.clock = clock
@@ -164,8 +164,8 @@ def fixture(tmpdir, capfd):
   return SibtSpecFixture(tmpdir, capfd)
 
 def test_shouldInvokeTheCorrectConfiguredSchedulersAndSynchronizers(fixture):
-  sched = fixture.conf.aSched().withRunFuncCode("""
-def run(args): print("scheduled rule '" + args[0].ruleName + "'")
+  sched = fixture.conf.aSched().withScheduleFuncCode("""
+def schedule(args): print("scheduled rule '" + args[0].ruleName + "'")
     """).write()
 
   syncer1 = fixture.conf.aSyncer().withBashCode("""
@@ -366,7 +366,8 @@ def test_shouldPassParsedAndFormattedOptionsToSyncersAndSchedsBasedOnType(
       withScheduler(sched).\
       withSynchronizer(syncer).write()
 
-  schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
+  schedMock.expectCallsInAnyOrder(mock.callMatching("schedule", 
+    lambda schedulings: 
       len(schedulings) == 1 and
       schedulings[0].ruleName == rule.name and
       schedulings[0].options == dict(Verbosity="High", Interval=timedelta(
@@ -496,11 +497,11 @@ def test_shouldScheduleEnabledRulesIfMatchedByPatternsAndDisabledOnesIfExactly(
   for name in ["disabled-1", "disabled-2"]:
     disabledRule.withName(name).write()
 
-  schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
-      iterableContainsPropertiesInAnyOrder(schedulings,
-        lambda scheduling: scheduling.ruleName,
-        equalsPred("rule-a1"), equalsPred("rule-a2"),
-        equalsPred("disabled-2"), equalsPred("exact[-]match"))))
+  schedMock.expectCallsInAnyOrder(mock.callMatching("schedule", 
+    lambda schedulings: iterableContainsPropertiesInAnyOrder(schedulings,
+      lambda scheduling: scheduling.ruleName,
+      equalsPred("rule-a1"), equalsPred("rule-a2"),
+      equalsPred("disabled-2"), equalsPred("exact[-]match"))))
 
   fixture.runSibt("schedule", "*a[0-9]", "disabled-2", "exact[-]match")
 
@@ -519,8 +520,8 @@ def test_shouldScheduleRulesMatchedByMultiplePatternsOnlyOnce(fixture):
   for name in ["a1", "a2", "b1", "b2", "c1", "c2"]:
     baseRule.withName(name).write()
 
-  schedMock.expectCallsInAnyOrder(mock.callMatching("run", lambda schedulings:
-    len([scheduling for scheduling in schedulings if 
+  schedMock.expectCallsInAnyOrder(mock.callMatching("schedule", 
+    lambda schedulings: len([scheduling for scheduling in schedulings if 
       scheduling.ruleName == "a1"]) == 1))
 
   fixture.runSibt("schedule", "?1", "a?", "a1")
@@ -937,8 +938,8 @@ def test_shouldPerformSanityChecksBeforeSchedulingDependingOnRuleSettings(
       write()
   ruleWithEmptyLocs = fixture.conf.ruleWithSchedAndSyncer("r-empty").\
       withNewValidLocs(locsAreEmpty=True).write()
-  ruleWhoseLocsDontExist.scheduler.withEmptyRunFuncCode().write()
-  ruleWithEmptyLocs.scheduler.withEmptyRunFuncCode().write()
+  ruleWhoseLocsDontExist.scheduler.withEmptyScheduleFuncCode().write()
+  ruleWithEmptyLocs.scheduler.withEmptyScheduleFuncCode().write()
 
   fixture.runSibt("schedule", "r-exist")
   fixture.shouldHaveExitedWithStatus(1)
@@ -1014,7 +1015,7 @@ def test_shouldHaveACheckActionThatDoesTheSameChecksAsScheduleButDoesntSchedule(
 def test_shouldBeAbleToSimulateSchedulingsAndPrintThemToStdout(fixture):
   def fail(*args):
     assert False
-  basicSched = fixture.conf.aSched().withRunFunc(fail)
+  basicSched = fixture.conf.aSched().withScheduleFunc(fail)
   _, sched1 = basicSched.withName("sched-1").mock()
   _, sched2 = basicSched.withName("sched-2").mock()
 
@@ -1179,19 +1180,18 @@ def test_shouldProvideAccessToExecutionStatisticsViaAPythonInterface(fixture):
 
   from sibt.api import openLog
 
-#TODO executions, not loggings
   log = openLog(sibtPaths=fixture.paths, sibtSysPaths=None)
-  iterToTest(log.loggingsOfRules("*")[rule.name]).shouldContainMatching(
-      lambda logging: 
-        logging.output == "normal\non stderr\n" and
-        logging.startTime == firstTime and
-        logging.endTime == secondTime and
-        logging.succeeded == True,
-      lambda logging: 
-        logging.output == "second\non stderr\n" and
-        logging.startTime == thirdTime and
-        logging.endTime == fourthTime and
-        logging.succeeded == False)
+  iterToTest(log.executionsOfRules("*")[rule.name]).shouldContainMatching(
+      lambda execution: 
+        execution.output == "normal\non stderr\n" and
+        execution.startTime == firstTime and
+        execution.endTime == secondTime and
+        execution.succeeded == True,
+      lambda execution: 
+        execution.output == "second\non stderr\n" and
+        execution.startTime == thirdTime and
+        execution.endTime == fourthTime and
+        execution.succeeded == False)
 
 def test_shouldReadSysAlongsideUserStatistics(fixture):
   time = anyUTCDateTime()
@@ -1207,7 +1207,7 @@ def test_shouldReadSysAlongsideUserStatistics(fixture):
   fixture.setNormalUserId()
   from sibt.api import openLog
   assert openLog(sibtPaths=fixture.paths, sibtSysPaths=fixture.sysPaths).\
-      loggingsOfRules("*")["+shocked"][0].endTime == time
+      executionsOfRules("*")["+shocked"][0].endTime == time
 
 def test_shouldAllowLoggingOutputOfExecutionsToOtherPlacesAsWell(fixture):
   script = fixture.writeBashScript(r"""
@@ -1242,7 +1242,7 @@ def test_shouldAllowLoggingOutputOfExecutionsToOtherPlacesAsWell(fixture):
 
   from sibt.api import openLog
   log = openLog(sibtPaths=fixture.paths, sibtSysPaths=None)
-  assert log.loggingsOfRules("*")[rule.name][0].output == "foo\nbar\n"
+  assert log.executionsOfRules("*")[rule.name][0].output == "foo\nbar\n"
 
 def test_shouldAutomaticallyLogOntoStderrIfVerboseIsOneWhenExecuting(fixture):
   rule = fixture.conf.ruleWithSchedAndSyncer().write()
@@ -1264,8 +1264,7 @@ def test_shouldLogInternalExceptionsToo(fixture):
   with pytest.raises(PermissionError):
     fixture.runSibt("execute-rule", rule.name)
 
-#TODO singleExecution
-  strToTest(fixture.getSingleLogging(fixture.paths, None, rule.name).output).\
+  strToTest(fixture.getSingleExecution(fixture.paths, None, rule.name).output).\
       shouldInclude("permission denied")
 
 def test_shouldPerformTheSameScheduleSanityChecksWhenSyncing(fixture):

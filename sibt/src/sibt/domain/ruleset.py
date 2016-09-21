@@ -1,6 +1,7 @@
 from sibt.infrastructure.caseclassequalityhashcode import \
     CaseClassEqualityHashCode
 from sibt.domain.exceptions import ValidationException
+from sibt.domain.schedulingset import SchedulingSet
 
 class RuleSet(object):
   def __init__(self, rules):
@@ -13,7 +14,7 @@ class RuleSet(object):
       raise ValidationException(validationErrors)
 
     for group in self._groups:
-      group.scheduler.run(group.schedulings)
+      group.scheduler.schedule(group.schedulingSet)
 
   def __iter__(self):
     return iter(self.rules)
@@ -30,8 +31,8 @@ class RuleSet(object):
       self.rules = frozenset(rules)
 
     @property
-    def schedulings(self):
-      return [rule.scheduling for rule in self.rules]
+    def schedulingSet(self):
+      return SchedulingSet(rule.scheduling for rule in self.rules)
 
     @classmethod
     def divideRules(clazz, rules):

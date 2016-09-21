@@ -32,6 +32,6 @@ def test_shouldPrintLineForEachScheduledRuleButNotScheduleThem(fixture):
       mock.callMatching("println", lambda line: "second" in line))
 
   dry = DryScheduler(sub, output)
-  dry.run([buildScheduling("first"), buildScheduling("second")])
+  dry.schedule([buildScheduling("first"), buildScheduling("second")])
 
   output.checkExpectedCalls()

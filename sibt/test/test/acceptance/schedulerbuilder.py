@@ -8,7 +8,7 @@ availableOptions = {opts}
 availableSharedOptions = {sharedOpts}
 {initFunc}
 {checkFunc}
-{runFunc}
+{scheduleFunc}
 {executeFunc}
 """
 
@@ -28,10 +28,10 @@ class SchedulerBuilder(ConfigObjectBuilder):
   def withAllFuncs(self):
     return self._withParams(initFuncCode=emptyFunc("init"),
         checkFuncCode="def check(*args): return []",
-        runFuncCode=failingFunc("run"),
+        scheduleFuncCode=failingFunc("schedule"),
         initFunc=lambda *args: None,
         checkFunc=lambda *args: [],
-        runFunc=lambda *args: assertFalse())
+        scheduleFunc=lambda *args: assertFalse())
 
   def withTestOptions(self):
     return self.withOptions("Interval", "StopAfterFailure")
@@ -47,12 +47,12 @@ class SchedulerBuilder(ConfigObjectBuilder):
   def withCheckFunc(self, newCheckFunc):
     return self._withParams(checkFunc=newCheckFunc)
 
-  def withRunFunc(self, newRunFunc):
-    return self._withParams(runFunc=newRunFunc)
-  def withEmptyRunFuncCode(self):
-    return self._withParams(runFuncCode=emptyFunc("run"))
-  def withRunFuncCode(self, runFuncCode):
-    return self._withParams(runFuncCode=runFuncCode)
+  def withScheduleFunc(self, newScheduleFunc):
+    return self._withParams(scheduleFunc=newScheduleFunc)
+  def withEmptyScheduleFuncCode(self):
+    return self._withParams(scheduleFuncCode=emptyFunc("schedule"))
+  def withScheduleFuncCode(self, scheduleFuncCode):
+    return self._withParams(scheduleFuncCode=scheduleFuncCode)
 
   def withExecuteFunc(self, newExecuteFunc):
     return self._withParams(executeFunc=newExecuteFunc)
@@ -70,7 +70,7 @@ class SchedulerBuilder(ConfigObjectBuilder):
 
     mocked.init = self.kwParams["initFunc"]
     mocked.check = self.kwParams["checkFunc"]
-    mocked.run = self.kwParams["runFunc"]
+    mocked.run = self.kwParams["scheduleFunc"]
     if "executeFunc" in self.kwParams:
       mocked.execute = self.kwParams["executeFunc"]
     if "nextExecutionTimeFunc" in self.kwParams:
@@ -94,7 +94,7 @@ class SchedulerBuilder(ConfigObjectBuilder):
     return SchedulerFormat.format(
         initFunc=unIndentCode(self.kwParams["initFuncCode"]),
         checkFunc=unIndentCode(self.kwParams["checkFuncCode"]),
-        runFunc=unIndentCode(self.kwParams["runFuncCode"]),
+        scheduleFunc=unIndentCode(self.kwParams["scheduleFuncCode"]),
         executeFunc=unIndentCode(self.kwParams.get("executeFuncCode", "")),
         opts=self.options,
         sharedOpts=self.sharedOptions)

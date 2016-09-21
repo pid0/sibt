@@ -24,7 +24,7 @@ class Fixture(object):
       SubGroup(("bar", "two"), OptArg("second", "s"), 
         SubGroups(
         SubGroup("sub1", OptArg("rest", noOfArgs="*"), 
-          SubGroups(SubGroup("sub21"), SubGroup("sub22"))),
+          SubGroups(SubGroup("sub11"), SubGroup("sub12"))),
         SubGroup("sub2", OptArg("abc")))), 
       SubGroup("quux", SubGroups(
         SubGroup("quuxsub1"),
@@ -205,16 +205,16 @@ def test_shouldNotNotMatchAGroupIfThePositionalIsJustOneChar(fixture):
     fixture.parserWithGroups.parseArgs(["b"])
 
 def test_shouldChooseGroupThatContainsAnUnknownOptional(fixture):
-  assert fixture.parserWithGroups.parseArgs(["-s", "sub1", "sub21"]).values == \
-      dict(command="bar", second=True, command2="sub1", command3="sub21")
+  assert fixture.parserWithGroups.parseArgs(["-s", "sub1", "sub11"]).values == \
+      dict(command="bar", second=True, command2="sub1", command3="sub11")
 
 def test_shouldProvideAChosenGroupsTrailOnFailure(fixture):
   with pytest.raises(cliparser.UnknownOptionalException) as ex:
-    fixture.parserWithGroups.parseArgs(["two", "sub1", "sub22", "-m"])
+    fixture.parserWithGroups.parseArgs(["two", "sub1", "sub12", "-m"])
   iterToTest(ex.value.groupsTrail).shouldContainMatching(
       lambda group: group.name == "bar",
       lambda group: group.name == "sub1",
-      lambda group: group.name == "sub22")
+      lambda group: group.name == "sub12")
 
 def test_shouldFirstChooseGroupsWithShorterNames(fixture):
   parser = cliparser.CliParser([SubGroups(

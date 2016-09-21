@@ -1,7 +1,6 @@
 from sibt.application.executionclosenessdetector import \
     ExecutionClosenessDetector
-from test.common.builders import constantTimeClock, anyUTCDateTime, \
-    schedulingLogging
+from test.common.builders import constantTimeClock, anyUTCDateTime, execution
 from datetime import timedelta, datetime, timezone
 from test.common import mock
 
@@ -30,7 +29,7 @@ def test_shouldDetectClosenessAlsoIfTheNextExecutionIsInThePast():
   tooClose = datetime(2004, 1, 1, 0, 44, 59, 0, timezone.utc)
   nextIsLongAgoNow = datetime(2004, 1, 1, 0, 46, 0, 0, timezone.utc)
 
-  rule = mockRule(nextExecution=schedulingLogging(startTime=nextTime))
+  rule = mockRule(nextExecution=execution(startTime=nextTime))
 
   assert make(minimum=minimum, currentTime=tooClose).isInUnstablePhase(
       rule) is True

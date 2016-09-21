@@ -3,7 +3,7 @@ import struct
 from datetime import datetime
 import traceback
 
-from sibt.domain.schedulinglogging import SchedulingLogging, SchedulingResult
+from sibt.domain.execution import Execution, ExecutionResult
 from sibt.infrastructure.linebufferedlogger import LineBufferedLogger
 
 TimeFormat = "%Y-%m-%dT%H:%M:%S.%f%z"
@@ -41,16 +41,16 @@ def _callCatchingExceptions(logFile, execute, succeeded):
     succeeded[0] = False
     raise
 
-class FilesDBSchedulingsLog(object):
+class FilesDBExecutionsLog(object):
   def __init__(self, logDir, ruleNamePrefix=""):
     self.logDir = logDir
     self.ruleNamePrefix = ruleNamePrefix
 
-  def loggingsOfRules(self, ruleNames):
-    return dict((ruleName, self._loggingsOfRule(
+  def executionsOfRules(self, ruleNames):
+    return dict((ruleName, self._executionsOfRule(
       self._storageName(ruleName))) for ruleName in ruleNames)
 
-  def _loggingsOfRule(self, ruleName):
+  def _executionsOfRule(self, ruleName):
     folderPath, loggingFileNames = self._readLogFolder(ruleName, create=False)
     return [self._readLoggingFile(os.path.join(folderPath, fileName)) for 
         fileName in loggingFileNames]
@@ -75,12 +75,12 @@ class FilesDBSchedulingsLog(object):
         endTime = datetime.strptime(_decode(file.readline()[:-1]), TimeFormat)
         succeeded = file.readline()[:-1] == b"True"
 
-        result = SchedulingResult(endTime, succeeded)
+        result = ExecutionResult(endTime, succeeded)
 
-    return SchedulingLogging(startTime, output, result)
+    return Execution(startTime, output, result)
 
 
-  def addLogging(self, ruleName, clock, writeSchedulingOutput):
+  def logExecution(self, ruleName, clock, writeSchedulingOutput):
     folderPath, loggingFileNames = self._readLogFolder(
         self._storageName(ruleName), create=True)
     latestLoggingNumber = 0 if len(loggingFileNames) == 0 else \

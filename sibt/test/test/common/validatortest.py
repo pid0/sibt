@@ -26,8 +26,8 @@ class Fixture(object):
     return self.mockRule(self.validLocDir(), self.validLocDir())
 
 def schedCallWithRules(action, *rules, **kwargs):
-  return mock.callMatching(action, lambda schedulings:
-      set(schedulings) == set(rule.scheduling for rule in rules),
+  return mock.callMatching(action, lambda schedulingSet:
+      set(schedulingSet) == set(rule.scheduling for rule in rules),
       **kwargs)
 
 @pytest.fixture

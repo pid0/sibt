@@ -1,6 +1,5 @@
 from sibt.infrastructure import types
 from sibt.domain.optioninfo import OptionInfo
-from sibt.infrastructure.schedulerhelper import checkOptionOfEachScheduling
 
 import subprocess
 
@@ -44,13 +43,8 @@ class ScriptRunningScheduler(object):
 
   def check(self, schedulings):
     ret = []
-    ret.extend(checkOptionOfEachScheduling(schedulings, "ExecOnFailure",
-      self._checkScriptSyntax))
-    ret.extend(checkOptionOfEachScheduling(schedulings, "ExecBefore",
-      self._checkScriptSyntax))
-    ret.extend(checkOptionOfEachScheduling(schedulings, "ExecOnSuccess",
-      self._checkScriptSyntax))
-
+    ret.extend(schedulings.checkOptionsOfEach(self._checkScriptSyntax,
+      "ExecOnFailure", "ExecBefore", "ExecOnSuccess"))
     ret.extend(self._wrapped.check(schedulings))
     return ret
 

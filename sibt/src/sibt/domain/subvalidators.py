@@ -1,5 +1,6 @@
 import os.path
 from sibt.domain.syncrule import LocCheckLevel
+from sibt.domain.schedulingset import SchedulingSet
 
 def formatLoc(loc):
   return "‘{0}’".format(loc)
@@ -45,7 +46,8 @@ class SchedulerCheckValidator(object):
     ret = []
     def checkScheduler(scheduler, rules):
       ret.extend(["‘{0}’ reported error: {1}".format(scheduler.name, error) for 
-        error in scheduler.check([rule.scheduling for rule in rules])])
+        error in scheduler.check(SchedulingSet(
+          rule.scheduling for rule in rules))])
     ruleSet.visitSchedulers(checkScheduler)
     return ret
 

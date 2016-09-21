@@ -20,7 +20,7 @@ from sibt.application.exceptions import RuleNameMismatchException
 from sibt.infrastructure.runnablefilefunctionmodule import \
     RunnableFileFunctionModule
 from sibt.configuration.optionvaluesparser import OptionValuesParser
-from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
+from sibt.infrastructure.filesdbexecutionslog import FilesDBExecutionsLog
 from sibt.application.rulesfinder import RulesFinder
 from collections import namedtuple
 import os
@@ -84,24 +84,23 @@ def isSysRule(rule):
   return rule.name.startswith(SysRulePrefix)
 
 class _EmptyLog(object):
-  def loggingsOfRules(self, _):
+  def executionsOfRules(self, _):
     return dict()
 
 def openLogs(paths, sysPaths):
   userLog = sysLog = _EmptyLog()
   if paths is not None:
-    userLog = FilesDBSchedulingsLog(paths.logDir)
+    userLog = FilesDBExecutionsLog(paths.logDir)
   if sysPaths is not None:
-    sysLog = FilesDBSchedulingsLog(sysPaths.logDir, 
+    sysLog = FilesDBExecutionsLog(sysPaths.logDir, 
         ruleNamePrefix=SysRulePrefix)
   return userLog, sysLog
 
 class ConfigRepo(object):
-  def __init__(self, schedulers, synchronizers, rulesFinder, userLog):
+  def __init__(self, schedulers, synchronizers, rulesFinder):
     self.schedulers = schedulers
     self.synchronizers = synchronizers
     self.rulesFinder = rulesFinder
-    self.userLog = userLog
 
   @classmethod
   def load(clazz, paths, sysPaths, readSysConf, processRunner, 
@@ -130,7 +129,7 @@ class ConfigRepo(object):
     rulesFinder = readRulesIntoFinder(paths, sysPaths, userFactory,
         sysFactory, sysRuleFilter, readSysConf=readSysConf)
 
-    return clazz(schedulers, synchronizers, rulesFinder, userLog)
+    return clazz(schedulers, synchronizers, rulesFinder)
 
 class RulesRepo(object):
   def __init__(self, lazyRules):

@@ -6,7 +6,7 @@ class DryScheduler(object):
   def __getattr__(self, name):
     return getattr(self.subScheduler, name)
 
-  def run(self, schedulings):
+  def schedule(self, schedulings):
     for scheduling in schedulings:
       self.output.println("scheduling ‘{0}’ with ‘{1}’".format(
         scheduling.ruleName, self.subScheduler.name))

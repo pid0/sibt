@@ -1,4 +1,4 @@
-from sibt.infrastructure.filesdbschedulingslog import FilesDBSchedulingsLog
+from sibt.infrastructure.filesdbexecutionslog import FilesDBExecutionsLog
 from sibt.application.configrepo import readRulesIntoFinder, isSysRule, \
     openLogs
 from sibt.application.rulesfinder import EmptyRepo, RulesFinder
@@ -22,13 +22,13 @@ class TopLevelLogInterface(object):
         readUserConf=paths is not None,
         readSysConf=sysPaths is not None)
 
-  def loggingsOfRules(self, *patterns):
+  def executionsOfRules(self, *patterns):
     rules = self.rulesFinder.findRulesByPatterns(patterns, onlySyncRules=False, 
         keepUnloadedRules=True)
 
     userRuleNames = [rule.name for rule in rules if not isSysRule(rule)]
     sysRuleNames = [rule.name for rule in rules if isSysRule(rule)]
 
-    ret = self.userLog.loggingsOfRules(userRuleNames)
-    ret.update(self.sysLog.loggingsOfRules(sysRuleNames))
+    ret = self.userLog.executionsOfRules(userRuleNames)
+    ret.update(self.sysLog.executionsOfRules(sysRuleNames))
     return ret

@@ -1,7 +1,7 @@
 import pytest
 from test.sibt.application.intermediateschedulertest import \
     IntermediateSchedulerTestFixture
-from sibt.application.outputcapturingscheduler import OutputCapturingScheduler
+from sibt.application.loggingscheduler import LoggingScheduler
 from test.common.builders import buildScheduling, constantTimeClock, \
     mockSched, anyScheduling, localLocation, execEnvironment
 from test.common.bufferingoutput import BufferingOutput
@@ -17,7 +17,7 @@ class Fixture(IntermediateSchedulerTestFixture):
     self.logFile = tmpdir / "logfile"
 
   def construct(self, wrappedSched):
-    return OutputCapturingScheduler(wrappedSched, constantTimeClock(), 
+    return LoggingScheduler(wrappedSched, constantTimeClock(), 
         BufferingOutput(), False)
   
   def execute(self, wrappedExecuteFunc, scheduling):
