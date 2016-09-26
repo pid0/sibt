@@ -8,6 +8,7 @@ GlobalOpts = [OptArg("config-dir", noOfArgs="1"),
   OptArg("readonly-dir", noOfArgs="1"), 
   OptArg("no-sys-config"),
   OptArg("verbose", "v"),
+  OptArg("tty"),
   OptArg("utc")]
 
 class CmdLineArgs(object):

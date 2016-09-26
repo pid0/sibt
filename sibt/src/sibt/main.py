@@ -8,7 +8,8 @@ from sibt.infrastructure.fileobjoutput import FileObjOutput
 import os.path
 from sibt.application.paths import Paths
 from sibt.infrastructure.userbasepaths import UserBasePaths
-from sibt.application.eachownlineconfigprinter import EachOwnLineConfigPrinter
+from sibt.application.tabulatingconfigprinter import TabulatingConfigPrinter
+from sibt.application.datetimeformatter import DateTimeFormatter
 from sibt.configuration.exceptions import ConfigSyntaxException, \
     ConfigConsistencyException, ConfigurableNotFoundException
 from sibt.infrastructure.exceptions import ExternalFailureException, \
@@ -42,6 +43,7 @@ from sibt.application.execenvironment import ExecEnvironment
 import signal
 import os
 import getpass
+import locale
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
 import subprocess
@@ -120,6 +122,7 @@ def logSubProcess(log, subProcessArgs, environmentVars=None, **kwargs):
 
 def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths, 
     userName, userId, moduleLoader, clock, callToSibtSync):
+  locale.setlocale(locale.LC_ALL, "")
   testFatalSignalDispositions()
   setFatalSignalsHandler(signalHandler(raiseException=True))
 
@@ -235,17 +238,29 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         return 3
 
     elif args.action == "list":
-      rules = configRepo.rulesFinder.findRulesByPatterns(
-        args.options["rule-patterns"], onlySyncRules=False, 
-        keepUnloadedRules=True) if \
-        args.options["command2"] == "rules" and \
-        len(args.options["rule-patterns"]) > 0 else \
-        configRepo.rulesFinder.getAll(keepUnloadedRules=True)
-      listConfiguration(EachOwnLineConfigPrinter(stdout), stdout,
-          "full" if args.options["command2"] == "rules" and \
-              args.options["full"] else args.options["command2"], 
-          rules, configRepo.schedulers, 
-          configRepo.synchronizers)
+      printingToTTY = args.options["tty"] or sys.stdout.isatty()
+      printer = TabulatingConfigPrinter(stdout,
+          printingToTTY, 0 if not printingToTTY else terminalWidth(),
+          DateTimeFormatter(clock, args.options["utc"]))
+
+      keepUnloadedRules = True
+      listType = args.options["command2"]
+      if args.options["command2"] == "rules" and args.options["full"]:
+        listType = "full"
+        keepUnloadedRules = False
+
+      if args.options["command2"] == "rules" and \
+          len(args.options["rule-patterns"]) > 0:
+        rules = configRepo.rulesFinder.findRulesByPatterns(
+            args.options["rule-patterns"], onlySyncRules=False, 
+            keepUnloadedRules=keepUnloadedRules) 
+      else:
+        rules = configRepo.rulesFinder.getAll(keepUnloadedRules=
+            keepUnloadedRules)
+
+      listConfiguration(printer, stdout, listType, rules, 
+          configRepo.schedulers, configRepo.synchronizers)
+
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
       for rule in configRepo.rulesFinder.getAll():
@@ -422,6 +437,10 @@ def locationFromArg(arg):
   except LocationNotAbsoluteException:
     return parseLocation(os.path.abspath(arg) + 
         ("/" if arg.endswith("/") else ""))
+
+def terminalWidth():
+  import shutil
+  return shutil.get_terminal_size().columns
 
 def main():
   sys.stderr = UnbufferedTextFile(sys.stderr)

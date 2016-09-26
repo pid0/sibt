@@ -1,7 +1,7 @@
 from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 from test.common import mock
-from test.common import unIndentCode
+from textwrap import dedent
 
 SchedulerFormat = """
 availableOptions = {opts}
@@ -92,10 +92,10 @@ class SchedulerBuilder(ConfigObjectBuilder):
   @property
   def content(self):
     return SchedulerFormat.format(
-        initFunc=unIndentCode(self.kwParams["initFuncCode"]),
-        checkFunc=unIndentCode(self.kwParams["checkFuncCode"]),
-        scheduleFunc=unIndentCode(self.kwParams["scheduleFuncCode"]),
-        executeFunc=unIndentCode(self.kwParams.get("executeFuncCode", "")),
+        initFunc=dedent(self.kwParams["initFuncCode"]),
+        checkFunc=dedent(self.kwParams["checkFuncCode"]),
+        scheduleFunc=dedent(self.kwParams["scheduleFuncCode"]),
+        executeFunc=dedent(self.kwParams.get("executeFuncCode", "")),
         opts=self.options,
         sharedOpts=self.sharedOptions)
   @property

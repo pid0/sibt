@@ -1,4 +1,5 @@
 from sibt.infrastructure.coprocessrunner import CoprocessRunner
+from sibt.infrastructure.currenttimeclock import CurrentTimeClock
 import os
 import tempfile
 from contextlib import contextmanager
@@ -6,7 +7,9 @@ import functools
 import shlex
 import subprocess
 import re
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime, timezone, time
+from sibt.infrastructure.timerange import timeRange, fullTimeRange
+from sibt.infrastructure.timehelper import toUTC
 
 availableSharedOptions = ["s AllowedHours", "f TmpDir"]
 availableOptions = ["t Interval"]
@@ -29,6 +32,7 @@ class Anacron(object):
     self.sibtCall = args.sibtInvocation
     self.varDir = args.varDir
     self.logger = args.logger
+    self.clock = CurrentTimeClock()
     self.spoolDir = os.path.join(self.varDir, "spool")
     if not os.path.isdir(self.spoolDir):
       os.mkdir(self.spoolDir)
@@ -60,23 +64,33 @@ class Anacron(object):
 
   def check(self, schedulings):
     ret = []
-    ret.extend(schedulings.checkOptionsOfEach(lambda _, setting, ruleName: 
-      None if self.hasCorrectAllowedHoursSyntax(setting) else 
-      "Syntax error in AllowedHours setting of ‘{0}’ (‘{1}’)".format(
-        ruleName, setting), "AllowedHours"))
+    ret.extend(schedulings.checkOptionsOfEach(self.checkAllowedHours, 
+      "AllowedHours"))
 
     for scheduling in schedulings:
       self.getIntervalInDays(scheduling, warn=True)
 
     return ret
 
-  def hasCorrectAllowedHoursSyntax(self, string):
+  def checkAllowedHours(self, _, setting, ruleName):
+    try:
+      self.parseAllowedHours(setting)
+    except ValueError as ex:
+      return "Syntax error in AllowedHours setting of ‘{0}’ (‘{1}’): {2}".\
+          format(ruleName, setting, str(ex))
+
+  def parseAllowedHours(self, string):
     regexMatch = AllowedHoursRegex.fullmatch(string)
     if regexMatch is None:
-      return False
+      raise ValueError("Must be of the form <start hour>-<end hour>")
+
     startHour = int(regexMatch.group(1))
-    endHour = int(regexMatch.group(2))
-    return startHour < endHour and endHour < 25
+    exclusiveEndHour = int(regexMatch.group(2))
+    if startHour >= exclusiveEndHour:
+      raise ValueError("Start hour must be smaller than end hour")
+
+    end = time.max if exclusiveEndHour == 24 else time(exclusiveEndHour, 0)
+    return timeRange(time(startHour, 0), end)
 
   def writeTabEntry(self, tabFile, scheduling):
     fields = [
@@ -93,13 +107,44 @@ class Anacron(object):
     tabFile.write("\n")
 
   def nextExecutionTime(self, scheduling, lastTime):
-    if lastTime is None:
-      return datetime.now(timezone.utc)
-
     interval = timedelta(days=self.getIntervalInDays(scheduling))
-    exactTime = lastTime + interval
-    return datetime(exactTime.year, exactTime.month, exactTime.day, 0, 0, 0, 0,
-        exactTime.tzinfo)
+    allowedHours = fullTimeRange()
+    if "AllowedHours" in scheduling.options:
+      allowedHours = self.parseAllowedHours(scheduling.options["AllowedHours"])
+
+    return toUTC(self.nextExecutionLocalTime(self.clock, interval, allowedHours,
+      lastTime))
+
+  def nextExecutionLocalTime(self, clock, interval, allowedHours, 
+      lastTimeInUTC):
+    now = clock.now().astimezone()
+    ret = now
+    if lastTimeInUTC is not None:
+      ret = self.advancedByInterval(now, interval, lastTimeInUTC.astimezone())
+
+    return self.allowedHoursAdjusted(allowedHours, ret)
+
+  def advancedByInterval(self, now, interval, lastTimeInLocalTime):
+    exactTime = lastTimeInLocalTime + interval
+    midnight = withoutTimeOfDay(exactTime)
+
+    if midnight <= now:
+      return now
+    return midnight
+  
+  def allowedHoursAdjusted(self, allowedHours, localTime):
+    if localTime.time() in allowedHours:
+      return localTime
+
+    ret = withoutTimeOfDay(localTime).replace(hour=allowedHours.start.hour)
+    if localTime.time() < allowedHours.start:
+      return ret
+    else:
+      return ret + timedelta(days=1)
+
+def withoutTimeOfDay(dateTime):
+  return datetime(dateTime.year, dateTime.month, dateTime.day, 0, 0, 0, 0, 
+      dateTime.tzinfo)
 
 @contextmanager
 def writeAndCloseTemporaryFile(tmpDir, prefix, writeFunc):

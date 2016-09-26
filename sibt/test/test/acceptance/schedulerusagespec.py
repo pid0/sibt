@@ -9,7 +9,6 @@ from test.common.assertutil import strToTest
 from test.common import mock
 from test.common.builders import orderedDateTimes, constantTimeClock, \
     anyUTCDateTime
-from test.common.presetcyclingclock import PresetCyclingClock
 
 class SchedulerUsageSpecFixture(SibtSpecFixture):
   pass
@@ -154,9 +153,7 @@ def test_shouldWarnWhenAccessingLocsIfTheNextRuleExecutionIsCloserThanAnHour(
       withSynchronizer(syncer).allowedForTestUser().write()
 
   fixture.setRootUserId()
-  fixture.setClock(PresetCyclingClock(startTime, endTime))
-  fixture.runSibtCheckingExecs("execute-rule", ruleName)
-  fixture.shouldHaveExitedWithStatus(0)
+  fixture.executeOnce(rule, startTime, endTime)
 
   fixture.setNormalUserId()
   syncer.reMakeExpectations()

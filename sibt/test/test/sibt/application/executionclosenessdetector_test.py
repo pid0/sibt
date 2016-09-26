@@ -7,9 +7,10 @@ from test.common import mock
 def make(minimum=timedelta(hours=1), currentTime=anyUTCDateTime()):
   return ExecutionClosenessDetector(constantTimeClock(currentTime), minimum)
 
-def mockRule(nextExecution, executing=False):
+def mockRule(nextExecution=None, executing=False, latestExecution=None):
   ret = mock.mock()
   ret.nextExecution = nextExecution
+  ret.latestExecution = latestExecution
   ret.executing = executing
   return ret
 

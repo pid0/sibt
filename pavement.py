@@ -56,6 +56,10 @@ def setup_testing():
   prependToPythonPath(os.path.abspath("sibt/src"))
   prependToPythonPath(os.path.abspath("sibt/test"))
 
+  if "LC_ALL" in os.environ:
+    del os.environ["LC_ALL"]
+  os.environ["LC_MESSAGES"] = "C"
+
   testTempDir = local(tempfile.gettempdir()) / "sibt-test-temp-dir"
   if os.path.isdir(str(testTempDir)):
     shutil.rmtree(str(testTempDir))

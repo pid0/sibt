@@ -26,6 +26,9 @@ Instead of checking ‘b"\n" in chunk’ you could do ‘"\n".encode(systemEncod
 The CoprocessRunner would have to use the system encoding, as well.
 Whether the system's syslog protocol would accept utf-8 is another question.
 The util-linux logger program also doesn't have any specialized Unicode handling, i.e., the exact bytes that it gets via its CLI will end up in the packets.
+When tests are called via paver, LC_ALL is removed and LC_MESSAGES set to "C".
+LC_CTYPE, which is responsible for the encoding, is left alone.
+So tests are currently expected to fail on a system that has something other than utf8 set in its locale environment variables.
 
 FilesDBSchedulingsLog has a race condition. 
 If the logging file is unfinished, it reads the output from after the length field until the end of the file. 

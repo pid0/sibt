@@ -66,6 +66,8 @@ def existingRunner(tmpdir, name):
 def anyUTCDateTime():
   return datetime.now(timezone.utc) - timedelta(days=int(random() * 330))
 
+In1985 = datetime(1985, 1, 1, tzinfo=timezone.utc)
+
 def orderedDateTimes(numberOfDateTimes):
   return [
       datetime(2000, 1, 1, 0, 0, 0, 0, timezone.utc),
@@ -141,13 +143,14 @@ def schedulingSet(schedulings):
 
 def mockRule(name="foo", options=None, scheduler=None, loc1="/tmp/1", 
     loc2="/tmp/2", writeLocs=[2], schedOpts=dict(), syncerName="foo",
-    syncerCheckErrors=[]):
+    syncerCheckErrors=[], syncerOpts=mkSyncerOpts()):
   ret = mock.mock(name)
   if options is None:
     options = dict(LocCheckLevel=LocCheckLevel.Default)
   ret.options = options
   ret.name = name
   ret.schedulerOptions = schedOpts
+  ret.synchronizerOptions = syncerOpts
   ret.scheduler = scheduler
   ret.scheduling = object()
   ret.locs = [parseLocation(str(loc1)), parseLocation(str(loc2))]

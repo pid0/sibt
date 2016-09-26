@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import time
 from sibt.infrastructure.fcntlmutexmanager import FcntlMutexManager
 from sibt.domain.exceptions import LockException
-from test.common import unIndentCode
+import textwrap
 
 class Fixture(object):
   def __init__(self, tmpDirPath):
@@ -28,7 +28,7 @@ class Fixture(object):
       finally:
         {2}""".format(repr(lockId), codeInBody, codeAtTheEnd)
 
-    with subprocess.Popen([sys.executable, "-c", unIndentCode(code), 
+    with subprocess.Popen([sys.executable, "-c", textwrap.dedent(code),
       self.tmpDirPath]) as process:
       time.sleep(0.3)
       try:

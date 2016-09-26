@@ -1,5 +1,8 @@
 from fnmatch import fnmatchcase
 from functools import reduce
+import itertools
+import re
+from sibt.infrastructure.displaystring import DisplayString
 
 class FakeException(Exception):
   def __init__(self, *args):
@@ -81,6 +84,10 @@ class TestString(TestIterable):
   def _matches(self, pattern):
     return fnmatchcase(self.string, pattern)
 
+  @property
+  def ignoringFirstLine(self):
+    return strToTest("\n".join(line for line in self.string.splitlines()[1:]))
+
   def lines(self):
     return [strToTest(line) for line in self.string.splitlines()]
 
@@ -119,8 +126,36 @@ class TestString(TestIterable):
   def shouldContainLinePatternsInOrder(self, *patterns):
     assert len(self.lines()) == len(patterns)
     for line, pattern in zip(self.lines(), patterns):
-      line._matches(pattern)
+      assert line._matches(pattern)
     return self
+
+  def shouldBeginInTheSameColumn(self, subString):
+    startIndices = set(DisplayString(line.string).index(subString) 
+        for line in self.lines())
+    assert len(startIndices) == 1
+  def shouldHaveLinesNoWiderThan(self, maxLength):
+    for line in self.lines():
+      assert len(line.string) <= maxLength
+  def splitColumns(self):
+    def isEmptyAt(string, colIndex):
+      return string[colIndex] == " "
+    def makeRange(group):
+      indices = [element[0] for element in group[1]]
+      return (indices[0], indices[-1])
+    width = len(self.lines()[0].string)
+    colPresenceBits = [0 if all(isEmptyAt(line.string, i) for line in 
+      self.lines()) else 1 for i in range(width)]
+    columnRanges = [makeRange(group) for group in
+        itertools.groupby(enumerate(colPresenceBits), key=lambda x: x[1]) 
+        if group[0] == 1]
+    return [strToTest("\n".join(line.string[colRange[0]:colRange[1]+1] for 
+      line in self.lines())) for colRange in columnRanges]
+  def onlyAlphanumeric(self):
+    return strToTest("".join(c for c in self.string if c.isalnum() or c == "-"))
+
+  @property
+  def ignoringEscapeSequences(self):
+    return strToTest(re.sub("\033\\[[0-9]+m", "", self.string))
 
   def __repr__(self):
     return "TestString({0})".format(repr(self.string))

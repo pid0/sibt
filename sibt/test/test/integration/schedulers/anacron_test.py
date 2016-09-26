@@ -5,7 +5,7 @@ from test.common.schedulertest import SchedulerTestFixture
 from sibt.infrastructure.pymoduleschedulerloader import PyModuleSchedulerLoader
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from test.common.builders import buildScheduling, anyScheduling, scheduling, \
-    optInfo, localLocation, schedulingSet
+    optInfo, localLocation, schedulingSet, constantTimeClock, In1985
 from test.common import mock
 import os.path
 from py.path import local
@@ -18,6 +18,7 @@ from sibt.application import configrepo
 from sibt.infrastructure import types
 from datetime import timedelta, datetime, timezone
 from test.common.bufferingerrorlogger import BufferingErrorLogger
+from sibt.infrastructure import timehelper
 
 testPackageCounter = 0
 
@@ -32,6 +33,14 @@ def loadModule(schedulerName, varDir, sibtCall=["/where/sibt/is"],
   return configrepo.loadScheduler(loader, modulePath, schedulerName, 
       configrepo.SchedulerArgs(sibtCall, str(varDir), logger))
 
+def toUTC(localDateTime):
+  if localDateTime is None:
+    return localDateTime
+  return timehelper.toUTC(localDateTime.replace(tzinfo=None))
+
+AnyInterval = timedelta(days=3)
+BeginningOf1985 = datetime(1985, 1, 1, 0, 0, 0, 0)
+
 class Fixture(SchedulerTestFixture):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
@@ -39,9 +48,14 @@ class Fixture(SchedulerTestFixture):
     self.varDir = tmpdir.mkdir("var")
     self.tmpDir = self.miscDir.mkdir("tmp dir")
 
-  def init(self, **kwargs):
+  def init(self, currentLocalTime=None, **kwargs):
     self.mod = self.makeSched(**kwargs)
     self.execs = ExecMock()
+    if currentLocalTime is not None:
+      self.setCurrentLocalTime(currentLocalTime)
+  
+  def setCurrentLocalTime(self, currentLocalTime):
+    self.mod.impl.clock = constantTimeClock(toUTC(currentLocalTime))
   
   def makeSched(self, **kwargs):
     return loadModule("anacron", varDir=self.varDir, **kwargs)
@@ -64,6 +78,15 @@ class Fixture(SchedulerTestFixture):
     self.execs.expect("anacron", execmock.call(
       lambda args: matcher(args[1 + args.index(optionName)])))
     self.schedule(schedulings)
+  
+  def nextExecutionLocalTime(self, interval, lastLocalTime, allowedHours=None):
+    options = dict(Interval=interval)
+    if allowedHours is not None:
+      options["AllowedHours"] = allowedHours
+    ret = self.mod.nextExecutionTime(buildScheduling(**options), 
+        toUTC(lastLocalTime))
+    assert ret.tzinfo == timezone.utc
+    return ret.astimezone().replace(tzinfo=None)
 
 @pytest.fixture
 def fixture(tmpdir):
@@ -142,21 +165,38 @@ def test_shouldNotSwallowExitCodeOfSibtButPassItOnToAnacron(fixture, capfd):
   _, stderr = capfd.readouterr()
   assert "status: 4" in stderr
 
-def test_shouldCopyAnacronsBehaviorWhenDeterminingTheNextExecutionTime(fixture):
-  fixture.init()
+def test_shouldCopyAnacronsBehaviorWhenPredictingTheNextExecutionTime(fixture):
+  fixture.init(currentLocalTime=BeginningOf1985)
 
-  assert fixture.mod.nextExecutionTime(
-      buildScheduling(Interval=timedelta(days=2)),
-      datetime(2010, 1, 1, 0, 0, 0, 0, timezone.utc)) == datetime(
-          2010, 1, 3, 0, 0, 0, 0, timezone.utc)
+  assert fixture.nextExecutionLocalTime(timedelta(days=2),
+      datetime(2010, 1, 1, 0, 0, 0, 0)) == datetime(2010, 1, 3, 0, 0, 0, 0)
 
-  assert fixture.mod.nextExecutionTime(
-      buildScheduling(Interval=timedelta(days=3, hours=5)),
-      datetime(2010, 1, 1, 20, 0, 0, 0, timezone.utc)) == datetime(
-          2010, 1, 4, 0, 0, 0, 0, timezone.utc)
+  assert fixture.nextExecutionLocalTime(timedelta(days=3, hours=5),
+      datetime(2010, 1, 1, 20, 0, 0, 0), allowedHours="0-24") == \
+          datetime(2010, 1, 4, 0, 0, 0, 0)
 
-  assert abs(fixture.mod.nextExecutionTime(buildScheduling(), None) -
-      datetime.now(timezone.utc)) < timedelta(seconds=1)
+  assert fixture.nextExecutionLocalTime(timedelta(days=3),
+      datetime(2010, 1, 1, 20, 0, 0, 0),
+      allowedHours="5-13") == datetime(2010, 1, 4, 5, 0, 0, 0)
+
+def test_shouldNotReturnATimeInThePastAsNextExecutionTime(fixture):
+  now = BeginningOf1985
+  fixture.init(currentLocalTime=now)
+
+  assert fixture.nextExecutionLocalTime(AnyInterval, now - timedelta(days=300), 
+      allowedHours="5-13") == now + timedelta(hours=5)
+
+  fixture.setCurrentLocalTime(now + timedelta(hours=6, minutes=12))
+  assert fixture.nextExecutionLocalTime(AnyInterval, now - timedelta(days=300), 
+      allowedHours="5-13") == now + timedelta(hours=6, minutes=12)
+
+  fixture.setCurrentLocalTime(now + timedelta(hours=13, minutes=1))
+  assert fixture.nextExecutionLocalTime(AnyInterval, now - timedelta(days=300), 
+      allowedHours="5-13") == now + timedelta(days=1, hours=5)
+
+  fixture.setCurrentLocalTime(now)
+  assert fixture.nextExecutionLocalTime(AnyInterval, None,
+      allowedHours="1-24") == now + timedelta(hours=1)
 
 def test_shouldHaveAnInterfaceToAnacronsStartHoursRange(fixture):
   assert "AllowedHours" in fixture.optionNames

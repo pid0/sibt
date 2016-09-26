@@ -8,7 +8,7 @@ from test.common import execmock
 from py.path import local
 from sibt import main
 import pytest
-import os.path
+import os
 import sys
 from test.common import mock
 from test.common.mockedmoduleloader import MockedModuleLoader
@@ -27,9 +27,21 @@ from test.common.builders import clockWithOrderedTimes, constantTimeClock, \
 from test.common.rfc3164syslogserver import Rfc3164SyslogServer
 from test.sibt.infrastructure.utillinuxsyslogger_test import loggerOptions
 from datetime import timedelta, datetime, timezone
+from test.common.presetcyclingclock import PresetCyclingClock
+from contextlib import contextmanager
 
 Utc0 = "1970-01-01T00:00:00"
 TestPort = 5326
+
+@contextmanager
+def environmentVariables(**envVars):
+  originalValues = dict(os.environ)
+  try:
+    os.environ.update(envVars)
+    yield
+  finally:
+    os.environ.clear()
+    os.environ.update(originalValues)
 
 class SibtSpecFixture(object):
   def __init__(self, tmpdir, capfd):
@@ -58,7 +70,7 @@ class SibtSpecFixture(object):
         aScheduler, aRule)
 
     self.clock = constantTimeClock()
-    self.callToSibtSync = lambda _: ["true"]
+    self.disallowSibtSyncCalls()
 
     self.syslogOptions = loggerOptions(TestPort)
     self.userPathsAreRootUserPaths = False
@@ -88,6 +100,18 @@ class SibtSpecFixture(object):
 
   def replaceSibtSyncCallsWith(self, newCallToSync):
     self.callToSibtSync = lambda _: [newCallToSync]
+  def allowSibtSyncCalls(self):
+    self.replaceSibtSyncCallsWith("true")
+  def disallowSibtSyncCalls(self):
+    self.callToSibtSync = lambda _: ["/usr/bin/env", "bash", "-c",
+        "echo called sibt sync>&2; exit 1"]
+
+  def executeOnce(self, rule, startTime, endTime):
+    self.setClock(PresetCyclingClock(startTime, endTime))
+    self.allowSibtSyncCalls()
+    self.runSibt("execute-rule", rule.name)
+    self.shouldHaveExitedWithStatus(0)
+    self.disallowSibtSyncCalls()
 
   def shouldHaveExitedWithStatus(self, expectedStatus):
     if self.result.exitStatus != expectedStatus and expectedStatus == 0:
@@ -338,9 +362,9 @@ def test_shouldDistinguishBetweenDisabledRulesAndEnabledOnesWithAnInstanceFile(
 
   fixture.runSibt("list", "rules")
   fixture.stdout.shouldContainLinePatterns(
-      "*is-on*enabled*",
-      "*foo@is-on*enabled*",
-      "*is-off*disabled*")
+      "*is-on*[Ee]nabled*",
+      "*foo@is-on*[Ee]nabled*",
+      "*is-off*[Dd]isabled*")
 
 def test_shouldFailIfConfiguredSchedulerOrSynchronizerDoesNotExist(fixture):
   fixture.conf.ruleWithSched("invalid-rule").\
@@ -673,7 +697,7 @@ def test_shouldProvideAWayInItsCliToWriteAndDeleteInstanceFiles(fixture):
   fixture.runSibtWithRealStreamsAndExec("show", "here@all-of-it!")
   fixture.stdout.shouldIncludeLinePatterns("*KeepCopies = 5*", "*AddFlags*")
   fixture.runSibtWithRealStreamsAndExec("list", "rules")
-  fixture.stdout.shouldContainLinePatterns("*all-of-it!*enabled*",
+  fixture.stdout.shouldContainLinePatterns("*all-of-it!*Enabled*",
       "*here@all-of-it!*")
 
   fixture.runSibtWithRealStreamsAndExec("disable", "here@all-of-it!")
@@ -699,7 +723,8 @@ def test_shouldIgnoreOptionInterpolationErrorsWhenMatchingMultipleDisabledRules(
   fixture.runSibt("list", "rules")
   fixture.shouldHaveExitedWithStatus(0)
   fixture.stderr.shouldBeEmpty()
-  fixture.stdout.shouldContainLinePatterns("*valid*", "*not-enough*disabled*")
+  fixture.stdout.shouldContainLinePatterns("*valid*", 
+      "*not-enough*[Dd]isabled*")
 
   fixture.runSibt("ls", "rules", "*")
   fixture.shouldHaveExitedWithStatus(0)
@@ -707,7 +732,7 @@ def test_shouldIgnoreOptionInterpolationErrorsWhenMatchingMultipleDisabledRules(
 
   fixture.runSibt("list", "rules", "-f")
   fixture.shouldHaveExitedWithStatus(0)
-  fixture.stdout.shouldContainLinePatterns("*valid*")
+  fixture.stdout.ignoringFirstLine.shouldContainLinePatterns("*valid*")
 
   syncer.reMakeExpectations()
   fixture.runSibtCheckingExecs("versions-of", "/tmp/foo")
@@ -728,19 +753,22 @@ def test_shouldAlwaysTreatEnabledRulesWithMissingOptionsAsErrors(fixture):
   fixture.stderr.shouldInclude("missingOption")
 
 def test_shouldOnlyScheduleIfEachRulePassesACheckOfItsSynchronizer(fixture):
-  syncer = fixture.conf.aSyncer("finds-errors").withCode(r"""#!/usr/bin/python
-import sys
-if sys.argv[1] == "available-options":
-  print("Id")
-elif sys.argv[1] == "check":
-  if "Id=first" in sys.argv:
-    sys.stdout.write("foo\0")
-  elif "Id=second" in sys.argv:
-    sys.stdout.write("bar\0")
-    sys.stdout.write("baz\n  quux\0")
-  elif "Id=third" in sys.argv:
-    sys.stderr.write("third-checked\n")
-else: sys.exit(200)""").write()
+  syncer = fixture.conf.aSyncer("finds-errors").withBashCode(r"""
+    if [ "$1" = available-options ]; then
+      echo Id
+    elif [ "$1" = check ]; then
+      case "$*" in
+        *Id=first*) 
+          echo -n $'foo\0';;
+        *Id=second*) 
+          echo -n $'bar\0'
+          echo -n $'baz\n  quux\0';;
+        *Id=third*)
+          echo third-checked >&2;;
+      esac
+    else
+      exit 200
+    fi""").write()
 
   enabledRule = fixture.conf.ruleWithSched().withSynchronizer(syncer).enabled()
   enabledRule.withName("first").withSyncerOpts(Id="first").write()
@@ -1201,7 +1229,7 @@ def test_shouldReadSysAlongsideUserStatistics(fixture):
 
   fixture.conf.ruleWithSchedAndSyncer("shocked", isSysConfig=True).write()
 
-  fixture.replaceSibtSyncCallsWith("true")
+  fixture.allowSibtSyncCalls()
   fixture.runSibtWithRealStreamsAndExec("execute-rule", "shocked")
 
   fixture.setNormalUserId()
@@ -1276,3 +1304,50 @@ def test_shouldPerformTheSameScheduleSanityChecksWhenSyncing(fixture):
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("my-locs-are-gone", "not exist",
       "running", "failed")
+
+def test_shouldPrintSeveralAdvancedRuleAttributesInANeatTable(fixture):
+  sched = fixture.conf.aSched().write()
+  rule = fixture.conf.ruleWithSyncer("sys-backup").withScheduler(sched).write()
+  rule2 = rule.withName("sｅcond").write()
+
+  startTime, endTime = \
+      datetime(1976, 5, 20, 15, 0, 0, 0, timezone.utc), \
+      datetime(1976, 5, 20, 18, 0, 0, 0, timezone.utc)
+  fixture.executeOnce(rule, startTime, endTime)
+
+  now = anyUTCDateTime()
+  fixture.setClock(constantTimeClock(now))
+  sched.withNextExecutionTimeFunc(lambda *_: now + timedelta(minutes=8)).mock()
+
+  fixture.runSibt("--utc", "ls", "-f", "*")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldContainLinePatterns(
+      "*Name*Last [Ee]xecution*Last [Ss]tatus*Next*",
+      "*sys-backup*1976*Succeeded*In 8m*",
+      "*sｅcond*n/a*In 8m*")
+
+  fixture.stdout.ignoringFirstLine.shouldBeginInTheSameColumn("In 8m")
+
+def test_shouldSortRulesWhenListing(fixture):
+  baseRule = fixture.conf.ruleWithSchedAndSyncer()
+  baseRule.withName("arule").write()
+  baseRule.withName("brule").write()
+  fixture.runSibt("list", "-f")
+  fixture.stdout.ignoringFirstLine.shouldContainLinePatternsInOrder(
+      "*arule*",
+      "*brule*")
+
+def test_shouldUseColorsAndWrapLinesWhenPrintingToTTY(fixture):
+  fixture.conf.ruleWithSchedAndSyncer("very-long-backup-rule-name").write()
+
+  with environmentVariables(COLUMNS="25"):
+    fixture.runSibt("--tty", "list", "-f")
+  fixture.shouldHaveExitedWithStatus(0)
+
+  fixture.stdout.shouldInclude("\033[0m")
+
+  plainStdout = fixture.stdout.ignoringEscapeSequences
+  plainStdout.shouldHaveLinesNoWiderThan(25)
+  nameCol = plainStdout.splitColumns()[0]
+  assert len(nameCol.lines()) > 2
+  nameCol.onlyAlphanumeric().shouldBe("Namevery-long-backup-rule-name")
