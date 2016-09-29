@@ -190,8 +190,9 @@ def test_shouldBeAbleToPredictItsNextExecutionWithHelpOfTheScheduler(fixture):
 
   fixture.log.executions = [execution(endTime=lastEndTime)]
 
-  sched.expectCalls(mock.call("nextExecutionTime", 
-    (rule().scheduling, lastEndTime), ret=nextTime))
+  sched.expectCalls(mock.callMatching("nextExecutionTime",
+    lambda scheduling: scheduling.lastExecutionTime == lastEndTime,
+    ret=nextTime))
   nextExecution = rule().nextExecution
   assert not nextExecution.finished
   assert nextExecution.startTime == nextTime
@@ -202,7 +203,7 @@ def test_shouldBeAbleToPredictItsNextExecutionWithHelpOfTheScheduler(fixture):
 
   fixture.log.executions = []
   sched.expectCalls(mock.callMatching("nextExecutionTime", 
-    lambda _, passedLastEndTime: passedLastEndTime is None, ret=nextTime))
+    lambda scheduling: scheduling.lastExecutionTime is None, ret=nextTime))
   assert rule().nextExecution.startTime == nextTime
 
   fixture.log.executions = [execution(unfinished=True)]

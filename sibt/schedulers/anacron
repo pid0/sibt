@@ -1,5 +1,4 @@
 from sibt.infrastructure.coprocessrunner import CoprocessRunner
-from sibt.infrastructure.currenttimeclock import CurrentTimeClock
 import os
 import tempfile
 from contextlib import contextmanager
@@ -9,9 +8,9 @@ import subprocess
 import re
 from datetime import timedelta, datetime, timezone, time
 from sibt.infrastructure.timerange import timeRange, fullTimeRange
-from sibt.infrastructure.timehelper import toUTC
+from sibt.infrastructure.timehelper import toUTC, withoutTimeOfDay
 
-availableSharedOptions = ["s AllowedHours", "f TmpDir"]
+availableSharedOptions = ["s AllowedHours", "f TmpDir", "f OutputTabFile"]
 availableOptions = ["t Interval"]
 
 CommonFileNamePrefix = "sibt-anacron-"
@@ -32,7 +31,7 @@ class Anacron(object):
     self.sibtCall = args.sibtInvocation
     self.varDir = args.varDir
     self.logger = args.logger
-    self.clock = CurrentTimeClock()
+    self.clock = args.clock
     self.spoolDir = os.path.join(self.varDir, "spool")
     if not os.path.isdir(self.spoolDir):
       os.mkdir(self.spoolDir)
@@ -48,11 +47,16 @@ class Anacron(object):
 
   def schedule(self, schedulings):
     tmpDir = str(schedulings.getSharedOption("TmpDir", tempfile.gettempdir()))
+    tabFilePath = schedulings.getSharedOption("OutputTabFile", None)
 
-    with writeAndCloseTemporaryFile(tmpDir, TabPrefix, functools.partial(
-        self.writeTabFile, schedulings)) as tabPath:
-      self.processRunner.execute("anacron", "-t", tabPath,
-          "-S", self.spoolDir, "-d")
+    if tabFilePath is not None:
+      with open(str(tabFilePath), "w") as outputTabFile:
+        self.writeTabFile(schedulings, outputTabFile)
+    else:
+      with writeAndCloseTemporaryFile(tmpDir, TabPrefix, functools.partial(
+          self.writeTabFile, schedulings)) as tabPath:
+        self.processRunner.execute("anacron", "-t", tabPath,
+            "-S", self.spoolDir, "-d")
 
   def writeTabFile(self, schedulings, tabFile):
     allowedHours = schedulings.getSharedOption("AllowedHours", None)
@@ -106,14 +110,14 @@ class Anacron(object):
 
     tabFile.write("\n")
 
-  def nextExecutionTime(self, scheduling, lastTime):
+  def nextExecutionTime(self, scheduling):
     interval = timedelta(days=self.getIntervalInDays(scheduling))
     allowedHours = fullTimeRange()
     if "AllowedHours" in scheduling.options:
       allowedHours = self.parseAllowedHours(scheduling.options["AllowedHours"])
 
     return toUTC(self.nextExecutionLocalTime(self.clock, interval, allowedHours,
-      lastTime))
+      scheduling.lastExecutionTime))
 
   def nextExecutionLocalTime(self, clock, interval, allowedHours, 
       lastTimeInUTC):
@@ -141,10 +145,6 @@ class Anacron(object):
       return ret
     else:
       return ret + timedelta(days=1)
-
-def withoutTimeOfDay(dateTime):
-  return datetime(dateTime.year, dateTime.month, dateTime.day, 0, 0, 0, 0, 
-      dateTime.tzinfo)
 
 @contextmanager
 def writeAndCloseTemporaryFile(tmpDir, prefix, writeFunc):

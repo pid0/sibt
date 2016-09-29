@@ -12,7 +12,8 @@ LocCheckLevel = Enum("None", "Default", "Strict")
 
 AvailableOptions = [
     OptionInfo("LocCheckLevel", LocCheckLevel),
-    OptionInfo("AllowedForUsers", types.String)]
+    OptionInfo("AllowedForUsers", types.String),
+    OptionInfo("MustBeMountPoint", types.String)]
 
 class SyncRule(object):
   def __init__(self, name, options, schedulerOptions, synchronizerOptions, 
@@ -48,7 +49,7 @@ class SyncRule(object):
 
   @property
   def scheduling(self):
-    return Scheduling(self.name, self.schedulerOptions)
+    return Scheduling(self.name, self.schedulerOptions, self.lastExecutionTime)
 
   @property
   def latestExecution(self):
@@ -66,29 +67,30 @@ class SyncRule(object):
       return False
 
   @property
+  def lastExecutionTime(self):
+    try:
+      return self.latestExecution.endTime
+    except AttributeError:
+      return None
+
+  @property
   def nextExecution(self):
     if self.executing:
       return None
-    try:
-      lastExecutionTime = self.latestExecution.endTime
-    except AttributeError:
-      lastExecutionTime = None
 
-    nextExecutionTime = self.scheduler.nextExecutionTime(self.scheduling, 
-        lastExecutionTime)
+    nextExecutionTime = self.scheduler.nextExecutionTime(self.scheduling)
     if nextExecutionTime is None:
       return None
     return Execution(nextExecutionTime, b"", None)
 
-  def sync(self, validator, mutexManager):
+  def sync(self, validator):
     validationErrors = validator.validate(RuleSet([self]))
     if len(validationErrors) > 0:
       raise ValidationException(validationErrors)
 
-    with mutexManager.lockForId(self.name):
-      self.synchronizer.sync(self.synchronizerOptions)
+    self.synchronizer.sync(self.synchronizerOptions)
 
-  def execute(self, execEnv, clock):
+  def execute(self, execEnv, clock, mutexManager):
     syncCallSucceeded = [False]
     def makeSchedulerExecute(logger):
       newExecEnv = execEnv.withLoggerReplaced(logger)
@@ -96,7 +98,8 @@ class SyncRule(object):
       syncCallSucceeded[0] = succeeded
       return succeeded
 
-    self.log.logExecution(self.name, clock, makeSchedulerExecute)
+    with mutexManager.lockForId(self.name):
+      self.log.logExecution(self.name, clock, makeSchedulerExecute)
 
     return syncCallSucceeded[0]
 

@@ -8,9 +8,9 @@ class DefaultImplScheduler(object):
 
     return execEnv.runSynchronizer()
 
-  def nextExecutionTime(self, scheduling, lastTime):
+  def nextExecutionTime(self, scheduling):
     if hasattr(self._wrapped, "nextExecutionTime"):
-      return self._wrapped.nextExecutionTime(scheduling, lastTime)
+      return self._wrapped.nextExecutionTime(scheduling)
     return None
 
   def __getattr__(self, name):

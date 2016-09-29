@@ -26,3 +26,6 @@ class SchedulingSet(object):
         if error is not None:
           ret.append(error)
     return ret
+
+  def __repr__(self):
+    return "SchedulingSet({0})".format(self.schedulings)

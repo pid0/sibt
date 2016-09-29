@@ -6,7 +6,8 @@ def test_shouldCycleThroughAListOfPresetTimes():
   firstTime = datetime.now(timezone.utc)
   secondTime = anyUTCDateTime()
 
-  clock = PresetCyclingClock(firstTime, secondTime)
+  clock = PresetCyclingClock(firstTime)
+  clock.dateTimes = clock.dateTimes + [secondTime]
 
   assert [clock.now(), clock.now(), clock.now(), clock.now(), clock.now()] == \
       [firstTime, secondTime, firstTime, secondTime, firstTime]

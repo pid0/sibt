@@ -51,7 +51,7 @@ class LoggingScheduler(object):
     if scheduling.options.get("Stderr", False) or self._forceLoggingToStderr:
       ret.append(_FileLikeOutputWrapper(self._stderr))
 
-    if scheduling.options.get("Syslog", False):
+    if scheduling.options.get("Syslog", True):
       ret.append(UtilLinuxSysLogger(scheduling.options.get("SyslogOptions", ""),
         prefix=scheduling.ruleName.encode(), tag="sibt"))
 

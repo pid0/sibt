@@ -34,6 +34,7 @@ def fillPipe(writeFd):
 
 class ForkExecSubProcess(object):
   def __init__(self, args, blockingStdout, stdoutReadFdClosed):
+    self.returncode = None
     stdoutRead, stdoutWrite = os.pipe()
     stderrRead, stderrWrite = os.pipe()
     if hasattr(os, "set_inheritable"):
@@ -77,6 +78,12 @@ class ForkExecSubProcess(object):
 
   def sigKill(self):
     os.kill(self.pid, signal.SIGKILL)
+  def sigIntToProcessGroup(self):
+    os.killpg(self.pid, signal.SIGINT)
+
+  def isRunning(self):
+    pid, _ = os.waitpid(self.pid, os.WNOHANG)
+    return pid == 0
 
   def __enter__(self):
     return self
@@ -324,6 +331,22 @@ def test_shouldFinishLoggingExecutionStatisticsEvenIfSignaled(fixture):
 
   assert os.path.isfile(str(flagFile))
 
+def test_shouldFinishUnfinishedLoggedExecutionsAfterTheyHadToBeAbandoned(
+    fixture):
+  syncer = fixture.conf.aSyncer().withBashCode(r"""
+    if [ "$1" = sync ]; then
+      sleep 5
+    else exit 200; fi""").write()
+  rule = fixture.conf.ruleWithSched("foo").withSynchronizer(syncer).write()
+
+  fixture.afterSeconds(0.3, fixture.sigKill)
+  fixture.runSibtAsAProcess("execute-rule", rule.name)
+
+  execution = fixture.getSingleExecution(fixture.paths, None, rule.name)
+  assert execution.finished
+  assert not execution.succeeded
+  strToTest(execution.output).shouldIncludeInOrder("error", "not", "finished")
+
 def test_shouldExitFromSignalsWhenExecutingARule(fixture):
   sched = fixture.conf.aSched().withExecuteFuncCode(r"""
     def execute(execEnv, scheduling):
@@ -338,17 +361,34 @@ def test_shouldExitFromSignalsWhenExecutingARule(fixture):
   fixture.shouldHaveExitedFromSignal(signal.SIGINT)
   fixture.shouldNotHaveTakenMoreSecondsThan(1)
 
-def test_shouldNotAllowSyncingTwoRulesAtTheSameTime(fixture):
-  syncer = fixture.conf.aSyncer().withContent(r"""#!/usr/bin/env bash
-  if [ "$1" = sync ]; then
-    sleep 3
-  else exit 200; fi""").write()
-  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
+def test_shouldNotAllowExecutingTwoRulesAtTheSameTime(fixture):
+  sched = fixture.conf.aSched().withExecuteFuncCode(r"""
+    def execute(*args):
+      import time; time.sleep(3); return True""").write()
+  rule = fixture.conf.ruleWithSyncer().withScheduler(sched).write()
   
-  with fixture.startSibtProcess("sync", rule.name):
+  with fixture.startSibtProcess("execute-rule", rule.name):
     time.sleep(0.2)
-    fixture.runSibtAsAProcess("sync", rule.name)
+    fixture.runSibtAsAProcess("--verbose", "execute-rule", rule.name)
     fixture.shouldNotHaveTakenMoreSecondsThan(0.5)
-    fixture.shouldHaveExitedWithStatus(1)
-    fixture.stderr.shouldIncludeInOrder("could not", "lock",
-        "running", "failed")
+    fixture.shouldHaveExitedWithStatus(4)
+    fixture.stderr.shouldIncludeInOrder("already", "could not", "lock")
+
+def test_shouldWaitForExecutionAfterSignalWhenUsingSimpleSched(fixture):
+  fixture.useActualSibtConfig()
+  syncer = fixture.conf.aSyncer().withBashCode(r"""
+    if [ "$1" = sync ]; then
+      trap '' INT
+      sleep 5
+    else exit 200; fi""").write()
+  rule = fixture.conf.realRule("foo", "simple", syncer.name).write()
+
+  with fixture.startSibtProcess("schedule", "foo") as sibtProcess:
+    time.sleep(0.6)
+    sibtProcess.sigIntToProcessGroup()
+    time.sleep(0.1)
+    assert sibtProcess.isRunning()
+    assert b"Waiting" in sibtProcess.stderr.read1(1024)
+    sibtProcess.sigIntToProcessGroup()
+    time.sleep(0.1)
+    assert sibtProcess.wait() == -signal.SIGINT

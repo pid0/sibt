@@ -25,38 +25,20 @@ def randstring():
 def withRandstring(string):
   return string + randstring()
 
-class SchedulingBuilder(object):
-  def __init__(self):
-    self.ruleName = withRandstring("any-rule")
-    self.options = dict()
+In1985 = datetime(1985, 1, 1, tzinfo=timezone.utc)
 
-  def withRuleName(self, name):
-    self.ruleName = name
-    return self
-
-  def withOption(self, key, value):
-    self.options[key] = value
-    return self
-  def withOptions(self, **options):
-    self.options = dict(options)
-    return self
-    
-  def build(self):
-    return Scheduling(self.ruleName, self.options)
+def anyScheduling(): return buildScheduling()
+def buildScheduling(ruleName=None, lastTime=In1985, **options):
+  if ruleName is None:
+    ruleName = withRandstring("any-rule")
+  return Scheduling(ruleName, options, lastTime)
+def scheduling():
+  return SchedulingBuilder()
 
 def execEnvironment(syncCall=[],
     logger=None,
     logSubProcessWith=lambda *args, **kwargs: None):
   return ExecEnvironment(syncCall, logger, logSubProcessWith)
-
-def anyScheduling(): return buildScheduling()
-def buildScheduling(ruleName=None, **options):
-  retBuilder = scheduling()
-  if ruleName is not None:
-    retBuilder = retBuilder.withRuleName(ruleName)
-  return retBuilder.withOptions(**options).build()
-def scheduling():
-  return SchedulingBuilder()
 
 def existingRunner(tmpdir, name): 
   path = tmpdir.join(name)
@@ -65,8 +47,6 @@ def existingRunner(tmpdir, name):
 
 def anyUTCDateTime():
   return datetime.now(timezone.utc) - timedelta(days=int(random() * 330))
-
-In1985 = datetime(1985, 1, 1, tzinfo=timezone.utc)
 
 def orderedDateTimes(numberOfDateTimes):
   return [

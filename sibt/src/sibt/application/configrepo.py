@@ -26,7 +26,7 @@ from collections import namedtuple
 import os
 
 SchedulerArgs = namedtuple("SchedulerArgs", [
-    "sibtInvocation", "varDir", "logger"])
+    "sibtInvocation", "varDir", "logger", "clock"])
 SysRulePrefix = "+"
 
 def readSynchronizers(dirs, processRunner):
@@ -103,7 +103,7 @@ class ConfigRepo(object):
     self.rulesFinder = rulesFinder
 
   @classmethod
-  def load(clazz, paths, sysPaths, readSysConf, processRunner, 
+  def load(clazz, paths, sysPaths, readSysConf, processRunner, clock,
       moduleLoader, sibtInvocation, schedulerWrapper, 
       makeErrorLoggerWithPrefix, sysRuleFilter):
     processRunnerWrapper = createHashbangAwareProcessRunner(paths.runnersDir,
@@ -116,7 +116,7 @@ class ConfigRepo(object):
         [paths.schedulersDir, paths.readonlySchedulersDir] + 
         ([sysPaths.schedulersDir] if readSysConf else []), 
         PyModuleSchedulerLoader(moduleLoader), schedulerWrapper,
-        SchedulerArgs(sibtInvocation, None, None), paths,
+        SchedulerArgs(sibtInvocation, None, None, clock), paths,
         makeErrorLoggerWithPrefix)
 
     userLog, sysLog = openLogs(paths, sysPaths)

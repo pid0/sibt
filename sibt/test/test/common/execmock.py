@@ -37,7 +37,7 @@ class ExecMock(object):
     self.reset()
 
   def reset(self):
-    self.mockedExec = mock.mock()
+    self.mockedExec = mock.mock("ExecMock")
     self.returningNotImplementedStatuses = False
 
   def expect(self, program, *calls, anyOrder=False):

@@ -1,10 +1,11 @@
 import os
 import struct
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
 
 from sibt.domain.execution import Execution, ExecutionResult
 from sibt.infrastructure.linebufferedlogger import LineBufferedLogger
+from sibt.infrastructure.fcntlmutexmanager import tryToLock, lock
 
 TimeFormat = "%Y-%m-%dT%H:%M:%S.%f%z"
 Encoding = "utf-8"
@@ -41,10 +42,24 @@ def _callCatchingExceptions(logFile, execute, succeeded):
     succeeded[0] = False
     raise
 
+import shutil
+
 class FilesDBExecutionsLog(object):
   def __init__(self, logDir, ruleNamePrefix=""):
     self.logDir = logDir
     self.ruleNamePrefix = ruleNamePrefix
+    self._lockedPaths = set()
+
+  def _lock(self, file, filePath):
+    lock(file)
+    self._lockedPaths.add(filePath)
+
+  def _isLocked(self, filePath):
+    if filePath in self._lockedPaths:
+      return True
+    with open(filePath, "a") as file:
+      couldLock = tryToLock(file)
+    return not couldLock
 
   def executionsOfRules(self, ruleNames):
     return dict((ruleName, self._executionsOfRule(
@@ -61,23 +76,31 @@ class FilesDBExecutionsLog(object):
       lengthField = file.read(4)
 
       if lengthField == UnsetLength:
-        currentPosition = file.tell()
-        outputLength = file.seek(0, SeekEnd) - currentPosition
-        file.seek(currentPosition, SeekSet)
-        output = _decode(file.read(outputLength))
-
+        output = self._readTextUntilEnd(file)
         result = None
+        if not self._isLocked(filePath):
+          output += "\nError: Log entry could not be finished (crashed?)"
+          result = ExecutionResult(startTime + timedelta(hours=2), False)
       else:
-        outputLength = struct.unpack(BigEndian32BitUInt, lengthField)[0]
-        output = _decode(file.read(outputLength))
-        file.readline()
-
+        output = self._readTextOfLength(file, lengthField)
         endTime = datetime.strptime(_decode(file.readline()[:-1]), TimeFormat)
         succeeded = file.readline()[:-1] == b"True"
 
         result = ExecutionResult(endTime, succeeded)
 
     return Execution(startTime, output, result)
+
+  def _readTextUntilEnd(self, file):
+    currentPosition = file.tell()
+    outputLength = file.seek(0, SeekEnd) - currentPosition
+    file.seek(currentPosition, SeekSet)
+    return _decode(file.read(outputLength))
+
+  def _readTextOfLength(self, file, lengthBytes):
+    outputLength = struct.unpack(BigEndian32BitUInt, lengthBytes)[0]
+    ret = _decode(file.read(outputLength))
+    file.readline()
+    return ret
 
 
   def logExecution(self, ruleName, clock, writeSchedulingOutput):
@@ -92,6 +115,7 @@ class FilesDBExecutionsLog(object):
 
   def _writeLoggingFile(self, filePath, clock, writeSchedulingOutput):
     with open(filePath, "wb") as file:
+      self._lock(file, filePath)
       textLengthFieldPos = self._writeHeader(file, clock.now())
       file.flush()
 

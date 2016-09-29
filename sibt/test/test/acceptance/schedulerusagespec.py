@@ -141,9 +141,9 @@ def test_shouldWarnWhenAccessingLocsIfTheNextRuleExecutionIsCloserThanAnHour(
   ruleName = "some-rule"
   nameAsSysRule = "+" + ruleName
 
-  def nextExecutionTime(scheduling, lastTime):
+  def nextExecutionTime(scheduling):
     assert scheduling.ruleName == nameAsSysRule
-    assert lastTime == endTime
+    assert scheduling.lastExecutionTime == endTime
     return nextTime
 
   syncer = fixture.conf.syncerHavingAnyVersions().asSysConfig().write()

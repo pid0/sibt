@@ -1,0 +1,58 @@
+import subprocess
+from datetime import timedelta
+from sibt.infrastructure.timehelper import toUTC, withoutTimeOfDay
+
+availableSharedOptions = []
+availableOptions = ["t Interval"]
+
+class Simple(object):
+  def init(self, args):
+    self.sibtCall = args.sibtInvocation
+    self.clock = args.clock
+    self.logger = args.logger
+
+  def schedule(self, schedulingSet):
+    subProcesses = []
+    for scheduling in schedulingSet:
+      if self.clock.now() >= self.nextExecutionTime(scheduling) - \
+          timedelta(seconds=1):
+        subProcesses.append(self.startExecutingRule(scheduling.ruleName))
+
+    try:
+      for subProcess in subProcesses:
+        subProcess.wait()
+    except:
+      self.logger.log("Waiting for executions")
+      for subProcess in subProcesses:
+        subProcess.wait()
+      raise
+
+  def startExecutingRule(self, ruleName):
+    return subprocess.Popen(self.sibtCall + ["execute-rule", "--", ruleName])
+
+  def nextExecutionTime(self, scheduling):
+    lastTime = scheduling.lastExecutionTime
+    if lastTime is None:
+      return self.clock.now()
+
+    lastLocalTime = lastTime.astimezone()
+    interval = scheduling.options.get("Interval", timedelta(days=3))
+    ret = toUTC(withoutTimeOfDay(lastLocalTime) + interval)
+    if ret < self.clock.now():
+      ret = self.clock.now()
+
+    return ret
+
+impl = Simple()
+
+def init(*args):
+  global impl
+  impl.init(*args)
+def schedule(*args):
+  global impl
+  impl.schedule(*args)
+def check(*args):
+  return []
+def nextExecutionTime(*args):
+  global impl
+  return impl.nextExecutionTime(*args)

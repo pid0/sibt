@@ -29,6 +29,7 @@ from test.sibt.infrastructure.utillinuxsyslogger_test import loggerOptions
 from datetime import timedelta, datetime, timezone
 from test.common.presetcyclingclock import PresetCyclingClock
 from contextlib import contextmanager
+from test.common.fusefs import fuseIsAvailable, nonEmptyFSMountedAt
 
 Utc0 = "1970-01-01T00:00:00"
 TestPort = 5326
@@ -1351,3 +1352,28 @@ def test_shouldUseColorsAndWrapLinesWhenPrintingToTTY(fixture):
   nameCol = plainStdout.splitColumns()[0]
   assert len(nameCol.lines()) > 2
   nameCol.onlyAlphanumeric().shouldBe("Namevery-long-backup-rule-name")
+
+def test_shouldIncludeTheAssertionThatALocMustBeAMountPointAmongItsSanityChecks(
+    fixture):
+  if not fuseIsAvailable():
+    pytest.skip("FUSE is required")
+
+  ruleName = "from-mount-point-to-mount-point"
+  rule = fixture.conf.ruleWithSchedAndSyncer(ruleName).withOpts(
+      MustBeMountPoint="1, 2").write()
+
+  with nonEmptyFSMountedAt(rule.loc1):
+    assert os.listdir(rule.loc1) == ["fuse-file"]
+    with nonEmptyFSMountedAt(rule.loc2):
+      fixture.runSibt("check", ruleName)
+      fixture.shouldHaveExitedWithStatus(0)
+
+    fixture.runSibt("check", ruleName)
+    fixture.shouldHaveExitedWithStatus(1)
+    fixture.stdout.shouldInclude(ruleName, "Loc2", "mount point").but.\
+        shouldNotInclude("Loc1")
+
+  with nonEmptyFSMountedAt(rule.loc2):
+    fixture.runSibt("check", ruleName)
+    fixture.stdout.shouldInclude(ruleName, "Loc1", "mount point").but.\
+        shouldNotInclude("Loc2")

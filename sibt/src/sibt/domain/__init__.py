@@ -2,7 +2,7 @@ from sibt.domain.validatorcollectionvalidator import \
     ValidatorCollectionValidator
 from sibt.domain import subvalidators
 
-def constructRulesValidator():
+def constructRulesValidator(additionalValidators=[]):
   return ValidatorCollectionValidator([[ 
       subvalidators.LocExistenceValidator()
     ], [ 
@@ -12,4 +12,4 @@ def constructRulesValidator():
       subvalidators.AllSharedOptsEqualValidator(),
       subvalidators.SchedulerCheckValidator(),
       subvalidators.SynchronizerCheckValidator()
-    ]])
+    ] + additionalValidators])

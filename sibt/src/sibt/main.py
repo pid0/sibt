@@ -19,6 +19,8 @@ from sibt.application.configrepo import ConfigRepo
 import sys
 from sibt.infrastructure.pymoduleloader import PyModuleLoader
 from sibt.domain import subvalidators
+from sibt.application.mountpointassertionstruevalidator import \
+    MountPointAssertionsTrueValidator
 from sibt.application.prefixingerrorlogger import PrefixingErrorLogger
 from sibt.domain.exceptions import ValidationException, \
     UnsupportedProtocolException, LocationInvalidException, \
@@ -63,12 +65,15 @@ receivedSignal = None
 def signalHandler(raiseException):
   def handleSignal(signalNumber, _):
     global receivedSignal
-    if receivedSignal is None:
-      receivedSignal = signalNumber
-      if signalNumber == signal.SIGTERM:
+    previousSigNumber = receivedSignal
+    receivedSignal = signalNumber
+    if signalNumber == signal.SIGTERM:
+      if previousSigNumber is None:
         os.killpg(os.getpgid(0), signal.SIGTERM)
-      if raiseException:
-        raise FatalSignalException(signalNumber, None)
+      else:
+        return
+    if raiseException:
+      raise FatalSignalException(signalNumber, None)
   return handleSignal
 
 def killSelf(signalNumber):
@@ -145,13 +150,13 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     currentSibtCall = [sys.argv[0]] + args.globalOptionsArgs
     configRepo = ConfigRepo.load(paths, sysPaths, readSysConf, processRunner,
-        moduleLoader, currentSibtCall,
+        clock, moduleLoader, currentSibtCall,
         functools.partial(wrapScheduler, useDrySchedulers, stdout, stderr, 
           clock, args.options["verbose"]),
         makeErrorLogger,
         (lambda rule: True) if args.options.get("show-sys", False) else \
             (lambda rule: rule.options["AllowedForUsers"] == userName))
-    validator = constructRulesValidator()
+    validator = constructRulesValidator([MountPointAssertionsTrueValidator()])
     unstablePhaseDetector = ExecutionClosenessDetector(clock,
         timedelta(hours=1))
 
@@ -197,7 +202,7 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
       exitStatus = None
       try:
         try:
-          rule.sync(validator, FcntlMutexManager(paths.lockDir))
+          rule.sync(validator)
         except ExternalFailureException as ex:
           exitStatus = ex.exitStatus
           printKnownException(ex, errorLogger, 1)
@@ -210,12 +215,6 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           printValidationErrors(errorLogger.log, functools.partial(
             errorLogger.log, continued=True), [rule], ex.errors)
           raise
-        except LockException as ex:
-          exitStatus = BeforeRunning
-          errorLogger.log(
-            "‘{0}’ is already synchronizing, could not acquire lock",
-            rule.name)
-          raise
       except BaseException as ex:
         errorDesc = str(exitStatus)
         if exitStatus is BeforeRunning:
@@ -224,15 +223,21 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
           errorDesc = "<unexpected error>"
         errorLogger.log("running rule ‘{0}’ failed ({1})", rule.name, errorDesc)
 
-        if isinstance(ex, (ExternalFailureException, ValidationException,
-          LockException)):
+        if isinstance(ex, (ExternalFailureException, ValidationException)):
           return 1
         raise
 
     elif args.action == "execute-rule":
       execEnv = ExecEnvironment(callToSibtSync(currentSibtCall) + [rule.name],
           None, logSubProcess)
-      succeeded = rule.execute(execEnv, clock)
+      try:
+        succeeded = rule.execute(execEnv, clock, 
+            FcntlMutexManager(paths.lockDir))
+      except LockException as ex:
+        errorLogger.log(
+          "‘{0}’ is already executing, could not acquire lock", rule.name, 
+          verbosity=1)
+        return 4
 
       if not succeeded:
         return 3
@@ -314,7 +319,11 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     sys.stdout.flush()
     return 0
   except (FatalSignalException) as ex:
-    errorLogger.log(str(ex))
+    try:
+      cliAction = args.action + ": "
+    except (NameError, AttributeError):
+      cliAction = ""
+    errorLogger.log(cliAction + str(ex))
     killSelf(ex.signalNumber)
   except BrokenPipeError as ex:
     killSelf(signal.SIGPIPE)
