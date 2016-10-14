@@ -35,16 +35,17 @@ class RuleFromStringOptionsReader(object):
 
   def _findByNameOption(self, objects, options, searchDescription, ruleName):
     expectedName = self._getNameOrThrowEx(options, searchDescription, ruleName)
-    matching = [obj for obj in objects if obj.name == expectedName]
-    if len(matching) == 0:
-      raise ConfigurableNotFoundException(searchDescription, expectedName,
-          None, ruleName)
-    return matching[0]
+    try:
+      return objects.getByName(expectedName)
+    except ConfigurableNotFoundException as ex:
+      ex.unitType = searchDescription
+      ex.ruleName = ruleName
+      raise 
 
   def _getNameOrThrowEx(self, options, unitType, ruleName):
     if "Name" not in options:
-      raise ConfigurableNotFoundException(unitType, None, 
-          "Name option not given", ruleName)
+      raise ConfigurableNotFoundException(None, unitType=unitType, 
+          ruleName=ruleName, message="Name option not given")
     return options["Name"]
 
   def _parseOptions(self, optionInfos, options, removeNameOpt):

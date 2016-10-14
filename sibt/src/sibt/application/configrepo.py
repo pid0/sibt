@@ -22,6 +22,9 @@ from sibt.infrastructure.runnablefilefunctionmodule import \
 from sibt.configuration.optionvaluesparser import OptionValuesParser
 from sibt.infrastructure.filesdbexecutionslog import FilesDBExecutionsLog
 from sibt.application.rulesfinder import RulesFinder
+from sibt.application import sshfsautomountingsynchronizer as sshfssyncer
+from sibt.configuration.configurablelist import ConfigurableList, \
+    LazyConfigurable
 from collections import namedtuple
 import os
 
@@ -31,19 +34,24 @@ SysRulePrefix = "+"
 
 def readSynchronizers(dirs, processRunner):
   def load(path, fileName):
-    try:
-      return loadSynchronizer(processRunner, path, fileName)
-    except ConfigConsistencyException:
-      return None
+    return LazyConfigurable(fileName,
+        lambda: loadSynchronizer(processRunner, path, fileName))
 
-  return collectFilesInDirs(dirs, load)
+  return ConfigurableList(collectFilesInDirs(dirs, load))
 
 def loadSynchronizer(processRunner, executablePath, name):
-  functionModule = RunnableFileFunctionModule(processRunner, executablePath)
-  return CachingSynchronizer(DefaultValueSynchronizer(
-    FunctionModuleSynchronizer(functionModule, name)))
+  try:
+    functionModule = RunnableFileFunctionModule(processRunner, executablePath)
+    ret = FunctionModuleSynchronizer(functionModule, name)
+    ret = DefaultValueSynchronizer(ret)
+    ret = CachingSynchronizer(ret)
+    if sshfssyncer.isExtensible(ret):
+      ret = sshfssyncer.SSHFSAutoMountingSynchronizer(ret, processRunner)
+    return ret
+  except ConfigConsistencyException:
+    return None
 
-def loadScheduler(loader, modulePath, name, initArgs):
+def loadSchedulerFromModule(loader, modulePath, name, initArgs):
   return loader.loadFromFile(modulePath, name, (initArgs,))
 
 def makeSchedulerVarDir(paths, schedulerName):
@@ -54,11 +62,15 @@ def makeSchedulerVarDir(paths, schedulerName):
 
 def readSchedulers(dirs, loader, schedulerWrapper, initArgs,
     paths, makeErrorLoggerWithPrefix):
-  return collectFilesInDirs(dirs, lambda path, fileName:
-      schedulerWrapper(loadScheduler(loader, path, fileName, 
-        initArgs._replace(logger=makeErrorLoggerWithPrefix(
-          "sibt({0})".format(fileName)),
-          varDir=makeSchedulerVarDir(paths, fileName)))))
+  def loadScheduler(path, name):
+    newInitArgs = initArgs._replace(
+        logger=makeErrorLoggerWithPrefix("sibt ({0})".format(name)),
+        varDir=makeSchedulerVarDir(paths, name))
+    ret = loadSchedulerFromModule(loader, path, name, newInitArgs)
+    return schedulerWrapper(ret)
+
+  return ConfigurableList(collectFilesInDirs(dirs, lambda path, fileName:
+      LazyConfigurable(fileName, lambda: loadScheduler(path, fileName))))
 
 def readRuleLoaders(rulesDir, enabledDir, factory, prefix):
   reader = DirBasedRulesReader(CachingIniFileListReader(rulesDir,

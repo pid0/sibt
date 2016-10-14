@@ -3,6 +3,10 @@ class Port(object):
     self.supportedProtocols = supportedProtocols
     self.isWrittenTo = isWrittenTo
 
+  def withAdditionalProtocols(self, *protocols):
+    return Port(self.supportedProtocols + list(protocols),
+        self.isWrittenTo)
+
   def canBeAssignedLocation(self, loc):
     return loc.protocol in self.supportedProtocols
 

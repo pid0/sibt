@@ -35,36 +35,36 @@ stringThat = AssertionToPredicateProxy(strToTest)
 
 class TestIterable(object):
   def __init__(self, iterable):
+    self.list = list(iterable)
     self.iterable = iterable
     self.andAlso = self
     self.but = self
 
   def shouldContainMatchingInAnyOrder(self, *predicates):
-    assert iterableContainsInAnyOrder(self.iterable, *predicates), \
-        repr(self.iterable)
+    assert iterableContainsInAnyOrder(self.list, *predicates), \
+        repr(self.list)
     return self
   def shouldContainMatching(self, *predicates):
     predicateList = list(predicates)
-    items = list(self.iterable)
-    assert len(items) == len(predicateList)
-    for i in range(len(items)):
-      assert predicateList[i](items[i])
+    assert len(self.list) == len(predicateList)
+    for i in range(len(self.list)):
+      assert predicateList[i](self.list[i])
     return self
   def shouldContainInAnyOrder(self, *items):
-    assert iterableContainsInAnyOrder(self.iterable, *map(equalsPred, items))
+    assert iterableContainsInAnyOrder(self.list, *map(equalsPred, items)), \
+        repr(self.list)
     return self
   def shouldContain(self, *items):
-    assert len(items) == len(self.iterable)
-    for actualItem, expectedItem in zip(self.iterable, items):
+    assert len(items) == len(self.list)
+    for actualItem, expectedItem in zip(self.list, items):
       assert actualItem == expectedItem
   def shouldContainPropertiesInAnyOrder(self, propertyProducer, *predicates):
-    assert iterableContainsPropertiesInAnyOrder(self.iterable, propertyProducer,
-        *predicates)
+    assert iterableContainsPropertiesInAnyOrder(self.list, propertyProducer,
+        *predicates), repr(self.list)
     return self
   def shouldIncludeMatching(self, *predicates):
     for predicate in predicates:
-      assert any(predicate(item) for item in self.iterable), str(list(
-        self.iterable))
+      assert any(predicate(item) for item in self.list), repr(self.list)
     return self
 
   def shouldBe(self, expected):
@@ -99,9 +99,11 @@ class TestString(TestIterable):
     for item in items:
       assert item.lower() in self.string.lower()
     return self
+  def shouldIncludeAtLeastOneOf(self, *items):
+    assert any(item.lower() in self.string.lower() for item in items)
   def shouldNotInclude(self, *items):
     for item in items:
-      assert item.lower() not in self.iterable.lower()
+      assert item.lower() not in self.string.lower()
     return self
   def shouldIncludeInOrder(self, *phrases):
     string = self.string.lower()

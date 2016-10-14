@@ -71,7 +71,7 @@ def test_shouldReturnVersionsGotFromSynchronizerIfFileIsWithinAPort(fixture):
   ret = orderedDateTimes(2)
   def check(path, expectedRelativePath, expectedLoc):
     syncer.expectCalls(mock.callMatching("versionsOf", 
-        lambda path, locNumber, options: path == expectedRelativePath and 
+        lambda options, path, locNumber: path == expectedRelativePath and
         locNumber == expectedLoc and options == syncerOptions,
         ret=ret))
     assert set(versionsOf(rule, path)) == { version(rule, ret[0]),

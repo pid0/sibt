@@ -1,52 +1,461 @@
-#!python-runner
+#!bash-runner
 
-import os
-import tarfile
+NumberOfVersions=3
+ExcludedDirs=
+Compression=lzop
 
-availableOptions = ["KeepCopies"]
+available-options() {
+  echo 'p NumberOfVersions'
+  echo 's ExcludedDirs'
+  echo 'gzip|xz|bzip2|lzop Compression'
+}
 
-class Archive(object):
-  def __init__(path, metaFile):
-    pass
+-increment-index-file() {
+  echo "$Loc2Path"/increment-index
+}
+-get-increment-index() {
+  if ! [ -e "$(-increment-index-file)" ]; then
+    echo 1
+  else
+    cat "$(-increment-index-file)"
+  fi
+}
+-set-increment-index() {
+  echo "$1" >"$(-increment-index-file)"
+}
 
-def _findAllArchives(loc2):
+-archive-path() {
+  echo "$Loc2Path"/ar"$1"
+}
+-snapshot-path() {
+  echo "$Loc2Path"/snapshot"$1"
+}
+
+-get-exclude-options() {
+  declare -n destArray="$1"
+  declare -a excludedDirsArray=()
+  get-normalized-exclude-dirs excludedDirsArray
+
+  for excludedDir in "${excludedDirsArray[@]:+${excludedDirsArray[@]}}"; do 
+    destArray+=(--exclude ."$excludedDir")
+  done
+}
+
+-restore-full-backup-if-moved() {
+  if [ ! -e "$(-archive-path 1)" ] && [ -e "$(-archive-path 0)" ]; then
+    mv "$(-archive-path 0)" "$(-archive-path 1)"
+  fi
+  if [ ! -e "$(-snapshot-path 1)" ] && [ -e "$(-snapshot-path 0)" ]; then
+    mv "$(-snapshot-path 0)" "$(-snapshot-path 1)"
+  fi
+}
+
+sync() {
+  incrementIndex="$(-get-increment-index)"
+
+  newArchive="$Loc2Path"/newar
+  newSnapshot="$Loc2Path"/newsnapshot
+  rm -f "$newSnapshot"
+
+  if [ $incrementIndex != 1 ]; then
+    cp "$(-snapshot-path 1)" "$newSnapshot"
+  else
+    -restore-full-backup-if-moved
+    rm -f "$(-archive-path 0)"
+  fi
+
+  declare -a excludeOptions=()
+  -get-exclude-options excludeOptions
+  tar -C "$Loc1Path" \
+    "${excludeOptions[@]:+${excludeOptions[@]}}" \
+    --listed-increment "$newSnapshot" \
+    --"$Compression" \
+    --no-wildcards \
+    --anchored \
+    --create --file "$newArchive" .
+
+  ignore-signals
+
+  if [ $incrementIndex = 1 ]; then
+    if [ -e "$(-archive-path 1)" ]; then
+      mv "$(-archive-path 1)" "$(-archive-path 0)"
+      mv "$(-snapshot-path 1)" "$(-snapshot-path 0)"
+    fi
+  fi
+  mv "$newSnapshot" "$(-snapshot-path $incrementIndex)"
+  mv "$newArchive" "$(-archive-path $incrementIndex)"
+
+  newIncrementIndex="$(($incrementIndex + 1))"
+  if [ $newIncrementIndex -gt $(($NumberOfVersions)) ]; then
+    newIncrementIndex=1
+  fi
+  -set-increment-index $newIncrementIndex
+
+  restore-signals
+}
+
+-print-version-in-snapshot() {
+  if ! [ -e "$1" ]; then
+    return
+  fi
+  if [ -n "$(-parse-snapshot-file "$1" test "$2")" ]; then
+    echo "$(-parse-snapshot-file "$1" timestamp)"
+  fi
+}
+
+-find-snapshot-index-with-version() {
+  for i in $(seq 0 $NumberOfVersions); do
+    if ! [ -e "$(-snapshot-path $i)" ]; then
+      continue
+    fi
+    if [ "$(-parse-snapshot $i timestamp)" = "$1" ]; then
+      echo $i
+      return
+    fi
+  done
+}
+
+versions-of() {
+  relativePath="$1"
+  locNumber=$2
+
+  if [ $locNumber = 2 ]; then
+    return
+  fi
+
+  declare -a excludedDirs=()
+  get-normalized-exclude-dirs excludedDirs
+  for excludedDir in "${excludedDirs[@]:+${excludedDirs[@]}}"; do 
+    relativeExcludedPath="${excludedDir:1}"
+    if starts-with-path "$relativePath" "$relativeExcludedPath"; then
+      return
+    fi
+  done
+
+  for i in $(seq 0 $NumberOfVersions); do
+    -print-version-in-snapshot "$(-snapshot-path $i)" "$relativePath"
+  done
+}
+
+list-files() {
+  relativePath="$1"
+  locNumber=$2
+  timestamp=$3
+  recursively=$4
+
+  if [ "$locNumber" = 2 ]; then
+    return
+  fi
+
+  action=direct
+  if [ "$recursively" = 1 ]; then
+    action=recursive
+  fi
+
+  -parse-snapshot "$(-find-snapshot-index-with-version "$timestamp")" \
+    "$action" "$relativePath"
+}
+
+escape-sed-replacement() {
+  sed -e 's,\\,\\\\,g' -e 's,\&,\\\&,g'
+}
+
+-get-archive-file-type() {
+  ret="$(-parse-snapshot $1 test "$2")"
+  if [ "$ret" = '' ]; then
+    echo missing
+  else
+    echo "$ret"
+  fi
+}
+
+-full-backup-belonging-to() {
+  currentIndex="$(-get-increment-index)" 
+  if [ "$currentIndex" = 1 ]; then
+    echo 1
+  elif [ $1 -ge "$currentIndex" ]; then
+    echo 0
+  else
+    echo 1
+  fi
+}
+
+-strip-components() {
+  local ret='s,'
+  for i in $(seq "$1"); do
+    ret+='[^/]\+/'
+  done
+  echo "$ret",,
+}
+
+restore() {
+  relativePath="$1"
+  timestamp=$3
+
+  declare -a transformOptions=()
+  dontTouchSymlinkTargets=S
+
+  depth="$(echo -n "$relativePath" | sed 's,[^/],,g' | wc --bytes)"
+  depth=$((depth + 1))
+  transformOptions+=( \
+    --transform "$(-strip-components $depth)${dontTouchSymlinkTargets}")
+
+  destPath="$4"
+  restoringToSourceTree=0
+  if [ -z "$4" ]; then
+    destPath="$Loc1Path"/"$relativePath"
+    restoringToSourceTree=1
+  fi
+
+  incrementIndex="$(-find-snapshot-index-with-version "$timestamp")"
+  srcFileType="$(-get-archive-file-type $incrementIndex "$relativePath")"
+
+  if [ $restoringToSourceTree = 1 ]; then
+
+    destFileType="$(get-file-type Loc1 "$destPath")"
+    relativeDestFolder="$(dirname "$relativePath")"
+    destFolder="$Loc1Path"/"$relativeDestFolder"
+    if ! [ -e "$Loc1Path" ]; then
+      mkdir "$Loc1Path"
+    fi
+
+    if ([ "$destFileType" = directory ] && [ "$srcFileType" != directory ]) || \
+      ([ "$destFileType" != directory ] && [ "$srcFileType" = directory ]); then
+      if [ "$relativePath" != . ]; then
+        rm -rf "$destPath"
+      fi
+    fi
+
+  else
+
+    destFileType="$(get-file-type Restore "$destPath" follow-links)"
+    destFolder="$destPath"
+    if [ "$destFileType" != directory ]; then
+      destFolder="$(dirname "$destPath")"
+      replacement="$(basename "$destPath" | escape-sed-replacement)"
+      transformOptions+=( \
+        --transform "s,[^/]\+,${replacement},${dontTouchSymlinkTargets}")
+    fi
+
+  fi
+
+  fullBackupIndex="$(-full-backup-belonging-to $incrementIndex)"
+
+  archivePath=./"$relativePath"
+  if [ "$relativePath" = . ]; then
+    archivePath=.
+  fi
+
+  -run-tar-extract "$destFolder" $fullBackupIndex "$archivePath" \
+    "${transformOptions[@]:+${transformOptions[@]}}"
+
+  if [ "$srcFileType" != N ] && [ $incrementIndex != 1 ]; then
+    -run-tar-extract "$destFolder" $incrementIndex "$archivePath" \
+      "${transformOptions[@]:+${transformOptions[@]}}"
+  fi
+}
+
+-run-tar-extract() {
+  tar -C "$1" \
+    "${@:4}" \
+    --listed-increment /dev/null \
+    --"$Compression" \
+    --same-owner \
+    --same-permissions \
+    --extract --file "$(-archive-path $2)" "$3"
+}
+
+check() {
+  if check-if-passable-as-argument ExcludedDirs; then
+    assert-excluded-dirs-are-absolute || true
+  fi
+}
+
+#####
+# Snapshot Parser
+#####
+-parse-snapshot-file() {
+  python -c '
+
+import sys
+
+class EOFException(Exception):
   pass
 
-def _cycleName(loc2, maximumNumber):
-  filePath = os.path.join(loc2, "counter")
+class SnapshotFile(object):
+  def __init__(self, file):
+    self.file = file
+    self.buffer = b""
+    self.mustRead = True
 
-  counter = _readCounter(filePath)
-  counter = (counter + 1) % maximumNumber
-  _writeCounter(filePath, counter)
+  def read(self):
+    ret = self.file.read(4096)
+    if len(ret) == 0:
+      raise EOFException()
+    return ret
 
-  return counter
+  def readline(self):
+    return self.file.readline()
 
-def _readCounter(path):
-  if not os.path.isfile(path):
-    return -1
+  def readField(self):
+    while True:
+      if self.mustRead:
+        self.buffer += self.read()
+        self.mustRead = False
 
-  with open(path, "r") as counterFile:
-    return int(counterFile.read().strip())
+      indexOfEnd = self.buffer.find(b"\0")
+      if indexOfEnd != -1:
+        ret = self.buffer[:indexOfEnd]
+        self.buffer = self.buffer[indexOfEnd+1:]
+        return ret
+      else:
+        self.mustRead = True
 
-def _writeCounter(path, counter):
-  with open(path, "w") as counterFile:
-    counterFile.write(str(counter))
+def peek(file):
+  ret = file.peek()
+  if len(ret) == 0:
+    raise EOFException()
+  return ret
 
+def readSubEntries(file, visitor):
+  emptyEntries = 0
+  while emptyEntries < 2:
+    entry = file.readField()
+    if len(entry) == 0:
+      emptyEntries += 1
+      continue
 
-def sync(loc1, loc2, keepCopies=2, **kwargs):
-  counter = _cycleName(loc2, int(keepCopies))
-  archiveName = "ar" + str(counter)
+    entryType = entry[0:1]
+    fileName = entry[1:]
 
-  os.chdir(loc1)
-  with tarfile.open(os.path.join(loc2, archiveName), "w:xz") as tar:
-    for loc1File in os.listdir("."):
-      tar.add(loc1File, recursive=True)
+    visitor.processEntry(entryType, fileName)
 
-def versionsOf(path, locNumber, loc1, loc2, **kwargs):
-  if locNumber == 2:
-    return []
+def readDirectoryEntry(file, visitor):
+  for _ in range(5):
+    file.readField()
 
-#TODO 
-# search through archives (with extra file "metan"): find all that contain path
-# metan needs only the names (\0)
-# print their mtimes
+  directoryPath = file.readField()
+  visitor.enter(directoryPath)
+  readSubEntries(file, visitor)
+  visitor.leave()
+
+def printFilePath(path):
+  sys.stdout.buffer.write(path + b"\0")
+def printDirPath(path):
+  sys.stdout.buffer.write(path + b"/\0")
+
+class DirectoryVisitor(object):
+  def __init__(self, targetDirPath):
+    self.targetFile = targetDirPath
+    self.currentDirIsInTarget = False
+
+  def _isInTarget(self, dirPath):
+    return dirPath.startswith(self.targetFile + b"/") or \
+      dirPath == self.targetFile
+
+  def _removePrefix(self, path):
+    return path[len(self.targetFile)+1:]
+
+  def enter(self, dirPath):
+    self.dirPath = dirPath
+    self.currentDirIsInTarget = self._isInTarget(dirPath)
+    transformedDirPath = self._removePrefix(dirPath)
+    if dirPath != self.targetFile and self.currentDirIsInTarget:
+      printDirPath(self._removePrefix(dirPath))
+
+  def processEntry(self, entryType, fileName):
+    if entryType == b"D":
+      return
+    fullPath = self.dirPath + b"/" + fileName
+
+    if fullPath == self.targetFile:
+      printFilePath(fileName)
+      return
+
+    if not self.currentDirIsInTarget:
+      return
+
+    printFilePath(self._removePrefix(fullPath))
+
+  def leave(self):
+    pass
+
+class SingleDirectoryVisitor(object):
+  def __init__(self, targetFilePath):
+    self.targetFile = targetFilePath
+  
+  def enter(self, dirPath):
+    self.dirPath = dirPath
+    self.printing = dirPath == self.targetFile
+
+  def processEntry(self, entryType, fileName):
+    printEntry = self.printing or (
+      self.dirPath + b"/" + fileName == self.targetFile and entryType != b"D")
+    if printEntry:
+      if entryType == b"D":
+        printDirPath(fileName)
+      else:
+        printFilePath(fileName)
+
+  def leave(self):
+    if self.printing:
+      sys.exit()
+
+class PresenceTester(object):
+  def __init__(self, pathToFind):
+    self.pathToFind = pathToFind
+
+  def _testPath(self, fullPath, entryType):
+    if fullPath == self.pathToFind:
+      sys.stdout.buffer.write(b"directory" if entryType == b"D" else entryType)
+      sys.exit()
+
+  def enter(self, dirPath):
+    self.dirPath = dirPath
+    self._testPath(dirPath, b"D")
+
+  def processEntry(self, entryType, fileName):
+    fullPath = self.dirPath + b"/" + fileName
+    self._testPath(fullPath, entryType)
+
+  def leave(self):
+    pass
+
+with open(sys.argv[1], "rb") as pythonFile:
+  file = SnapshotFile(pythonFile)
+
+  version = file.readline()[:-1]
+  if not version.endswith(b"-2"):
+    sys.stderr.write("Wrong snapshot version ‘{0}’".format(version))
+    sys.exit(1)
+
+  timestampSeconds = file.readField()
+  timestampMilliseconds = int(int(file.readField()) / 1e6)
+  if "timestamp" in sys.argv[2:]:
+    sys.stdout.buffer.write(
+      timestampSeconds + b"," + str(timestampMilliseconds).encode())
+    sys.exit()
+
+  target = sys.argv[3].encode()
+  if target != b".":
+    target = b"./" + target
+
+  if "recursive" in sys.argv[2]:
+    visitor = DirectoryVisitor(target)
+  if "direct" in sys.argv[2:]:
+    visitor = SingleDirectoryVisitor(target)
+  if "test" in sys.argv[2:]:
+    visitor = PresenceTester(target)
+  
+  try:
+    while True:
+      readDirectoryEntry(file, visitor)
+  except EOFException:
+    pass
+
+' "$@"
+}
+
+-parse-snapshot() {
+  -parse-snapshot-file "$(-snapshot-path "$1")" "${@:2}"
+}

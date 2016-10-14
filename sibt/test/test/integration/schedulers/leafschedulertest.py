@@ -20,7 +20,7 @@ def loadModule(schedulerName, varDir, sibtCall=["/where/sibt/is"],
   loader = PyModuleSchedulerLoader(PyModuleLoader(packageName))
   modulePath = relativeToProjectRoot(os.path.join("sibt", "schedulers", 
     schedulerName))
-  return configrepo.loadScheduler(loader, modulePath, schedulerName, 
+  return configrepo.loadSchedulerFromModule(loader, modulePath, schedulerName, 
       configrepo.SchedulerArgs(sibtCall, str(varDir), logger, clock))
 
 def toUTC(localDateTime):

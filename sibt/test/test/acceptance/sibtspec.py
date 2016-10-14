@@ -23,7 +23,7 @@ from test.acceptance.schedulerbuilder import SchedulerBuilder
 from test.acceptance.rulebuilder import RuleBuilder
 from test.acceptance.configscenarioconstructor import ConfigScenarioConstructor
 from test.common.builders import clockWithOrderedTimes, constantTimeClock, \
-    anyUTCDateTime
+    anyUTCDateTime, toTimestamp
 from test.common.rfc3164syslogserver import Rfc3164SyslogServer
 from test.sibt.infrastructure.utillinuxsyslogger_test import loggerOptions
 from datetime import timedelta, datetime, timezone
@@ -760,10 +760,10 @@ def test_shouldOnlyScheduleIfEachRulePassesACheckOfItsSynchronizer(fixture):
     elif [ "$1" = check ]; then
       case "$*" in
         *Id=first*) 
-          echo -n $'foo\0';;
+          echo -n foo; echo -n -e '\0';;
         *Id=second*) 
-          echo -n $'bar\0'
-          echo -n $'baz\n  quux\0';;
+          echo -n bar; echo -n -e '\0'
+          echo -n $'baz\n  quux'; echo -n -e '\0';;
         *Id=third*)
           echo third-checked >&2;;
       esac
@@ -779,7 +779,7 @@ def test_shouldOnlyScheduleIfEachRulePassesACheckOfItsSynchronizer(fixture):
   fixture.runSibtWithRealStreamsAndExec("schedule", "*")
   fixture.shouldHaveExitedWithStatus(1)
   fixture.stderr.shouldInclude("finds-errors", "synchronizer").andAlso.\
-      shouldInclude("first", "second", "foo", "bar", "baz\n", "quux").but.\
+      shouldInclude("first", "second", "foo", "bar\n", "baz\n", "quux").but.\
       shouldNotInclude("\0")
 
   fixture.runSibtWithRealStreamsAndExec("check", "third")
@@ -831,8 +831,7 @@ def test_shouldFailAndReportItIfASynchronizerDoesntSupportAFunction(fixture):
 
 def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
     fixture):
-  utcThirdOfMarch = "2014-01-03T18:35:00"
-  utcMarch3rdInDifferentZone = "2014-01-03T20:35:00+02:00"
+  utcThirdOfMarch = "2014-01-03T18:35:00" 
   utc123 = "1970-01-01T00:02:03"
 
   testDir = fixture.tmpdir.mkdir("versions-test")
@@ -843,7 +842,7 @@ def test_shouldCollectVersionsOfAFileFromRulesThatHaveItWithinLoc1OrLoc2(
 
   syncer = fixture.conf.syncerReturningVersions(
       forRelativeFile=fileName,
-      ifWithinLoc1=[utcMarch3rdInDifferentZone, "0"],
+      ifWithinLoc1=[toTimestamp(utcThirdOfMarch), "0"],
       ifWithinLoc2=["123"]).asSysConfig().write()
 
   baseRule = fixture.conf.ruleWithSched().withSynchronizer(syncer)
@@ -888,12 +887,11 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
   baseRule.withName("total-backup").withLoc2(backupDir).write()
   baseRule.withName("other-rule").withLoc2("/mnt/quux").write()
 
-  april5th = "2014-04-05T13:35:34+00:00"
-  march3rd = "2014-03-30T21:43:12+00:00"
-  april5thTimestamp = "1396704934"
+  april5th = "2014-04-05T13:35:34"
+  march3rd = "2014-03-30T21:43:12"
 
   syncer = syncer.allowing(execmock.call(lambda args: args[0] == "versions-of",
-    [april5th, march3rd])).write()
+    [toTimestamp(april5th), toTimestamp(march3rd)])).write()
 
   callRestore(dataDir + fileName, "2014", "3:")
   fixture.shouldHaveExitedWithStatus(1)
@@ -906,7 +904,7 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
 
   syncer.expecting(execmock.call(lambda args: args[0] == "restore" and
     "Loc2=" + backupDir[:-1] in args and
-    args[1:5] == (fileName, "1", april5thTimestamp,
+    args[1:5] == (fileName, "1", toTimestamp(april5th) + ",0",
       str(fixture.tmpdir) + "/dest.backup"))).reMakeExpectations()
   with fixture.tmpdir.as_cwd():
     callRestore(dataDir + fileName, "tota", "04", "--to=dest.backup")
@@ -914,9 +912,10 @@ def test_shouldCorrectlyCallRestoreForTheVersionThatHasAllGivenSubstrings(
 def test_shouldGetANullSeparatedFileListingWithACallSimilarToRestore(fixture):
   syncer = fixture.conf.aSyncer().withBashCode(r"""
   if [ $1 = versions-of ]; then
-    echo '1970-01-01T00:00:50+00:00'
+    echo 50,325
     echo 100000000
-  elif [[ $1 = list-files && $2 = container/folder && $3 = 2 && $4 = 50 ]]; then
+  elif [[ $1 = list-files && $2 = container/folder && $3 = 2 && \
+      $4 = 50,325 ]]; then
     echo -n -e 'some\n-file'
     echo -n -e '\0'
     echo -n 'and-a-dir/'

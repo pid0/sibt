@@ -70,13 +70,13 @@ versions-of() {
 restore() {
   relativePath="$1"
   locNumber=$2
-  timestamp=$3
+  timestamp="${3%,*}"
 
   if [ $locNumber = 2 ]; then
     return
   fi
 
-  srcFileType=$(get-repo-file-type "$relativePath" $timestamp)
+  srcFileType=$(-get-repo-file-type "$relativePath" $timestamp)
   srcPath="$Loc2Path"/"$relativePath"
   srcFileName="$(basename "$srcPath")"
 
@@ -89,10 +89,10 @@ restore() {
     destPath="$RestorePath"
     destPort=Restore
   fi
-  destFileType=$(get-file-type Loc1 "$destPath" follow-links)
+  destFileType=$(get-file-type "$destPort" "$destPath" follow-links)
 
   fileInDest="$destPath"/"$srcFileName"
-  fileInDestType=$(get-file-type Loc1 "$fileInDest")
+  fileInDestType=$(get-file-type "$destPort" "$fileInDest")
 
   if [ $restoringToSourceTree = 0 ]; then
     if [ $destFileType = non-directory ]; then
@@ -127,15 +127,29 @@ too"
     "$(loc-syntax-of "$destPort" "$destPath")"
 }
 
-get-repo-file-type() {
-  run-rdiff-backup --parsable-output --list-increments \
-    "$(loc-syntax-of Loc2 "$Loc2Path"/"$1")" | \
-    sed -n -e "/^${2}/p" | cut -d ' ' -f 2
+-parse-repo-file-type() {
+  local targetTimestamp="$1"
+  local increment=
+  while read -r increment; do
+    local timestamp="${increment% *}"
+    local fileType="${increment#* }"
+
+    if [ "$timestamp" -ge "$targetTimestamp" ]; then
+      echo "$fileType"
+      return
+    fi
+  done
 }
 
-append-slash-if-dir() {
-  while read fileName; do
-    fileType=$(get-repo-file-type "$fileName" $1)
+-get-repo-file-type() {
+  run-rdiff-backup --parsable-output --list-increments \
+    "$(loc-syntax-of Loc2 "$Loc2Path"/"$1")" | \
+    -parse-repo-file-type "$2"
+}
+
+-append-slash-if-dir() {
+  while read -r fileName; do
+    fileType=$(-get-repo-file-type "$fileName" $1)
     echo -n "$fileName"
 
     if [ $fileType = directory ]; then
@@ -146,8 +160,8 @@ append-slash-if-dir() {
   done
 }
 
-remove-prefix() {
-  while read -d $'\0' word; do
+-remove-prefix() {
+  while read -r -d $'\0' word; do
     echo -n "${word:${#1}:${#word}}"
     echo -n -e '\0'
   done
@@ -156,14 +170,14 @@ remove-prefix() {
 list-files() {
   relativePath="$1"
   locNumber=$2
-  timestamp=$3
+  timestamp="${3%,*}"
   recursively=$4
 
   if [ $locNumber = 2 ]; then
     return
   fi
 
-  typeOfFile=$(get-repo-file-type "$relativePath" $timestamp)
+  typeOfFile=$(-get-repo-file-type "$relativePath" $timestamp)
   if [ $typeOfFile != directory ]; then
     echo -n "${relativePath##*/}"
     echo -e -n '\0'
@@ -188,7 +202,7 @@ list-files() {
   run-rdiff-backup --list-at-time $timestamp \
     "$(loc-syntax-of Loc2 "$Loc2Path"/"$relativePath")" | sed -n -e '1!p' | \
     sed -r -e "$preprocessing" | sed -nr -e "$filter" | \
-    append-slash-if-dir $timestamp | remove-prefix "$prefix"
+    -append-slash-if-dir $timestamp | -remove-prefix "$prefix"
 }
 
 check() {

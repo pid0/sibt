@@ -31,6 +31,7 @@ def test_shouldInitSchedulersCorrectlyIncludingSibtInvocationWithGlobalOpts(
 
 def test_shouldGiveEachSchedulerAnUnchangingVarDirectory(fixture):
   sched = fixture.conf.aSched("needs-lotsa-space")
+  fixture.conf.ruleWithSyncer().withScheduler(sched).write()
   varDir = []
   def firstCall(args):
     assert os.path.basename(args.varDir) == "needs-lotsa-space"

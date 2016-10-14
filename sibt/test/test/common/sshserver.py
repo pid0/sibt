@@ -10,11 +10,15 @@ import py.path
 import pytest
 from datetime import datetime
 
+import os
+
 Port = 5123
+
+LastSFTPHandler = None
 
 @pytest.fixture(scope="module")
 def sshServerFixture(request):
-  serverSetup = SSHTestServerSetup.construct_server(
+  serverSetup = SSHTestServerSetup.constructServer(
       py.path.local(tempfile.mkdtemp(
         prefix="sibt-ssh-", suffix="{0}:{1}".format(
         datetime.now().minute, datetime.now().second))), Port)
@@ -49,9 +53,9 @@ class ExecChannelHandler(threading.Thread):
     queueToPoison.put((self.ProcessFinished, b''))
 
   def run(self):
-    if not self._commandProvider.executionRequested.wait(0.5):
-      return
-
+#    if not self._commandProvider.executionRequested.wait(0.5):
+#      return
+#
     self._logFile.write("{0}:{1} -- executing ‘{2}’\n".format(
       self._clientAddress, self._channel.get_id(), 
       self._commandProvider.commandToExecute))
@@ -106,6 +110,7 @@ class ServerPolicy(paramiko.ServerInterface):
     self._expectedClientKey = expectedClientKey
     self.executionRequested = threading.Event()
     self.commandToExecute = ""
+    self.subsystemRequested = False
 
   def get_allowed_auths(self, userName):
     return "publickey"
@@ -131,6 +136,69 @@ class ServerPolicy(paramiko.ServerInterface):
     self.commandToExecute = "sh"
     self.executionRequested.set()
     return True
+
+  def check_channel_subsystem_request(self, *args):
+    self.subsystemRequested = True
+    self.executionRequested.set()
+    return super().check_channel_subsystem_request(*args)
+
+class SFTPHandler(paramiko.SFTPServerInterface):
+  def __init__(self, *args, logFile=None, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._logFile = logFile
+    global LastSFTPHandler
+    LastSFTPHandler = self
+    self.actions = []
+
+  def _registerAction(self, *args):
+    self.actions.append(args)
+
+  def open(self, path, flags, attr):
+    self._registerAction("open", path, flags, attr)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def list_folder(self, path):
+    self._registerAction("list_folder", path)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def stat(self, path):
+    self._registerAction("stat", path)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def lstat(self, path):
+    self._registerAction("lstat", path)
+    try:
+      return paramiko.SFTPAttributes.from_stat(os.lstat(path))
+    except OSError as ex:
+      return paramiko.SFTPServer.convert_errno(ex.errno)
+
+  def remove(self, path):
+    self._registerAction("remove", path)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def rename(self, oldpath, newpath):
+    self._registerAction("rename", oldpath, newpath)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def mkdir(self, path, attr):
+    self._registerAction("mkdir", path, attr)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def rmdir(self, path):
+    self._registerAction("rmdir", path)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def chattr(self, path, attr):
+    self._registerAction("chattr", path, attr)
+    return paramiko.SFTP_OP_UNSUPPORTED
+
+  def readlink(self, path):
+    self._registerAction("readlink", path)
+    return paramiko.SFTP_OP_UNSUPPORTED
+  
+  def symlink(self, target_path, path):
+    self._registerAction("symlink", target_path, path)
+    return paramiko.SFTP_OP_UNSUPPORTED
 
 class SSHTestServer(threading.Thread):
   def __init__(self, serverKey, expectedClientKey, port, logFile, **kwargs):
@@ -159,9 +227,14 @@ class SSHTestServer(threading.Thread):
 
     return sock
 
+  def _enableSFTPSubsystem(self, transport):
+    transport.set_subsystem_handler("sftp", paramiko.SFTPServer, SFTPHandler,
+        logFile=self._logFile)
+
   def _handleClient(self, clientSocket, clientAddress):
     with paramiko.Transport(clientSocket) as sshTransport:
       sshTransport.add_server_key(self._key)
+      self._enableSFTPSubsystem(sshTransport)
 
       serverPolicy = ServerPolicy(self._expectedClientKey)
       sshTransport.start_server(event=None, server=serverPolicy)
@@ -170,11 +243,17 @@ class SSHTestServer(threading.Thread):
         channel = sshTransport.accept(1)
         if channel is None:
           break
-        with channel:
-          handler = ExecChannelHandler(serverPolicy, channel, self._logFile, 
-              clientAddress, sshTransport)
-          handler.start()
-          handler.join()
+
+        serverPolicy.executionRequested.wait()
+        if serverPolicy.subsystemRequested:
+          while sshTransport.is_active() and not self._stopping:
+            time.sleep(0.2)
+        else:
+          with channel:
+            handler = ExecChannelHandler(serverPolicy, channel, self._logFile, 
+                clientAddress, sshTransport)
+            handler.start()
+            handler.join()
 
   def run(self):
     sock = self._make_socket()
@@ -197,9 +276,11 @@ class SSHTestServerSetup(object):
     self.knownHostsFile = knownHostsFile
     self.clientIdFile = clientIdFile
     self.port = port
+    self.remoteShellCommand = "ssh -o UserKnownHostsFile={0} -i {1}".format(
+        self.knownHostsFile, self.clientIdFile)
 
   @classmethod
-  def construct_server(clazz, folder, port):
+  def constructServer(clazz, folder, port):
     clientKey = paramiko.rsakey.RSAKey.generate(2048)
     clientIdFile = str(folder / "id_rsa")
     clientKey.write_private_key_file(clientIdFile)
@@ -215,3 +296,24 @@ class SSHTestServerSetup(object):
     server = SSHTestServer(serverKey, clientKey, port, logFile)
 
     return clazz(server, knownHostsFile, clientIdFile, port)
+
+if __name__ == "__main__":
+  import sys, time, logging
+  logging.basicConfig()
+  logging.getLogger("paramiko").setLevel(logging.DEBUG)
+  logging.getLogger("paramiko.transport").setLevel(logging.DEBUG)
+
+  if len(sys.argv) < 2:
+    sys.stderr.write("<server folder>\n")
+    sys.exit(2)
+
+  serverSetup = SSHTestServerSetup.constructServer(py.path.local(sys.argv[1]), 
+      Port)
+  serverSetup.server.start()
+  while True:
+    try:
+      time.sleep(0.5)
+    except KeyboardInterrupt:
+      serverSetup.server.stop()
+      print(LastSFTPHandler.actions)
+      sys.exit()

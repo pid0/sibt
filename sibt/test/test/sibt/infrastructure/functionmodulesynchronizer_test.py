@@ -4,18 +4,17 @@ from test.common.execmock import ExecMock
 from test.common import execmock
 from sibt.infrastructure.functionmodulesynchronizer import \
     FunctionModuleSynchronizer
-from test.common.assertutil import iterToTest, dictIncludes
+from test.common.assertutil import iterToTest, dictIncludes, strToTest
 from sibt.infrastructure.exceptions import ExternalFailureException, \
     SynchronizerFuncNotImplementedException, \
     ModuleFunctionNotImplementedException
 from datetime import datetime, timezone, timedelta
 from test.common import mock
 from test.common.builders import remoteLocation, localLocation, location, \
-    anyUTCDateTime, mkSyncerOpts
+    anyUTCDateTime, mkSyncerOpts, toTimestamp
 from sibt.infrastructure import types
 
-EpochPlus93Sec = datetime(1970, 1, 1, 0, 1, 33, tzinfo=timezone.utc)
-EpochPlus93SecW3C = "1970-01-01T00:01:33+00:00"
+EpochPlus93Point46Sec = datetime(1970, 1, 1, 0, 1, 33, 460000, timezone.utc)
 
 class Fixture(object):
   def __init__(self):
@@ -59,45 +58,61 @@ def test_shouldSplitFuzzyOutputForTypeAndNameOfAvailableOptions(fixture):
       lambda opt: opt.name == "Default" and opt.optionType == types.String,
       lambda opt: opt.name == "B" and opt.optionType == types.Bool)
 
-def test_shouldParseUnixTimestampsAndW3CDateTimesAsVersions(fixture):
+def test_shouldParseUnixTimestampsWithAndWithoutMillisecondsAsVersions(fixture):
   path = "/etc/config"
 
   fixture.functions.expectCalls(mock.callMatching("callFuzzy",
       lambda funcName, args, _: funcName == "versions-of" and 
       args[0] == path and args[1] == "2", ret=[
       "250",
-      "2013-05-10T13:05:20+03:00",
-      "2014-12-05T05:13:00-02:00"]))
+      "0,999",
+      toTimestamp("2013-05-10T13:05:20") + ",025"]))
 
-  iterToTest(fixture.syncer.versionsOf(path, 2, {})).shouldContainInAnyOrder(
+  iterToTest(fixture.syncer.versionsOf({}, path, 2)).shouldContainInAnyOrder(
       datetime(1970, 1, 1, 0, 4, 10, 0, timezone.utc),
-      datetime(2013, 5, 10, 10, 5, 20, 0, timezone.utc),
-      datetime(2014, 12, 5, 7, 13, 0, 0, timezone.utc))
+      datetime(1970, 1, 1, 0, 0, 0, 999000, timezone.utc),
+      datetime(2013, 5, 10, 13, 5, 20, 25000, timezone.utc))
+
+def test_shouldThrowAnExceptionIfTimestampsAreNotInACorrectFormat(fixture):
+  def shouldThrow(timestamp):
+    fixture.functions.expectCalls(mock.callMatching("callFuzzy", 
+      lambda *_: True, ret=[timestamp]))
+    with pytest.raises(ValueError) as ex:
+      fixture.syncer.versionsOf({}, "foo", 1)
+    strToTest(str(ex)).shouldInclude("timestamp", "format")
+
+  shouldThrow("2,3,")
+  shouldThrow("0,1000")
   
-def test_shouldCallRestoreWithAUnixTimestamp(fixture):
+def test_shouldCallRestoreWithAUnixTimestampWithMilliseconds(fixture):
   path = "path/to/file"
-  expectedArgs = [path, "1", "93", ""]
-  time = EpochPlus93Sec
+  expectedArgs = [path, "1", "93,460", ""]
+  time = EpochPlus93Point46Sec
 
   fixture.functions.expectCalls(mock.callMatching("callVoid", 
     lambda funcName, args, _: funcName == "restore" and 
     list(args) == expectedArgs))
 
-  fixture.syncer.restore(path, 1, time, None, {})
+  fixture.syncer.restore({}, path, 1, time, None)
 
   fixture.functions.checkExpectedCalls()
 
-def test_shouldReturnExactOutputAsFileListing(fixture):
-  listing = object()
+def test_shouldEvaluateExactOutputAndCallTheClientWhenListingFiles(fixture):
+  listing = ["foo", "bar"]
+  visitedFiles = []
+  def visitor(fileName):
+    visitedFiles.append(fileName)
+
   path = "some/file"
   expectedOptions = {"Opt": "bar"}
 
   fixture.functions.expectCalls(mock.callMatching("callExact", 
     lambda funcName, args, options: funcName == "list-files" and list(args) == 
-      [path, "2", "93", "0"], ret=listing))
+      [path, "2", "93,460", "0"], ret=listing))
 
-  assert fixture.syncer.listFiles(path, 2, EpochPlus93Sec, False, 
-      expectedOptions) is listing
+  fixture.syncer.listFiles(expectedOptions, visitor, path, 2, 
+      EpochPlus93Point46Sec, False)
+  assert visitedFiles == listing
 
 def test_shouldTreatFirstLineOfPortOutputAsWrittenToFlag(fixture):
   def protocolsCall(number, ret):
@@ -137,8 +152,8 @@ def test_shouldConvertArgumentsAndOptionsToStringsDependingOnTheirType(fixture):
         receivedOptions["Interval"] == "123" and 
         receivedOptions["Choice"] == "A"))
 
-  fixture.syncer.restore("foo", 1, anyUTCDateTime(), 
-      location("/media/foo/"), options)
+  fixture.syncer.restore(options, "foo", 1, anyUTCDateTime(), 
+      location("/media/foo/"))
 
   fixture.functions.checkExpectedCalls()
 
@@ -158,13 +173,16 @@ def test_shouldEncodeLocationsAsMultipleOptions(fixture):
       "RestoreHost": "blah",
       "RestorePath": "/foo" })))
 
-  fixture.syncer.restore("file", 2, anyUTCDateTime(),
-      remoteLocation("http", host="blah", path="/foo"), 
-      { "SomePlace": remoteLocation(protocol="ftp",
-        login="foo",
-        host="mansion",
-        port="10",
-        path="/blah/quux"),
-        "Local": localLocation("/foo") })
+  options = { 
+      "SomePlace": remoteLocation(
+        protocol="ftp", 
+        login="foo", 
+        host="mansion", 
+        port="10", 
+        path="/blah/quux"), 
+      "Local": localLocation("/foo") }
+
+  fixture.syncer.restore(options, "file", 2, anyUTCDateTime(),
+      remoteLocation("http", host="blah", path="/foo"))
 
   fixture.functions.checkExpectedCalls()

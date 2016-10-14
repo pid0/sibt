@@ -9,6 +9,7 @@ from sibt.domain.version import Version
 import re
 from sibt.domain.port import Port
 from sibt.configuration.optionvaluesparser import parseLocation
+from sibt.configuration.configurablelist import ConfigurableList
 from sibt.domain.syncrule import LocCheckLevel
 from sibt.domain.optioninfo import OptionInfo
 from sibt.infrastructure import types
@@ -47,6 +48,10 @@ def existingRunner(tmpdir, name):
 
 def anyUTCDateTime():
   return datetime.now(timezone.utc) - timedelta(days=int(random() * 330))
+
+def toTimestamp(dateTimeString):
+  return str(int(datetime.strptime(dateTimeString, "%Y-%m-%dT%H:%M:%S").replace(
+      tzinfo=timezone.utc).timestamp()))
 
 def orderedDateTimes(numberOfDateTimes):
   return [
@@ -95,6 +100,11 @@ def localLocation(path="/any"):
 def remoteLocation(protocol="rsync", login="", host="host", port="", 
     path="/"):
   return RemoteLocation(protocol, login, host, port, path)
+def sshLocation(**kwargs):
+  return remoteLocation(protocol="ssh", **kwargs)
+
+def configurableList(configurables):
+  return ConfigurableList(configurables)
 
 def mockSched(*args, sharedOptions=[], **kwargs):
   ret = fakeConfigurable(*args, **kwargs)

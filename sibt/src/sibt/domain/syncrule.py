@@ -111,9 +111,8 @@ class SyncRule(object):
       raise UnstablePhaseException()
 
     return [Version(self, time) for time in 
-        self.synchronizer.versionsOf(
-          self._loc(locNumber).relativePathTo(location), 
-          locNumber, self.synchronizerOptions)]
+        self.synchronizer.versionsOf(self.synchronizerOptions,
+          self._loc(locNumber).relativePathTo(location), locNumber)]
 
   def restore(self, location, version, destinationLocation, 
       unstablePhaseDetector):
@@ -131,15 +130,15 @@ class SyncRule(object):
       self._throwIfPortCantUseLoc(self.ports[locIndex], destinationLocation,
           "restore target")
 
-    self.synchronizer.restore(self._loc(locNumber).relativePathTo(location), 
-        locNumber, version.time, destinationLocation, 
-        self.synchronizerOptions)
-
-  def listFiles(self, location, version, recursively):
-    locNumber = self._getLocNumber(location)
-    return self.synchronizer.listFiles(
+    self.synchronizer.restore(self.synchronizerOptions, 
         self._loc(locNumber).relativePathTo(location), 
-        locNumber, version.time, recursively, self.synchronizerOptions)
+        locNumber, version.time, destinationLocation)
+
+  def listFiles(self, visitorFunc, location, version, recursively):
+    locNumber = self._getLocNumber(location)
+    return self.synchronizer.listFiles(self.synchronizerOptions, visitorFunc, 
+        self._loc(locNumber).relativePathTo(location), 
+        locNumber, version.time, recursively)
 
   @property
   def syncerCheckErrors(self):

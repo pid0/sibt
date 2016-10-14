@@ -2,7 +2,7 @@ import pytest
 from test.acceptance.sibtspec import SibtSpecFixture
 from py import path
 from test.common import relativeToProjectRoot
-from test.common.assertutil import strToTest
+from test.common.assertutil import strToTest, iterToTest
 import shutil
 import os
 import threading
@@ -16,6 +16,9 @@ import io
 import fcntl
 import select
 from test.acceptance.sighandler import SigHandler
+
+from test.common import sshserver
+from test.common.sshserver import sshServerFixture
 
 def fillPipe(writeFd):
   flags = fcntl.fcntl(writeFd, fcntl.F_GETFL)
@@ -392,3 +395,56 @@ def test_shouldWaitForExecutionAfterSignalWhenUsingSimpleSched(fixture):
     sibtProcess.sigIntToProcessGroup()
     time.sleep(0.1)
     assert sibtProcess.wait() == -signal.SIGINT
+
+def test_shouldEfficientlyCollectVersionsFromSyncers(fixture):
+  syncer = fixture.conf.aSyncer().withBashCode(r"""
+    if [ "$1" = versions-of ]; then
+      sleep 0.2
+      echo 0
+    else
+      exit 200
+    fi""").write()
+
+  rules = [fixture.conf.ruleWithSched().withSynchronizer(syncer).\
+      withLoc1("/foobar").write() for _ in range(20)]
+
+  fixture.runSibtAsAProcess("versions-of", "/foobar")
+  assert len(fixture.stdout.lines()) == 20
+  fixture.shouldNotHaveTakenMoreSecondsThan(0.8)
+
+def test_shouldAutomaticallyMountViaSSHIfTheSyncerDoesntSupportIt(
+    fixture, sshServerFixture):
+  fixture.useActualSibtConfig()
+  loc2PathFile = fixture.tmpdir / "loc2Path"
+
+  syncer = fixture.conf.aSyncer().withCode(r"""#!bash-runner
+    versions-of() {
+      echo 0
+    }
+    list-files() {
+      echo -n file1
+      echo -n -e '\0'
+      echo -n file2
+      echo -n -e '\0'
+
+      echo -n "$Loc2Path" >'{0}'
+      mkdir "$Loc2Path"/'TITAN!' || true
+    }""".replace("{0}", str(loc2PathFile))).write()
+
+  rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).\
+      withNewValidLocs().withSyncerOpts(
+          RemoteShellCommand=sshServerFixture.remoteShellCommand)
+  initialLoc2 = str(rule.loc2)
+  rule = rule.withLoc2("ssh://localhost:{0}{1}".format(
+    sshserver.Port, initialLoc2)).write()
+
+  fixture.runSibtAsAProcess("list-files", rule.loc1, ":")
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldInclude("file2")
+
+  sftpServer = sshserver.LastSFTPHandler
+  iterToTest(sftpServer.actions).shouldIncludeMatching(lambda action:
+      action[0] == "mkdir" and action[1].endswith("/TITAN!"))
+
+  assert os.path.lexists(initialLoc2)
+  assert not os.path.lexists(loc2PathFile.read())

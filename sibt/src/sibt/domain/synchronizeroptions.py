@@ -9,6 +9,9 @@ class SynchronizerOptions(collections.UserDict):
 
     self.locs = locOptions
 
+  def withNewLocs(self, newLocs):
+    return SynchronizerOptions(self.options, newLocs)
+
   @property
   def locKeys(self):
     return ["Loc" + str(i + 1) for i, _ in enumerate(self.locOptions)]

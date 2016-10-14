@@ -13,7 +13,7 @@ class FuseFS(object):
   def __enter__(self):
     self.process = subprocess.Popen(["python2", ScriptPath, 
       "-o", "nonempty", self.mountPoint])
-    time.sleep(0.05)
+    time.sleep(0.1)
     return self
 
   def __exit__(self, exceptionType, ex, traceback):

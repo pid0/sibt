@@ -2,8 +2,10 @@ import pytest
 from test.integration.synchronizers import loadSynchronizer
 from sibt.infrastructure.exceptions import ExternalFailureException, \
     SynchronizerFuncNotImplementedException
-from test.common.builders import anyUTCDateTime
+from test.common.builders import anyUTCDateTime, mkSyncerOpts
 from test.common.assertutil import iterToTest
+from test.integration.bashfunctestfixture import BashFuncTestFixture
+from test.common import relativeToProjectRoot
 
 class Fixture(object):
   def __init__(self, tmpdir):
@@ -28,7 +30,7 @@ class RunnerTest(object):
   def assertFailureWithSyncCode(self, code, fixture):
     syncer = self.loadSynchronizerWithCode(code, fixture)
     with pytest.raises(ExternalFailureException) as ex:
-      syncer.sync(dict())
+      syncer.sync(mkSyncerOpts())
     return ex.value
 
   def test_shouldNotFailForFunctionsThatHaveAReasonableDefault(self, fixture):
@@ -36,19 +38,20 @@ class RunnerTest(object):
     assert syncer.onePortMustHaveFileProtocol == False
     _ = syncer.availableOptions
     iterToTest(syncer.ports).shouldContainMatching(
-        lambda port: port.supportedProtocols == ["file"] and \
+        lambda port: "file" in port.supportedProtocols and \
             not port.isWrittenTo,
-        lambda port: port.supportedProtocols == ["file"] and port.isWrittenTo)
-    assert syncer.versionsOf("/mnt/data/bar", 1, dict()) == []
-    assert syncer.check({}) == []
+        lambda port: "file" in port.supportedProtocols and port.isWrittenTo)
+    assert syncer.versionsOf(mkSyncerOpts(), "/mnt/data/bar", 1) == []
+    assert syncer.check(mkSyncerOpts()) == []
 
   def test_shouldThrowExceptionForNonTrivialNotImplementedFunctions(self, 
       fixture):
     syncer = self.loadSynchronizerWithCode("", fixture)
     with pytest.raises(SynchronizerFuncNotImplementedException):
-      syncer.listFiles("/tmp/file", 1, anyUTCDateTime(), False, dict())
+      syncer.listFiles(mkSyncerOpts(), lambda *_: None, "/tmp/file", 1, 
+          anyUTCDateTime(), False)
     with pytest.raises(SynchronizerFuncNotImplementedException):
-      syncer.sync(dict())
+      syncer.sync(mkSyncerOpts())
 
   def test_shouldFailIndicatingCorrectExitStatusIfSomeSubcommandFails(self,
       fixture):
@@ -56,6 +59,11 @@ class RunnerTest(object):
     ex = self.assertFailureWithSyncCode(self.syncCodeWithFailingSubcommand(
       exitStatus), fixture)
     assert ex.exitStatus == exitStatus
+
+@pytest.fixture
+def bashFuncFixture():
+  return BashFuncTestFixture(relativeToProjectRoot(
+    "sibt/runners/bash-runner"), "/dev/null ''")
 
 class Test_BashRunnerTest(RunnerTest):
   @property
@@ -79,6 +87,19 @@ class Test_BashRunnerTest(RunnerTest):
       sync() {
         (echo foo; exit 2) | cat
       }""", fixture)
+ 
+  def test_shouldBeAbleToTestIfAPathIsWithinAnother(self, bashFuncFixture):
+    def startsWithPath(path, prefix):
+      return bashFuncFixture.compute("""
+        if starts-with-path '{0}' '{1}'; then
+          echo 1
+        else
+          echo 0
+        fi""".format(path, prefix)) == b"1\n"
+
+    assert startsWithPath("foo/bar", "foo")
+    assert not startsWithPath("foobar", "foo")
+    assert startsWithPath("foo", "foo")
 
 class Test_PythonRunnerTest(RunnerTest):
   @property

@@ -133,9 +133,62 @@ make-assertion-about-option() {
 try-to-echo() {
   "$BASH" -n -c 'echo '"$1" 2>&1 | sed -r -e 's/^.+line [0-9]+: //'
 }
+assert-each-is-absolute() {
+  declare -a paths
+  eval args-to-array paths "$1"
+
+  for path in "${paths[@]:+${paths[@]}}"; do
+    if [ "${path:0:1}" != / ]; then
+      echo -n "$path" should be an absolute path
+      return 1
+    fi
+  done
+}
+assert-excluded-dirs-are-absolute() {
+  make-assertion-about-option ExcludedDirs assert-each-is-absolute \
+    "$ExcludedDirs"
+}
 check-if-passable-as-argument() {
   declare -n optionValue="$1"
   make-assertion-about-option "$1" try-to-echo "$optionValue"
+}
+
+starts-with-path() {
+  local originalPath="$1"
+  local prefix="$2"
+  local prefixRemoved="${1#"${prefix}"}"
+
+  if [ "$originalPath" = "$prefix" ]; then
+    return 0
+  fi
+
+  if [ "$prefixRemoved" = "$originalPath" ]; then
+    return 1
+  fi
+  if [ "${prefixRemoved:0:1}" != / ]; then
+    return 1
+  fi
+  return 0
+}
+
+get-normalized-exclude-dirs() {
+  declare -n destArray="$1"
+
+  declare -a optionWords=()
+  eval args-to-array optionWords "$ExcludedDirs"
+
+  for optionWord in "${optionWords[@]:+${optionWords[@]}}"; do 
+    local normalizedExcludePath="$(echo "$optionWord" | \
+        sed -r -e 's,/+,/,g; s,/\./,/,g; s,/$,,')"
+    destArray+=("$normalizedExcludePath")
+  done
+}
+
+ignore-signals() {
+  trap '' INT TERM
+}
+restore-signals() {
+  trap - INT TERM
 }
 
 #####

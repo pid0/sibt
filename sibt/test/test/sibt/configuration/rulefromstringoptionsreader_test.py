@@ -1,5 +1,6 @@
 import pytest
-from test.common.builders import fakeConfigurable, port, optInfo, mkSyncerOpts
+from test.common.builders import fakeConfigurable, port, optInfo, \
+    mkSyncerOpts, configurableList
 from sibt.configuration.rulefromstringoptionsreader import \
     RuleFromStringOptionsReader
 from test.common import mock
@@ -15,7 +16,7 @@ class Fixture(object):
 
   def makeReader(self, scheds, syncers):
      return RuleFromStringOptionsReader(self.ruleFactory, self.parser,
-         scheds, syncers)
+         configurableList(scheds), configurableList(syncers))
 
 @pytest.fixture
 def fixture(request):
@@ -52,6 +53,7 @@ def test_shouldFailIfSyncersOrSchedsWithNamesOrNameOptionsThemselvesAreNotThere(
   with pytest.raises(ConfigurableNotFoundException) as ex:
     reader.readRule("name", {}, {"Name": "the-sched"}, {"Name": "no"}, False)
   assert ex.value.unitName == "no"
+  assert ex.value.unitType == "synchronizer"
 
 def test_shouldParseOptionValuesAndRemoveNameBeforePassingThemOn(fixture):
   schedOptInfo, syncerOptInfo = object(), object()

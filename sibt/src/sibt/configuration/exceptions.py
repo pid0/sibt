@@ -38,7 +38,8 @@ class MissingConfigValuesException(ConfigSyntaxException):
     super().__init__(unitType, unitName, "can't resolve option values", file)
 
 class ConfigurableNotFoundException(ConfigConsistencyException):
-  def __init__(self, unitType, unitName, message, ruleName, file=None):
+  def __init__(self, unitName, unitType=None, message=None, 
+      ruleName=None, file=None):
     super().__init__(unitType, unitName, message, file=file)
     self.ruleName = ruleName
 

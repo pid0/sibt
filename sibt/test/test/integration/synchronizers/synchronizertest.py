@@ -1,12 +1,13 @@
 import os.path
 import time
 import pytest
-from test.common.assertutil import iterToTest, strToTest
+from test.common.assertutil import iterToTest, strToTest, stringThat
 import os
 from test.integration.synchronizers import loadSynchronizer
 from sibt.infrastructure.exceptions import ExternalFailureException
 from test.common import relativeToProjectRoot
-from test.common.builders import writeFileTree, remoteLocation, localLocation
+from test.common.builders import writeFileTree, remoteLocation, localLocation, \
+    mkSyncerOpts
 from test.common import sshserver
 
 def makeNonEmptyDir(container, name, innerFileName="file"):
@@ -38,16 +39,39 @@ class SynchronizerTestFixture(object):
     assert not str(self.loc1).endswith("/")
     options["Loc1"] = self.location1FromPath(str(self.loc1))
     options["Loc2"] = self.location2FromPath(str(self.loc2))
-    return options
+    return mkSyncerOpts(**options)
 
   def restorePort1File(self, fileName, version, dest, additionalOptions=dict()):
     options = self.optsWith(additionalOptions)
-    self.syncer.restore(fileName, 1, version, 
-        None if dest is None else self.restoreLocFromPath(str(dest)), options)
+    self.syncer.restore(options, fileName, 1, version, 
+        None if dest is None else self.restoreLocFromPath(str(dest)))
+
+  def listFiles(self, relativePath, version, portNumber=1, recursively=True):
+    ret = []
+    def visitorFunc(fileName):
+      ret.append(fileName)
+    self.syncer.listFiles(self.optsWith(dict()), visitorFunc,
+        relativePath, portNumber, version, recursively)
+    return ret
+  def listPort1Files(self, *args, **kwargs):
+    return self.listFiles(*args, **kwargs, portNumber=1)
+  def listPort2Files(self, *args, **kwargs):
+    return self.listFiles(*args, **kwargs, portNumber=2)
 
   def versionsOf(self, fileName, portNumber, additionalOptions=dict()):
-    return self.syncer.versionsOf(fileName, portNumber, 
-        self.optsWith(additionalOptions))
+    return self.syncer.versionsOf(self.optsWith(additionalOptions), 
+        fileName, portNumber)
+
+
+  def syncAndGetVersions(self, additionalOptions=dict()):
+    self.sync(additionalOptions)
+    return self.versionsOf(".", 1, additionalOptions)
+  def getSingleVersion(self, additionalOptions=dict()):
+    versions = self.syncAndGetVersions(additionalOptions)
+    assert len(versions) == 1
+    return versions[0]
+  def syncAndGetLatestVersion(self, additionalOptions=dict()):
+    return max(self.syncAndGetVersions(additionalOptions))
 
   @property
   def optionNames(self):
@@ -71,34 +95,21 @@ class SSHSupportingSyncerFixture(SynchronizerTestFixture):
   def optsWith(self, options):
     if not "RemoteShellCommand" in options:
       options = dict(options)
-      options["RemoteShellCommand"] = ("ssh -o UserKnownHostsFile={0} "
-          "-i {1}").format(self.sshServerSetup.knownHostsFile,
-              self.sshServerSetup.clientIdFile)
+      options["RemoteShellCommand"] = self.sshServerSetup.remoteShellCommand
     return super().optsWith(options)
 
 
-class SynchronizerTest(object):
-  @property
-  def minimumDelayBetweenTestsInS(self):
-    return 0
+class ListingSynchronizerTest(object):
   @property
   def supportsNewlinesInFileNames(self):
     return True
   @property
-  def supportsRecursiveCopying(self):
+  def canWriteToSymlinkedLoc(self):
     return True
 
   @property
   def fileNameWithNewline(self):
-    return "fi\nle1" if self.supportsNewlinesInFileNames else "file1"
-
-
-  def getSingleVersion(self, fixture, additionalOptions=dict()):
-    options = fixture.optsWith(additionalOptions)
-    fixture.syncer.sync(options)
-    versions = fixture.syncer.versionsOf(".", 1, options)
-    assert len(versions) == 1
-    return versions[0]
+    return "fi\nl\\e1" if self.supportsNewlinesInFileNames else "fil\\e1"
 
   def setUpTestTreeSyncAndDeleteIt(self, fixture, fileName1, options):
     writeFileTree(fixture.loc1,
@@ -106,73 +117,77 @@ class SynchronizerTest(object):
           fileName1,
           ".file2",
           ["sub",
-            "file3 -> /home"]])
+            "file3 -> /usr"]])
 
-    fixture.syncer.sync(options)
+    fixture.sync(options)
     fixture.loc1.join("[folder],").remove()
-    return fixture.syncer.versionsOf("[folder],", 1, options)[0]
+    return fixture.versionsOf("[folder],", 1, options)[0]
 
   def test_shouldBeAbleToListDirsInLoc1AsTheyWereInThePastWithoutRecursion(
       self, fixture):
-    options = fixture.optsWith(dict())
-
     version = self.setUpTestTreeSyncAndDeleteIt(fixture, 
-        self.fileNameWithNewline, options)
+        self.fileNameWithNewline, dict())
 
-    iterToTest(fixture.syncer.listFiles(
-      "[folder],", 1, version, False, options)).shouldContainInAnyOrder(
+    iterToTest(fixture.listPort1Files(
+      "[folder],", version, recursively=False)).shouldContainInAnyOrder(
         self.fileNameWithNewline, ".file2", "sub/")
 
-    assert list(fixture.syncer.listFiles("[folder],/" + 
-      self.fileNameWithNewline, 1, version, False, options)) == \
+    assert fixture.listPort1Files("[folder],/" + 
+      self.fileNameWithNewline, version, recursively=False) == \
           [self.fileNameWithNewline]
 
-    assert list(fixture.syncer.listFiles(".", 1, version, False, options)) == \
+    assert fixture.listPort1Files(".", version, recursively=False) == \
         ["[folder],/"]
 
-    assert list(fixture.syncer.listFiles(".", 2, version, False, options)) == []
+    assert fixture.listPort2Files(".", version, recursively=False) == []
 
   def test_shouldBeAbleToGiveARecursiveFileListing(self, fixture):
-    options = fixture.optsWith(dict())
-
-    linkToLoc = fixture.tmpdir / "link-to-loc"
-    linkToLoc.mksymlinkto(fixture.loc2)
-    fixture.loc2 = linkToLoc
+    if self.canWriteToSymlinkedLoc:
+      linkToLoc = fixture.tmpdir / "link-to-loc"
+      linkToLoc.mksymlinkto(fixture.loc2)
+      fixture.loc2 = linkToLoc
     version = self.setUpTestTreeSyncAndDeleteIt(fixture, 
-        self.fileNameWithNewline, options)
+        self.fileNameWithNewline, dict())
 
-    recursively = True
-
-    iterToTest(fixture.syncer.listFiles(".", 1, version, 
-      recursively, options)).shouldContainInAnyOrder(
+    iterToTest(fixture.listPort1Files(".", version, 
+      recursively=True)).shouldContainInAnyOrder(
         "[folder],/",
         "[folder],/" + self.fileNameWithNewline,
         "[folder],/.file2",
         "[folder],/sub/",
         "[folder],/sub/file3")
 
-    iterToTest(fixture.syncer.listFiles("[folder],", 1, 
-      version, recursively, options)).shouldContainInAnyOrder(
+    iterToTest(fixture.listPort1Files("[folder],", version, 
+      recursively=True)).shouldContainInAnyOrder(
         self.fileNameWithNewline,
         ".file2",
         "sub/",
         "sub/file3")
 
-    assert list(fixture.syncer.listFiles("[folder],/sub/file3", 1,
-      version, recursively, options)) == ["file3"]
+    assert list(fixture.listPort1Files("[folder],/sub/file3",
+      version, recursively=True)) == ["file3"]
+
+class RestoringSynchronizerTest(object):
+  @property
+  def minimumDelayBetweenTestsInS(self):
+    return 0
+  @property
+  def supportsRecursiveCopying(self):
+    return True
 
   def runFileRestoreTest(self, fixture, mTime, testFileName, testFunc):
+    content = "file restore test content"
     testFile = fixture.loc1 / testFileName
-    testFile.write("foo")
+    testFile.write(content)
     fixture.changeMTime(testFile, mTime)
 
-    version = self.getSingleVersion(fixture)
+    version = fixture.getSingleVersion()
 
     def checkRestoredFile(dest, pathToRestoredFile):
       fixture.restorePort1File(testFileName, version, dest)
       restoredFile = dest / pathToRestoredFile if dest is not None else \
           pathToRestoredFile
-      assert restoredFile.read() == "foo"
+      assert restoredFile.read() == content
       assert os.stat(str(restoredFile)).st_mtime == mTime
 
     testFunc(checkRestoredFile, testFile)
@@ -182,7 +197,7 @@ class SynchronizerTest(object):
     (testFolder / "innocent-games").write("foo")
     fixture.changeMTime(testFolder, mTime)
 
-    version = self.getSingleVersion(fixture)
+    version = fixture.getSingleVersion()
 
     def checkRestoredFolder(dest, pathToRestoredFolder, 
         relativePathOfFileToRestore=None, ignoreAdditionalFiles=False):
@@ -210,21 +225,22 @@ class SynchronizerTest(object):
 
       (fixture.tmpdir / testFileName).write("bar")
       checkRestoredFile(fixture.tmpdir, testFileName) 
-      checkRestoredFile(fixture.tmpdir / "new-file", "") 
+      checkRestoredFile(fixture.tmpdir / r"new-\2&\Lfile", "") 
       checkRestoredFile(existingFile, "") 
 
       with pytest.raises(ExternalFailureException):
         checkRestoredFile(folder, "")
       _, stderr = capfd.readouterr()
-      strToTest(stderr).shouldInclude("could not make way", testFileName)
+      strToTest(stderr).shouldInclude(testFileName)
+      assert "could not make way" in stderr or "exists" in stderr
 
     self.runFileRestoreTest(fixture, 20, testFileName, test)
 
-  def test_shouldHandleSymlinksWithinLocsAsNonDirs(self, fixture):
+  def test_shouldTreatSymlinksWithinLocsAsNonDirs(self, fixture):
     folder = fixture.tmpdir.mkdir("folder")
     (fixture.loc1 / "foo").mksymlinkto(folder)
 
-    version = self.getSingleVersion(fixture)
+    version = fixture.getSingleVersion()
     fixture.restorePort1File("foo", version, fixture.tmpdir / "restored")
     assert (fixture.tmpdir / "restored").readlink() == str(folder)
 
@@ -245,7 +261,9 @@ class SynchronizerTest(object):
       with pytest.raises(ExternalFailureException):
         checkRestoredFolder(existingFile, "")
       _, stderr = capfd.readouterr()
-      strToTest(stderr).shouldInclude("destination must be a directory")
+      strToTest(stderr).shouldIncludeAtLeastOneOf(
+          "not a directory",
+          "destination must be a directory")
 
       folderContainingFile = makeNonEmptyDir(fixture.tmpdir, "folder",
           innerFileName=testFolderName)
@@ -254,7 +272,9 @@ class SynchronizerTest(object):
       with pytest.raises(ExternalFailureException):
         checkRestoredFolder(linkToFolderContainingFile, testFolderName)
       _, stderr = capfd.readouterr()
-      strToTest(stderr).shouldInclude("contains non-directory", "not make way")
+      strToTest(stderr).shouldIncludeAtLeastOneOf(
+          "contains non-directory",
+          "not a directory")
 
       checkRestoredFolder(fixture.tmpdir / "new", "")
 
@@ -310,6 +330,124 @@ class SynchronizerTest(object):
 
     self.runFoldersRestoreTest(fixture, 423, testFolderName, test)
 
+  def test_shouldBeAbleToRestoreFilesDeeperWithinALoc(self, fixture):
+    testFile, = writeFileTree(fixture.loc1, ["a", ["b", ["c", "file [1]"]]])
+    quote = "how the poor devils beat against the walls"
+    testFile.write(quote)
+    version = fixture.getSingleVersion()
+
+    testFile.remove()
+    fixture.restorePort1File("a/b/c/file", version, None)
+    assert testFile.read() == quote
+
+    destFile = fixture.tmpdir / "dest"
+    fixture.restorePort1File("a/b/c/file", version, str(destFile))
+    assert destFile.read() == quote
+
+class SynchronizerTest(ListingSynchronizerTest, RestoringSynchronizerTest):
+  pass
+
+
+class ExcludingSynchronizerTest(SynchronizerTest):
+  @property
+  def isMirroring(self):
+    return True
+
+  def test_shouldProvideOptionToCompletelyIgnoreCertainDirs(self, fixture):
+    assert "ExcludedDirs" in fixture.optionNames
+
+    backupDir, realFile, tempFile = writeFileTree(fixture.loc1, [".",
+      ["mnt",
+        ["hdd* .",
+          ["backup [1]"],
+          ["data", "file [2]"]]],
+      ["proc", 
+        ["1",
+          ["attr", "exec [3]"]]]])
+    fixture.loc2 = backupDir
+
+    options = dict(ExcludedDirs=
+        "'/./mnt///./hdd* ./backup/' /proc/1/attr")
+    fixture.sync(options)
+    version = fixture.syncAndGetLatestVersion(options)
+
+    assert len(fixture.versionsOf("mnt/hdd* ./backup", 1, options)) == 0
+    assert len(fixture.versionsOf("proc/1/attr/exec", 1, options)) == 0
+
+    if self.isMirroring:
+      assert "attr" not in os.listdir(str(backupDir / "proc" / "1"))
+      assert "backup" not in os.listdir(str(backupDir / "mnt" / "hdd* ."))
+
+    tempFile.write("foo")
+    realFile.write("foo")
+    fixture.restorePort1File(".", version, None, options)
+    fixture.restorePort1File("mnt/hdd* .", version, None, options)
+    fixture.restorePort1File("proc/1", version, None, options)
+    assert tempFile.read() == "foo"
+    assert realFile.read() == ""
+
+  def test_shouldNotUseExcludedDirPathsIfTheyCantBeReanchored(self, fixture):
+    testFile, = writeFileTree(fixture.loc1, [".",
+      ["mnt",
+        ["data", 
+          "file [1]"]]])
+    
+    options = dict(ExcludedDirs="/data")
+    version = fixture.syncAndGetLatestVersion(options)
+
+    testFile.write("bar")
+    fixture.restorePort1File("mnt/data", version, None, options)
+    assert testFile.read() == ""
+
+  def test_shouldAnchorExcludeDirsCorrectlyRegardlessOfRestoreTarget(
+      self, fixture):
+    writeFileTree(fixture.loc1, [".",
+      ["foo",
+        ["bar"],
+        ["foo",
+          ["bar"]]]])
+
+    options = dict(ExcludedDirs="/foo/bar")
+    version = fixture.syncAndGetLatestVersion(options)
+
+    destDir = fixture.tmpdir / "dest"
+    fixture.restorePort1File("foo", version, destDir, options)
+    assert os.path.isdir(str(destDir / "foo" / "bar"))
+    assert not os.path.isdir(str(destDir / "bar"))
+
+  def test_shouldIgnorePurelyStringBasedCommonPrefixesInExcludedDirsReanchoring(
+      self, fixture):
+    testFile, = writeFileTree(fixture.loc1, [".",
+      ["foo",
+        ["bar", "file [1]"]]])
+
+    options = dict(ExcludedDirs="/foobar")
+    version = fixture.syncAndGetLatestVersion(options)
+
+    testFile.write("foo")
+    fixture.restorePort1File("foo/bar", version, None, options)
+    assert testFile.read() == ""
+
+  def test_shouldIgnoreStringBasedPrefixesWhenGettingVersions(self, fixture):
+    fixture.loc1.mkdir("foobar")
+    options = dict(ExcludedDirs="/foo")
+    fixture.sync(options)
+    assert len(fixture.versionsOf("foobar", 1, options)) > 0
+
+  def test_shouldFindSyntaxErrorsInTheExcludedDirsOption(self, fixture):
+    assert fixture.check(dict(ExcludedDirs="'/foo bar'")) == []
+
+    iterToTest(fixture.check(dict(ExcludedDirs="/foo'b"))).\
+        shouldContainMatching(stringThat.shouldInclude(
+          "unexpected", "ExcludedDirs"))
+
+    iterToTest(fixture.check(dict(ExcludedDirs="relative/foo/bar"))).\
+        shouldContainMatching(stringThat.shouldInclude("ExcludedDirs",
+          "relative/foo/bar", "absolute"))
+    iterToTest(fixture.check(dict(ExcludedDirs="'/foo' ''"))).\
+        shouldContainMatching(stringThat.shouldInclude(
+          "absolute", "ExcludedDirs"))
+
 class MirrorSynchronizerTest(SynchronizerTest):
   def test_shouldMirrorLoc1InRepoAtLoc2WhenToldToSync(self, fixture):
     content = "... the raven “Nevermore.”"
@@ -331,47 +469,59 @@ class MirrorSynchronizerTest(SynchronizerTest):
     assert fixture.loc2.join("poe").read() == content
 
 class IncrementalSynchronizerTest(SynchronizerTest):
-  def getOlderVersionFromTwoSyncs(self, fixture, doBetweenSyncs=lambda: None,
+  def getTwoVersions(self, fixture, doBetweenSyncs=lambda: None,
       additionalOptions=dict()):
-    options = fixture.optsWith(additionalOptions)
-
-    fixture.syncer.sync(options)
+    fixture.sync(additionalOptions)
     time.sleep(self.minimumDelayBetweenTestsInS)
 
     doBetweenSyncs()
-    fixture.syncer.sync(options)
+    fixture.sync(additionalOptions)
 
-    versions = fixture.syncer.versionsOf(".", 1, options)
-
-    return sorted(versions)[0]
+    versions = fixture.versionsOf(".", 1, additionalOptions)
+    assert(len(versions)) == 2
+   
+    return versions
 
   def test_shouldUseTheIncrementsAsVersions(self, fixture):
-    topFile, folder, fileCreatedLater = writeFileTree(fixture.loc1,
+    sameFile, topFile, folder, oldFile, newFile = writeFileTree(fixture.loc1,
         [".",
-          "top [1]",
-          ["poe [2]",
-            "quote",
-            "created-later [3]"]])
+          "samefile [1]",
+          "file [2]",
+          ["usr [3]",
+            "oldfile [4]",
+            "newfile [5]"]])
 
-    fileCreatedLater.remove()
+    sameFile.write("same")
+    newFile.remove()
     topFile.write("old")
 
-    older = self.getOlderVersionFromTwoSyncs(fixture, 
+    oldVersion, newVersion = self.getTwoVersions(fixture, 
         doBetweenSyncs=lambda: (
-          fileCreatedLater.write(""),
-          topFile.write("new")))
+          topFile.write("new"),
+          newFile.write(""),
+          oldFile.remove()))
 
-    assert len(fixture.versionsOf("poe", 1)) == 2
-    assert fixture.versionsOf("poe", 2) == []
+    assert len(fixture.versionsOf("usr", 1)) == 2
+    assert fixture.versionsOf("usr", 2) == []
     assert fixture.versionsOf("not-there", 1) == []
-    assert len(fixture.versionsOf("poe/created-later", "1")) == 1
+    assert len(fixture.versionsOf("usr/newfile", "1")) == 1
 
-    fixture.restorePort1File("poe", older, None)
-    assert os.listdir(str(folder)) == ["quote"]
+    iterToTest(fixture.listPort1Files(".", oldVersion)).shouldContainInAnyOrder(
+        "samefile", "file", "usr/", "usr/oldfile")
+    iterToTest(fixture.listPort1Files(".", newVersion)).shouldContainInAnyOrder(
+        "samefile", "file", "usr/", "usr/newfile")
+
+    fixture.restorePort1File("usr", oldVersion, None)
+    assert os.listdir(str(folder)) == ["oldfile"]
 
     assert topFile.read() == "new"
-    fixture.restorePort1File("top", older, None)
+    fixture.restorePort1File(".", oldVersion, None)
     assert topFile.read() == "old"
+
+    fixture.restorePort1File(".", newVersion, None)
+    assert topFile.read() == "new"
+    assert os.listdir(str(folder)) == ["newfile"]
+    assert set(os.listdir(str(fixture.loc1))) == { "usr", "samefile", "file" }
 
 class UnidirectionalAugmentedPortSyncerTest(SynchronizerTest):
   def test_shouldSupportAnSSHLocationAtOneOfTheTwoPorts(self, fixture):

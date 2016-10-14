@@ -42,6 +42,7 @@ from sibt.domain.negativeunstablephasedetector import \
     NegativeUnstablePhaseDetector
 from sibt.infrastructure.fcntlmutexmanager import FcntlMutexManager
 from sibt.application.execenvironment import ExecEnvironment
+from sibt.infrastructure.parallelmapper import ParallelMapper
 import signal
 import os
 import getpass
@@ -49,6 +50,7 @@ import locale
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
 import subprocess
+import threading
 
 class FatalSignalException(BaseException):
   def __init__(self, signalNumber, childExitStatus):
@@ -81,8 +83,15 @@ def killSelf(signalNumber):
   os.kill(os.getpid(), signalNumber)
 
 def beforeSubprocessRun():
+  if threading.current_thread() != threading.main_thread():
+    return
+
   setFatalSignalsHandler(signalHandler(raiseException=False))
+
 def afterSubprocessRun(exitStatus):
+  if threading.current_thread() != threading.main_thread():
+    return
+
   global receivedSignal
   setFatalSignalsHandler(signalHandler(raiseException=True))
   if receivedSignal is not None:
@@ -116,9 +125,8 @@ def logSubProcess(log, subProcessArgs, environmentVars=None, **kwargs):
     streamRead, streamWrite = os.pipe()
 
     with open(streamRead, "rb") as outputReader:
-      with subprocess.Popen(subProcessArgs, **kwargs,
-          stdout=streamWrite, stderr=streamWrite, 
-          preexec_fn=lambda: setFatalSignalsHandler(signal.SIG_DFL)) as process:
+      with subprocess.Popen(subProcessArgs,
+          stdout=streamWrite, stderr=streamWrite, **kwargs) as process:
         os.close(streamWrite)
         for chunk in iter(lambda: outputReader.read1(2**10), b""):
           log.write(chunk)
@@ -268,10 +276,18 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
 
     elif args.action in ["versions-of", "restore", "list-files"]:
       stringsToVersions = dict()
-      for rule in configRepo.rulesFinder.getAll():
-        for version in getVersionsFromRule(errorLogger, clock, rule, 
+      def getVersions(rule):
+        return getVersionsFromRule(errorLogger, clock, rule, 
             locationFromArg(args.options["file"]), 
-            args.action != "restore", unstablePhaseDetector):
+            args.action != "restore", unstablePhaseDetector)
+
+      mapper = ParallelMapper()
+      beforeSubprocessRun()
+      versionss = mapper.map(getVersions, configRepo.rulesFinder.getAll())
+      afterSubprocessRun(0)
+
+      for versions in versionss:
+        for version in versions:
           string = version.strWithUTCW3C if args.options["utc"] else \
               version.strWithLocalW3C
           stringsToVersions[string] = version
@@ -304,17 +320,17 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
                 locationFromArg(args.options.get("to", None)), 
                 detectorForRestoring)
           except UnstablePhaseException:
-            printUnstablePhaseWarning(errorLogger, rule.name, 
+            printUnstablePhaseWarning(errorLogger, version.rule.name, 
                 "pass --force to restore anyway", isError=True)
             return 1
         if args.action == "list-files":
-          files = version.rule.listFiles(locationFromArg(args.options["file"]), 
-              version, args.options["recursive"])
-          for fileName in files:
+          def printFile(fileName):
             if args.options["null"]:
               stdout.println(fileName, lineSeparator="\0")
             else:
               stdout.println(fileName.replace("\n", r"\n"), lineSeparator="\n")
+          files = version.rule.listFiles(printFile, locationFromArg(
+            args.options["file"]), version, args.options["recursive"])
 
     sys.stdout.flush()
     return 0
