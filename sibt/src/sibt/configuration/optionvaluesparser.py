@@ -84,7 +84,7 @@ class OptionValuesParser(object):
       raise _ParseException(typeDesc, str(ex))
 
   def _parseTimeDelta(self, string):
-    typeDesc = "a time interval"
+    typeDesc = "time interval"
     unitNames = ["seconds", "minutes", "hours", "days", "weeks"]
     def splitField(string):
       firstNonDigit = next((i for i, c in 

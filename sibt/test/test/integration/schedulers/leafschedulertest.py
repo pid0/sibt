@@ -54,7 +54,7 @@ class LeafSchedulerTestFixture(SchedulerTestFixture):
 
   def nextExecutionLocalTime(self, schedulingOptions, lastLocalTime):
     ret = self.makeSched().nextExecutionTime(
-        buildScheduling(**schedulingOptions, lastTime=toUTC(lastLocalTime)))
+        buildScheduling(lastTime=toUTC(lastLocalTime), **schedulingOptions))
     assert ret.tzinfo == timezone.utc
     return ret.astimezone().replace(tzinfo=None)
 

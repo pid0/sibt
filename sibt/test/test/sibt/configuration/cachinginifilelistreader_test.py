@@ -7,20 +7,22 @@ from sibt.configuration.cachinginifilelistreader import CachingIniFileListReader
 class Fixture(object):
   def __init__(self, tmpdir):
     self.tmpdir = tmpdir
+    self.filesDir = tmpdir.mkdir("files1")
+    self.files2Dir = tmpdir.mkdir("files2")
     self.useAllowedSections(["a", "b", "c"])
 
   def useAllowedSections(self, allowedSections):
-    self.iniFileReader = CachingIniFileListReader(str(self.tmpdir),
+    self.iniFileReader = CachingIniFileListReader([str(self.filesDir)],
         allowedSections)
     
   def writeFile(self, name, contents):
-    path = self.tmpdir.join(name)
+    path = self.filesDir.join(name)
     path.write(contents)
     return str(path)
 
   def sectionsOf(self, *paths, instanceArgument=None):
     return self.iniFileReader.sectionsFromFiles(
-        [str(self.tmpdir.join(path)) for path in paths], instanceArgument)
+        [str(self.filesDir.join(path)) for path in paths], instanceArgument)
     
 @pytest.fixture
 def fixture(tmpdir):

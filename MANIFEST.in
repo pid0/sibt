@@ -3,6 +3,9 @@ include pavement.py
 include paver-minilib.zip
 include HACKING
 
-include sibt/schedulers/anacron
-include sibt/interpreters/rdiff-backup
-include sibt/runners/bash-runner
+include sibt/schedulers/[a-z]*
+include sibt/synchronizers/[a-z]*
+include sibt/runners/[a-z]*
+include sibt/include/*.inc
+
+recursive-include sibt/test *.py

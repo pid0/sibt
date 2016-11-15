@@ -31,6 +31,9 @@ class Paths(object):
   def readonlySynchronizersDir(self):
     return os.path.join(self.readonlyDir, "synchronizers")
   @property
+  def readonlyIncludesDir(self):
+    return os.path.join(self.readonlyDir, "include")
+  @property
   def runnersDir(self):
     return os.path.join(self.readonlyDir, "runners")
 

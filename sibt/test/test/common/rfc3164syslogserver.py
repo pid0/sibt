@@ -41,7 +41,8 @@ class _Handler(BaseRequestHandler):
       raise Exception("wrong format in syslog packet:\n" + data.decode())
 
     priority, tag, message = match.group("priority", "tag", "message")
-    return SyslogPacket(*self._decodePriority(int(priority)), tag, message)
+    facility, severity = self._decodePriority(int(priority))
+    return SyslogPacket(facility, severity, tag, message)
 
   def _decodePriority(self, priority):
     facility = (priority & (~7)) >> 3

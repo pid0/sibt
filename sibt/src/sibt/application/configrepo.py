@@ -72,10 +72,10 @@ def readSchedulers(dirs, loader, schedulerWrapper, initArgs,
   return ConfigurableList(collectFilesInDirs(dirs, lambda path, fileName:
       LazyConfigurable(fileName, lambda: loadScheduler(path, fileName))))
 
-def readRuleLoaders(rulesDir, enabledDir, factory, prefix):
-  reader = DirBasedRulesReader(CachingIniFileListReader(rulesDir,
-    dirbasedrulesreader.AllowedSections), 
-      rulesDir, enabledDir, factory, prefix)
+def readRuleLoaders(rulesDir, includeDirs, enabledDir, factory, prefix):
+  reader = DirBasedRulesReader(CachingIniFileListReader(
+    [rulesDir] + includeDirs, dirbasedrulesreader.AllowedSections), 
+    rulesDir, enabledDir, factory, prefix)
   return list(reader.read())
 
 def createHashbangAwareProcessRunner(runnersDir, processRunner):
@@ -86,9 +86,10 @@ def createHashbangAwareProcessRunner(runnersDir, processRunner):
 def readRulesIntoFinder(paths, sysPaths, userFactory, sysFactory,
     sysRuleFilter, readUserConf=True, readSysConf=True):
   userRules = [] if not readUserConf else readRuleLoaders(paths.rulesDir, 
-      paths.enabledDir, userFactory, "")
+      [paths.readonlyIncludesDir], paths.enabledDir, userFactory, "")
   sysRules = [] if not readSysConf else readRuleLoaders(sysPaths.rulesDir, 
-      sysPaths.enabledDir, sysFactory, SysRulePrefix)
+      [sysPaths.readonlyIncludesDir], sysPaths.enabledDir, sysFactory, 
+      SysRulePrefix)
 
   return RulesFinder(RulesRepo(userRules), RulesRepo(sysRules), sysRuleFilter)
 

@@ -81,7 +81,7 @@ class RuleBuilder(ConfigObjectBuilder):
   def allowedFor(self, name):
     return self.withOpts(AllowedForUsers=name)
 
-  def write(self):
+  def write(self, toReadonlyDir=False):
     format = self.kwParams.get("content", RuleFormat)
     fileContents = format.format(
         loc1=self.loc1,
@@ -92,7 +92,8 @@ class RuleBuilder(ConfigObjectBuilder):
         syncerOpts=iniFileFormatted(self.syncerOpts),
         ruleOpts=iniFileFormatted(self.ruleOpts))
 
-    self.ruleFilePath.write(fileContents)
+    path = self.readonlyRuleFilePath if toReadonlyDir else self.ruleFilePath
+    path.write(fileContents)
 
     if "instanceFiles" in self.kwParams:
       for instanceFile in self.instanceFiles:
@@ -138,6 +139,9 @@ class RuleBuilder(ConfigObjectBuilder):
   @property
   def ruleFilePath(self):
     return local(self.configuredPaths.rulesDir).join(self.name)
+  @property
+  def readonlyRuleFilePath(self):
+    return local(self.configuredPaths.readonlyIncludesDir).join(self.name)
 
   def newBasic(self, paths, sysPaths, foldersWriter, name, kwParams):
     return RuleBuilder(paths, sysPaths, foldersWriter, name, kwParams)

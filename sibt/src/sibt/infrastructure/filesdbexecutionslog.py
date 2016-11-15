@@ -1,11 +1,11 @@
 import os
 import struct
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import traceback
 
 from sibt.domain.execution import Execution, ExecutionResult
 from sibt.infrastructure.linebufferedlogger import LineBufferedLogger
-from sibt.infrastructure.fcntlmutexmanager import tryToLock, lock
+from sibt.infrastructure.fcntlmutexmanager import tryToLock, readLock, writeLock
 
 TimeFormat = "%Y-%m-%dT%H:%M:%S.%f%z"
 Encoding = "utf-8"
@@ -42,23 +42,27 @@ def _callCatchingExceptions(logFile, execute, succeeded):
     succeeded[0] = False
     raise
 
-import shutil
-
 class FilesDBExecutionsLog(object):
   def __init__(self, logDir, ruleNamePrefix=""):
     self.logDir = logDir
     self.ruleNamePrefix = ruleNamePrefix
     self._lockedPaths = set()
+    self._filesToClose = []
+
+  def _closeFiles(self):
+    for fileToClose in self._filesToClose:
+      fileToClose.close()
+    self._filesToClose.clear()
 
   def _lock(self, file, filePath):
-    lock(file)
+    writeLock(file)
     self._lockedPaths.add(filePath)
 
   def _isLocked(self, filePath):
     if filePath in self._lockedPaths:
       return True
-    with open(filePath, "a") as file:
-      couldLock = tryToLock(file)
+    with open(filePath, "r") as file:
+      couldLock = tryToLock(file, readLock)
     return not couldLock
 
   def executionsOfRules(self, ruleNames):
@@ -71,22 +75,31 @@ class FilesDBExecutionsLog(object):
         fileName in loggingFileNames]
 
   def _readLoggingFile(self, filePath):
-    with open(filePath, "rb", buffering=LargerThanHeaderOrFooter) as file:
-      startTime = datetime.strptime(_decode(file.readline()[:-1]), TimeFormat)
-      lengthField = file.read(4)
-
-      if lengthField == UnsetLength:
-        output = self._readTextUntilEnd(file)
-        result = None
-        if not self._isLocked(filePath):
-          output += "\nError: Log entry could not be finished (crashed?)"
-          result = ExecutionResult(startTime + timedelta(hours=2), False)
+    file = open(filePath, "rb", buffering=LargerThanHeaderOrFooter)
+    try:
+      return self._parseLoggingFile(file, filePath)
+    finally:
+      if filePath in self._lockedPaths:
+        self._filesToClose.append(file)
       else:
-        output = self._readTextOfLength(file, lengthField)
-        endTime = datetime.strptime(_decode(file.readline()[:-1]), TimeFormat)
-        succeeded = file.readline()[:-1] == b"True"
+        file.close()
 
-        result = ExecutionResult(endTime, succeeded)
+  def _parseLoggingFile(self, file, filePath):
+    startTime = datetime.strptime(_decode(file.readline()[:-1]), TimeFormat)
+    lengthField = file.read(4)
+
+    if lengthField == UnsetLength:
+      output = self._readTextUntilEnd(file)
+      result = None
+      if not self._isLocked(filePath):
+        output += "\nError: Log entry could not be finished (crashed?)"
+        result = ExecutionResult(startTime + timedelta(hours=2), False)
+    else:
+      output = self._readTextOfLength(file, lengthField)
+      endTime = datetime.strptime(_decode(file.readline()[:-1]), TimeFormat)
+      succeeded = file.readline()[:-1] == b"True"
+
+      result = ExecutionResult(endTime, succeeded)
 
     return Execution(startTime, output, result)
 
@@ -113,7 +126,7 @@ class FilesDBExecutionsLog(object):
         os.path.join(folderPath, str(latestLoggingNumber + 1)), 
         clock, writeSchedulingOutput)
 
-  def _writeLoggingFile(self, filePath, clock, writeSchedulingOutput):
+  def _writeLoggingFile(self, filePath, clock, writeExecutionOutput):
     with open(filePath, "wb") as file:
       self._lock(file, filePath)
       textLengthFieldPos = self._writeHeader(file, clock.now())
@@ -122,8 +135,8 @@ class FilesDBExecutionsLog(object):
       executionSucceeded = [None]
       logger = _LogFileLogger(file)
       try:
-        _callCatchingExceptions(logger,
-            writeSchedulingOutput, executionSucceeded)
+        _callCatchingExceptions(logger, writeExecutionOutput, 
+            executionSucceeded)
       finally:
         logger.close()
         textLength = file.tell() - textLengthFieldPos - 4
@@ -133,6 +146,8 @@ class FilesDBExecutionsLog(object):
         file.seek(0, SeekEnd)
 
         self._writeFooter(file, clock.now(), executionSucceeded[0] is True)
+        self._closeFiles()
+        self._lockedPaths.remove(filePath)
 
   def _writeHeader(self, file, startTime):
     file.write(_encode(startTime.strftime(TimeFormat)))

@@ -197,6 +197,9 @@ restore() {
 
   depth="$(echo -n "$relativePath" | sed 's,[^/],,g' | wc --bytes)"
   depth=$((depth + 1))
+  if [ "$relativePath" = . ]; then
+    depth=0
+  fi
   transformOptions+=( \
     --transform "$(-strip-components $depth)${dontTouchSymlinkTargets}")
 

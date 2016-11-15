@@ -46,17 +46,18 @@ class SynchronizerTestFixture(object):
     self.syncer.restore(options, fileName, 1, version, 
         None if dest is None else self.restoreLocFromPath(str(dest)))
 
-  def listFiles(self, relativePath, version, portNumber=1, recursively=True):
+  def listFiles(self, relativePath, version, portNumber=1, recursively=True,
+      additionalOpts=dict()):
     ret = []
     def visitorFunc(fileName):
       ret.append(fileName)
-    self.syncer.listFiles(self.optsWith(dict()), visitorFunc,
+    self.syncer.listFiles(self.optsWith(additionalOpts), visitorFunc,
         relativePath, portNumber, version, recursively)
     return ret
   def listPort1Files(self, *args, **kwargs):
-    return self.listFiles(*args, **kwargs, portNumber=1)
+    return self.listFiles(*args, portNumber=1, **kwargs)
   def listPort2Files(self, *args, **kwargs):
-    return self.listFiles(*args, **kwargs, portNumber=2)
+    return self.listFiles(*args, portNumber=2, **kwargs)
 
   def versionsOf(self, fileName, portNumber, additionalOptions=dict()):
     return self.syncer.versionsOf(self.optsWith(additionalOptions), 
@@ -278,6 +279,10 @@ class RestoringSynchronizerTest(object):
 
       checkRestoredFolder(fixture.tmpdir / "new", "")
 
+      newFolder = fixture.tmpdir / "copy-of-loc1"
+      checkRestoredFolder(newFolder, testFolderName,
+          relativePathOfFileToRestore=".")
+
       linkedFolder = fixture.tmpdir.mkdir("linked-folder")
       link = fixture.tmpdir / "link2"
       link.mksymlinkto(linkedFolder)
@@ -366,8 +371,9 @@ class ExcludingSynchronizerTest(SynchronizerTest):
           ["attr", "exec [3]"]]]])
     fixture.loc2 = backupDir
 
-    options = dict(ExcludedDirs=
-        "'/./mnt///./hdd* ./backup/' /proc/1/attr")
+    options = dict(ExcludedDirs="""
+           '/./mnt///./hdd* ./backup/' 
+           /proc/1/attr""")
     fixture.sync(options)
     version = fixture.syncAndGetLatestVersion(options)
 

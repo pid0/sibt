@@ -41,8 +41,8 @@ class Fixture(IntermediateSchedulerTestFixture):
     return b"".join(packet.message for packet in self.syslogServer.packets)
   
   def sysloggedScheduling(self, **options):
-    return buildScheduling(**options,
-        Syslog=True, SyslogOptions=loggerOptions(TestPort))
+    return buildScheduling(Syslog=True, SyslogOptions=loggerOptions(TestPort), 
+        **options)
 
 @pytest.fixture
 def fixture(tmpdir):

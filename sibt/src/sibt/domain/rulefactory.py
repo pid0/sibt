@@ -37,7 +37,7 @@ class RuleFactory(object):
     if len(syncerOpts.locs) < len(ports):
       raise makeException(ruleName, 
           "does not have minimum options for synchronizer ({0})".format(
-            ",".join("Loc" + str(i + 1) for i in range(len(syncerOpts.locs),
+            ", ".join("Loc" + str(i + 1) for i in range(len(syncerOpts.locs),
               len(ports)))))
 
   def _throwIfRuleNameInvalid(self, name):

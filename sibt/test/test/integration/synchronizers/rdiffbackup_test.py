@@ -1,13 +1,14 @@
 import pytest
 from datetime import timedelta
-from test.common.assertutil import iterToTest, stringThat
 import os
+import stat
+from test.common.assertutil import iterToTest, stringThat
 from test.integration.synchronizers.synchronizertest import \
     SSHSupportingSyncerFixture, MirrorSynchronizerTest, \
     IncrementalSynchronizerTest, UnidirectionalAugmentedPortSyncerTest, \
     sshLocationFromPath
 from test.integration.bashfunctestfixture import BashFuncTestFixture
-from test.common.builders import localLocation
+from test.common.builders import localLocation, writeFileTree
 from test.common.sshserver import sshServerFixture
 from test.common import relativeToProjectRoot
 
@@ -17,6 +18,12 @@ class Fixture(SSHSupportingSyncerFixture):
     super().__init__(tmpdir, sshServerSetup, location1FromPathFunc, 
         location2FromPathFunc, restoreLocFromPathFunc)
     self.load("rdiff-backup")
+
+  def optsWith(self, options):
+    ret = super().optsWith(options)
+    if "ListFilesExactly" not in ret:
+      ret["ListFilesExactly"] = True
+    return ret
 
 @pytest.fixture(params=[
   (sshLocationFromPath, sshLocationFromPath, sshLocationFromPath),
@@ -90,6 +97,24 @@ class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest,
           stringThat.shouldInclude("AdditionalSyncOpts", "unexpected"),
           stringThat.shouldInclude("RemoteShellCommand", "unexpected"))
 
+  def test_shouldNotProcessListFilesOutputToEnhanceItsSpeedIfRequested(
+      self, fixture):
+    options = dict(ListFilesExactly=False)
+
+    writeFileTree(fixture.loc1, ["folder", ["sub", "foo", "bar"]])
+    version = fixture.getSingleVersion(additionalOptions=options)
+
+    iterToTest(fixture.listPort1Files("folder", version, recursively=True, 
+      additionalOpts=options)).shouldContainInAnyOrder(
+          "sub", "sub/foo", "sub/bar")
+
+  def test_shouldMakeIncrementDataWorldAndGroupReadable(self, fixture):
+    (fixture.loc1 / "file").write("")
+    fixture.sync()
+
+    permissions = stat.filemode(os.lstat(
+      str(fixture.loc2 / "rdiff-backup-data")).st_mode)
+    assert permissions.endswith("r-xr-x")
 
 @pytest.fixture
 def funcFixture():

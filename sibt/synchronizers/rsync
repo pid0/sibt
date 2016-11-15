@@ -4,6 +4,7 @@ AdditionalSyncOpts=
 RemoteShellCommand=
 AdditionalOptsBothWays=
 ExcludedDirs=
+DryRun=1
 
 TimestampFileName=".sibt-rsync-timestamp"
 
@@ -13,6 +14,7 @@ AdditionalSyncOpts
 AdditionalOptsBothWays
 RemoteShellCommand
 ExcludedDirs
+b DryRun
 EOF
 }
 
@@ -70,11 +72,12 @@ info-of-port() {
   fi
 
   declare -a addOptsArray=()
-  eval args-to-array addOptsArray "$AdditionalOptsBothWays"
+  args-to-array addOptsArray "$AdditionalOptsBothWays"
   declare -a excludeOptsArray=()
   -get-reanchored-exclude-opts "$excludeAnchor" "$3" excludeOptsArray
 
-  rsync --protect-args -a --acls --xattrs "${@:6:$#}" "$srcLoc" "$destLoc" \
+  rsync --protect-args -a --acls --xattrs --sparse \
+    "${@:6:$#}" "$srcLoc" "$destLoc" \
     "${remoteShellArgs[@]:+${remoteShellArgs[@]}}" \
     "${addOptsArray[@]:+${addOptsArray[@]}}" \
     "${excludeOptsArray[@]:+${excludeOptsArray[@]}}"
@@ -93,7 +96,7 @@ loc-syntax-of() {
 
 -run-forward-rsync() {
   declare -a addOptsArray=()
-  eval args-to-array addOptsArray "$AdditionalSyncOpts"
+  args-to-array addOptsArray "$AdditionalSyncOpts"
 
   -run-rsync "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)" 1 \
     "$(get-first-rsh-port Loc1 Loc2)" "." --delete \
@@ -227,6 +230,8 @@ check() {
   fi
 
   assert-excluded-dirs-are-absolute || true
+
+  [ "$DryRun" = 0 ] && return
 
   if ! -run-forward-rsync --dry-run 2>&1; then
     echo -n in rsync command line

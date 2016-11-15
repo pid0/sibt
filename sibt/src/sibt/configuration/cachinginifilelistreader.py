@@ -13,8 +13,8 @@ def _makeException(file, message):
   return ConfigSyntaxException("rule", None, message, file)
 
 class CachingIniFileListReader(object):
-  def __init__(self, includeFilesDir, allowedSections):
-    self.includeFilesDir = includeFilesDir
+  def __init__(self, includeDirs, allowedSections):
+    self.includeDirs = includeDirs
     self.allowedSections = allowedSections + ["Global"]
 
   def _throwIfSectionIsNotAllowed(self, sectionNames, filePath):
@@ -44,14 +44,21 @@ class CachingIniFileListReader(object):
     except configparser.Error as ex:
       raise _makeException(filePath, "wrong syntax") from ex
 
+  def _findIncludeFile(self, name):
+    path = None
+    for directory in self.includeDirs:
+      path = os.path.join(directory, name)
+      if os.path.isfile(path):
+        return path
+    return path
+
   def _pathsImportedFrom(self, iniFilePath):
     with open(iniFilePath, "r") as iniFile:
       lines = [line.strip() for line in iniFile.readlines()]
       importedNames = [" ".join(line.split(" ")[1:]) for line in lines if 
           line.startswith("#import")]
 
-    return [os.path.join(self.includeFilesDir, name + ".inc") for name in 
-        importedNames]
+    return [self._findIncludeFile(name + ".inc") for name in importedNames]
 
   def _recursivelyResolvedReadListOf(self, iniFilePath):
     ret = []

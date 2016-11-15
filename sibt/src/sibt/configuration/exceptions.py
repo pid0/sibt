@@ -64,7 +64,7 @@ class OptionParseError(object):
     self.message = message
 
   def __str__(self):
-    return "value {0} of option {1} is no {2} because {3}".format(
+    return "value {0} of option {1} is not a {2} because {3}".format(
         repr(self.stringToParse), self.optionName, self.expectedType,
         self.message)
 

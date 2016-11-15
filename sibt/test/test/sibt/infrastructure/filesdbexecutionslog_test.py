@@ -6,11 +6,14 @@ from datetime import datetime, timezone
 from test.common.presetcyclingclock import PresetCyclingClock
 from test.sibt.infrastructure.linebufferedloggertest import \
     LineBufferedLoggerTest
+from test.common.interprocesstestfixture import InterProcessTestFixture
 
 SpecialRuleName = "lenore"
 
-class Fixture(object):
+class Fixture(InterProcessTestFixture):
   def __init__(self, tmpdir):
+    super().__init__("test.sibt.infrastructure.filesdbexecutionslog_test", 
+        str(tmpdir))
     self.tmpdir = tmpdir
     self.log = FilesDBExecutionsLog(str(tmpdir))
 
@@ -57,20 +60,25 @@ class Test_FilesDBExecutionsLogTest(LineBufferedLoggerTest):
 
   def test_shouldCorrectlyReadExecutionsThatAreStillInProgress(self, fixture):
     startTime = anyUTCDateTime()
-    quuxExecutions = []
+    executionsInThisProcess = []
+    executionsInOtherProcess = []
 
     def execute(logger):
       logger.write(b"output\n")
-      quuxExecutions.extend(fixture.executionsOf("quux"))
+      executionsInThisProcess.extend(fixture.executionsOf("quux"))
+      executionsInOtherProcess.extend(fixture.inNewProcess(r"""
+        return fixture.executionsOf("quux")"""))
       return True
 
     fixture.log.logExecution("quux", constantTimeClock(startTime), execute)
 
-    iterToTest(quuxExecutions).shouldContainMatching(
+    iterToTest(executionsInOtherProcess).shouldContainMatching(
         lambda execution: 
           execution.startTime == startTime and
           execution.output == "output\n" and
           execution.finished is False)
+    iterToTest(executionsInThisProcess).shouldContainMatching(
+        lambda execution: execution.finished is False)
 
   def test_shouldNotWriteAnythingWhenReadingExecutions(self, fixture):
     fixture.tmpdir.chmod(0o500)

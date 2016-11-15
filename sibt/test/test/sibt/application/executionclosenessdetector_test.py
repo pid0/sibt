@@ -1,18 +1,12 @@
 from sibt.application.executionclosenessdetector import \
     ExecutionClosenessDetector
-from test.common.builders import constantTimeClock, anyUTCDateTime, execution
+from test.common.builders import constantTimeClock, anyUTCDateTime, execution, \
+    mockRule
 from datetime import timedelta, datetime, timezone
 from test.common import mock
 
 def make(minimum=timedelta(hours=1), currentTime=anyUTCDateTime()):
   return ExecutionClosenessDetector(constantTimeClock(currentTime), minimum)
-
-def mockRule(nextExecution=None, executing=False, latestExecution=None):
-  ret = mock.mock()
-  ret.nextExecution = nextExecution
-  ret.latestExecution = latestExecution
-  ret.executing = executing
-  return ret
 
 def test_shouldConsiderItStableIfThereIsNoNextExecution():
   detector = make()

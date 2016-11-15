@@ -615,6 +615,7 @@ def test_shouldBeAbleToOverrideDefaultPathsWithCommandLineOptions(fixture):
 
 def test_shouldProvideAWayToImportRuleConfigsAndANamingSchemeForIncludeFiles(
     fixture):
+  fixture.confFolders.createReadonlyFolders()
   sched = fixture.conf.aSched().withTestOptions().write()
 
   fixture.conf.ruleWithSyncer("header.inc").withScheduler(sched).\
@@ -624,7 +625,7 @@ Name = {sched}
 Interval = 3w
 [Synchronizer]
 Name = {syncer}
-""").write()
+""").write(toReadonlyDir=True)
 
   fixture.conf.aRule("[actual]-rule").withContent("""
 #import header

@@ -2,6 +2,7 @@
 
 AdditionalSyncOpts=
 RemoteShellCommand=
+ListFilesExactly=0
 
 available-options() {
   echo t RemoveOlderThan
@@ -43,7 +44,7 @@ run-rdiff-backup() {
 
 sync() {
   declare -a AdditionalArgs=()
-  eval args-to-array AdditionalArgs "$AdditionalSyncOpts"
+  args-to-array AdditionalArgs "$AdditionalSyncOpts"
 
   run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
     "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)"
@@ -52,6 +53,9 @@ sync() {
     run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
       --remove-older-than "$RemoveOlderThan"s "$(loc-syntax-of Loc2)"
   fi
+
+  declare -a incrementsChmod=(chmod -R g+rX,o+rX "$Loc2Path")
+  execute-at-port Loc2 incrementsChmod
 }
 
 versions-of() {
@@ -148,7 +152,7 @@ too"
 }
 
 -append-slash-if-dir() {
-  while read -r fileName; do
+  while read -r -d $'\0' fileName; do
     fileType=$(-get-repo-file-type "$fileName" $1)
     echo -n "$fileName"
 
@@ -158,6 +162,10 @@ too"
 
     echo -n -e '\0'
   done
+}
+
+-newline-to-null() {
+  tr '\n' '\000'
 }
 
 -remove-prefix() {
@@ -199,10 +207,14 @@ list-files() {
     preprocessing="$prependPeriodSlash"
   fi
 
+  declare -a appendSlashProgram=(-append-slash-if-dir $timestamp)
+  [ "$ListFilesExactly" = 0 ] && appendSlashProgram=(cat)
+
   run-rdiff-backup --list-at-time $timestamp \
     "$(loc-syntax-of Loc2 "$Loc2Path"/"$relativePath")" | sed -n -e '1!p' | \
-    sed -r -e "$preprocessing" | sed -nr -e "$filter" | \
-    -append-slash-if-dir $timestamp | -remove-prefix "$prefix"
+    sed -r -e "$preprocessing" | sed -nr -e "$filter" | -newline-to-null | \
+    "${appendSlashProgram[@]:+${appendSlashProgram[@]}}" | \
+    -remove-prefix "$prefix"
 }
 
 check() {

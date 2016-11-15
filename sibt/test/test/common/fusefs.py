@@ -27,4 +27,4 @@ def nonEmptyFSMountedAt(mountPoint):
   return FuseFS(str(mountPoint))
 
 def fuseIsAvailable():
-  return subprocess.run(["python2", "-c", "import fuse"]).returncode == 0
+  return subprocess.call(["python2", "-c", "import fuse"]) == 0

@@ -4,12 +4,17 @@ import fcntl
 from contextlib import contextmanager
 import errno
 
-def lock(lockFile):
-  fcntl.lockf(lockFile, fcntl.LOCK_EX | fcntl.LOCK_NB)
+def writeLock(lockFile):
+  _lock(lockFile, fcntl.LOCK_EX)
+def readLock(lockFile):
+  _lock(lockFile, fcntl.LOCK_SH)
 
-def tryToLock(lockFile):
+def _lock(lockFile, lockType):
+  fcntl.lockf(lockFile, lockType | fcntl.LOCK_NB)
+
+def tryToLock(lockFile, lockFunc):
   try:
-    lock(lockFile)
+    lockFunc(lockFile)
     return True
   except OSError as ex:
     if ex.errno not in [errno.EAGAIN, errno.EACCES]:
@@ -19,7 +24,7 @@ def tryToLock(lockFile):
 @contextmanager
 def _mutex(lockFilePath):
   with open(lockFilePath, "wb") as lockFile:
-    if not tryToLock(lockFile):
+    if not tryToLock(lockFile, writeLock):
       raise LockException()
     yield
 

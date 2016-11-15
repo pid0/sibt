@@ -2,7 +2,7 @@ import pytest
 from test.common import mock
 from test.common.builders import mockRule, mockSched, optInfo
 from sibt.domain.ruleset import RuleSet
-from sibt.domain.exceptions import ValidationException
+from sibt.domain.exceptions import ValidationException, RuleExecutingException
 from test.common.assertutil import iterToTest
 from test.common.validatortest import schedCallWithRules
 
@@ -84,4 +84,9 @@ def test_shouldNotScheduleAnythingAndFailIfValidationFails(fixture):
     ruleSet.schedule(validator)
   assert ex.value.errors == ["raven"]
 
+def test_shouldThrowExceptionIfOneRuleIsExecuting(fixture):
+  sched, = mockScheds(1)
+  executingRule = fixture.ruleWithSched(sched, executing=True)
 
+  with pytest.raises(RuleExecutingException):
+    fixture.schedule(executingRule)

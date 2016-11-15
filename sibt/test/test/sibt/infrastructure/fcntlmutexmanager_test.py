@@ -1,14 +1,16 @@
 import pytest
 import sys
-import subprocess
 from contextlib import contextmanager
 import time
 from sibt.infrastructure.fcntlmutexmanager import FcntlMutexManager
 from sibt.domain.exceptions import LockException
-import textwrap
+from test.common.interprocesstestfixture import InterProcessTestFixture
 
-class Fixture(object):
+class Fixture(InterProcessTestFixture):
   def __init__(self, tmpDirPath):
+    super().__init__(
+        "test.sibt.infrastructure.fcntlmutexmanager_test",
+        tmpDirPath, ["os", "signal", "time"])
     self.tmpDirPath = tmpDirPath
     self.manager = self.makeManager()
   
@@ -18,18 +20,14 @@ class Fixture(object):
   @contextmanager
   def lockInAnotherProcess(self, lockId, codeInBody, codeAtTheEnd="pass"):
     code = r"""
-      import sys, os, signal, time
-      from test.sibt.infrastructure.fcntlmutexmanager_test import Fixture
-
       try:
-        mutex = Fixture(sys.argv[1]).manager.lockForId({0})
+        mutex = fixture.manager.lockForId({0})
         with mutex:
           {1}
       finally:
         {2}""".format(repr(lockId), codeInBody, codeAtTheEnd)
 
-    with subprocess.Popen([sys.executable, "-c", textwrap.dedent(code),
-      self.tmpDirPath]) as process:
+    with self.startInNewProcess(code) as process:
       time.sleep(0.3)
       try:
         yield process

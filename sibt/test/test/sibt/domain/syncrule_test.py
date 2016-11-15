@@ -171,16 +171,22 @@ def test_shouldEnforceSpecialInvariantThatOnePortMustHaveFileProtocol(fixture):
     rule.restore(remoteLocation(protocol="file", path="/bar/file"),
         version(rule), remoteLocation(protocol="remote"), detector())
 
-def test_shouldReturnItsLastLoggedExecutionIfItExists(fixture):
-  firstTime, lastTime = orderedDateTimes(2)
+def test_shouldReturnItsLastNotRunningLoggedExecutionIfItExists(fixture):
+  firstTime, lastTime, executionTime = orderedDateTimes(3)
   first, latest = execution(firstTime), execution(lastTime)
+
+  def rule():
+    return fixture.ruleWith()
   
   fixture.log.executions = [first, latest]
-  rule = fixture.ruleWith()
-  assert rule.latestExecution == latest
+  assert rule().lastFinishedExecution == latest
 
   fixture.log.executions = []
-  assert rule.latestExecution is None
+  assert rule().lastFinishedExecution is None
+  
+  running = execution(executionTime, unfinished=True)
+  fixture.log.executions = [first, latest, running]
+  assert rule().lastFinishedExecution == latest
 
 def test_shouldBeAbleToPredictItsNextExecutionWithHelpOfTheScheduler(fixture):
   lastEndTime, nextTime = orderedDateTimes(2)

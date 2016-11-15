@@ -18,7 +18,7 @@ class Fixture(SSHSupportingSyncerFixture):
     self.load("rsync")
 
 @pytest.fixture(params=[
-  (sshLocationFromPath, localLocation, localLocation),
+  (sshLocationFromPath, localLocation, sshLocationFromPath),
   (localLocation, sshLocationFromPath, localLocation),
   (localLocation, localLocation, localLocation)
   ])
@@ -89,8 +89,11 @@ class Test_RsyncTest(MirrorSynchronizerTest,
           stringThat.shouldInclude("unexpected", "AdditionalSyncOpts"),
           stringThat.shouldInclude("unexpected", "RemoteShellCommand"))
 
-  def test_shouldDryTestTheRsyncCommandThatWouldBeUsedToSync(self, fixture):
-    iterToTest(fixture.check(dict(AdditionalSyncOpts="--bar"))).\
+  def test_shouldBeAbleToDryTestTheRsyncCommandThatWouldBeUsedToSync(
+      self, fixture):
+    assert "DryRun" in fixture.optionNames
+
+    iterToTest(fixture.check(dict(DryRun=True, AdditionalSyncOpts="--bar"))).\
         shouldContainMatching(stringThat.shouldInclude("unknown option", "bar"))
 
     (fixture.loc1 / "file").write("")
@@ -98,8 +101,9 @@ class Test_RsyncTest(MirrorSynchronizerTest,
     assert not os.path.isfile(str(fixture.loc2 / "file"))
 
     fixture.loc1.chmod(0o300)
-    iterToTest(fixture.check({})).shouldContainMatching(
+    iterToTest(fixture.check(dict(DryRun=True))).shouldContainMatching(
       stringThat.shouldInclude("Permission denied"))
+    assert fixture.check(dict(DryRun=False)) == []
 
   def test_shouldAcknowledgeThatItDoesntSupportTwoSSHLocsAtATime(self, fixture):
     assert fixture.syncer.onePortMustHaveFileProtocol

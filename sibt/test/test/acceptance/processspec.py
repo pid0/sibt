@@ -233,7 +233,7 @@ def test_shouldHandleSigIntAndTermWithWifsignaledAndAnErrorMessage(fixture):
   rule = fixture.conf.ruleWithSched().withSynchronizer(syncer).write()
 
   def check(sigFunc, signalName, signalNumber):
-    fixture.afterSeconds(0.2, sigFunc) 
+    fixture.afterSeconds(0.3, sigFunc) 
     fixture.runSibtAsAProcess("list-files", rule.loc1, ":")
     fixture.stdout.shouldContainLinePatterns("file-*")
     fixture.stderr.shouldInclude(signalName, "from-syncer").andAlso.\
@@ -317,13 +317,10 @@ def test_shouldFinishLoggingExecutionStatisticsEvenIfSignaled(fixture):
   fixture.afterSeconds(0.3, fixture.sigIntToProcessGroup)
   fixture.runSibtAsAProcess("execute-rule", rule.name)
 
-  from sibt.api import openLog
-
   execution = None
   for i in range(100):
     time.sleep(0.05)
-    execution = openLog(fixture.paths, sibtSysPaths=None).executionsOfRules(
-        "*")[rule.name][0]
+    execution = fixture.getSingleExecution(fixture.paths, None, rule.name)
     if execution.finished:
       break
 
@@ -364,7 +361,8 @@ def test_shouldExitFromSignalsWhenExecutingARule(fixture):
   fixture.shouldHaveExitedFromSignal(signal.SIGINT)
   fixture.shouldNotHaveTakenMoreSecondsThan(1)
 
-def test_shouldNotAllowExecutingTwoRulesAtTheSameTime(fixture):
+def test_shouldNotAllowExecutingOrSchedulingARuleIfItIsAlreadyExecuting(
+    fixture):
   sched = fixture.conf.aSched().withExecuteFuncCode(r"""
     def execute(*args):
       import time; time.sleep(3); return True""").write()
@@ -372,10 +370,17 @@ def test_shouldNotAllowExecutingTwoRulesAtTheSameTime(fixture):
   
   with fixture.startSibtProcess("execute-rule", rule.name):
     time.sleep(0.2)
+    assert not fixture.getSingleExecution(fixture.paths, None, 
+        rule.name).finished
+
     fixture.runSibtAsAProcess("--verbose", "execute-rule", rule.name)
     fixture.shouldNotHaveTakenMoreSecondsThan(0.5)
     fixture.shouldHaveExitedWithStatus(4)
     fixture.stderr.shouldIncludeInOrder("already", "could not", "lock")
+
+    fixture.runSibtAsAProcess("schedule", rule.name)
+    fixture.shouldHaveExitedWithStatus(4)
+    fixture.stderr.shouldInclude(rule.name, "currently executing")
 
 def test_shouldWaitForExecutionAfterSignalWhenUsingSimpleSched(fixture):
   fixture.useActualSibtConfig()

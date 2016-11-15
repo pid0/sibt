@@ -24,7 +24,8 @@ from sibt.application.mountpointassertionstruevalidator import \
 from sibt.application.prefixingerrorlogger import PrefixingErrorLogger
 from sibt.domain.exceptions import ValidationException, \
     UnsupportedProtocolException, LocationInvalidException, \
-    LocationNotAbsoluteException, UnstablePhaseException, LockException
+    LocationNotAbsoluteException, UnstablePhaseException, LockException, \
+    RuleExecutingException
 from sibt.application.rulesfinder import RulesFinder
 from sibt.application.exceptions import RuleNotFoundException
 import functools
@@ -204,6 +205,9 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         printValidationErrors(errorLogger.log, functools.partial(
           errorLogger.log, continued=True), matchingRuleSet, ex.errors)
         return 1
+      except RuleExecutingException as ex:
+        printKnownException(ex, errorLogger)
+        return 4
 
     elif args.action == "sync":
       BeforeRunning = object()
@@ -267,9 +271,11 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         rules = configRepo.rulesFinder.findRulesByPatterns(
             args.options["rule-patterns"], onlySyncRules=False, 
             keepUnloadedRules=keepUnloadedRules) 
-      else:
+      elif args.options["command2"] in ["rules", "all"]:
         rules = configRepo.rulesFinder.getAll(keepUnloadedRules=
             keepUnloadedRules)
+      else:
+        rules = []
 
       listConfiguration(printer, stdout, listType, rules, 
           configRepo.schedulers, configRepo.synchronizers)
@@ -400,10 +406,10 @@ def overridePaths(paths, cmdLineArgs):
 def createNotExistingDirs(paths):
   DirTreeNormalizer(paths).createNotExistingDirs()
 
-def printUnstablePhaseWarning(errorLogger, ruleName, suffix=None, 
+def printUnstablePhaseWarning(errorLogger, ruleName, suffix="", 
     isError=False):
   prefix = "error" if isError else "warning"
-  if suffix is not None:
+  if suffix != "":
     suffix = ", " + suffix
   errorLogger.log("{0}: execution of rule ‘{1}’ in less than 1 hour{2}",
       prefix, ruleName, suffix)
@@ -448,7 +454,7 @@ def enableRule(output, baseName, paths, instanceName, configLines):
 def disableRule(output, ruleName, paths):
   instFilePath = os.path.join(paths.enabledDir, ruleName)
   if not os.path.isfile(instFilePath):
-    output.println("‘{0}’ is not enabled".format(ruleName))
+    output.println("‘{0}’ is not an enabled rule".format(ruleName))
     return 1
   os.remove(instFilePath)
   output.println("‘{0}’ removed".format(instFilePath))

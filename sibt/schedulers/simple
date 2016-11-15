@@ -37,7 +37,9 @@ class Simple(object):
 
     lastLocalTime = lastTime.astimezone()
     interval = scheduling.options.get("Interval", timedelta(days=3))
-    ret = toUTC(withoutTimeOfDay(lastLocalTime) + interval)
+    if interval >= timedelta(days=1):
+      lastLocalTime = withoutTimeOfDay(lastLocalTime)
+    ret = toUTC(lastLocalTime + interval)
     if ret < self.clock.now():
       ret = self.clock.now()
 

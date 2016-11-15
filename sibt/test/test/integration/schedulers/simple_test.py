@@ -47,6 +47,12 @@ class Test_SimpleSchedTest(LeafSchedulerTest):
 
     assert fixture.nextExecutionLocalTime(dict(), None) == BeginningOf1985
 
+  def test_shouldNotRemoveTimeOfDayIfIntervalIsLessThanADay(self, fixture):
+    fixture.setCurrentLocalTime(BeginningOf1985)
+
+    assert fixture.nextExecutionLocalTime(dict(Interval=timedelta(minutes=5)),
+        datetime(2000, 1, 1, 8, 25, 0, 0)) == datetime(2000, 1, 1, 8, 30, 0, 0)
+
   def test_shouldNotReturnATimeInThePastAsNextExecutionTime(self, fixture):
     fixture.setCurrentLocalTime(BeginningOf1985)
 

@@ -43,6 +43,7 @@ class SyncRule(object):
 
     self.synchronizerOptions = synchronizerOptions
     self.syncerName = synchronizer.name
+    self._cachedExecutions = None
 
   def _loc(self, index):
     return self.locs[index - 1]
@@ -52,24 +53,42 @@ class SyncRule(object):
     return Scheduling(self.name, self.schedulerOptions, self.lastExecutionTime)
 
   @property
-  def latestExecution(self):
-    executions = self.log.executionsOfRules([self.name])[self.name]
-    if len(executions) == 0:
+  def _executions(self):
+    if self._cachedExecutions is None:
+      self._cachedExecutions = self.log.executionsOfRules(
+          [self.name])[self.name]
+    return self._cachedExecutions
+
+  @property
+  def _latestExecution(self):
+    if len(self._executions) == 0:
       return None
-    return executions[-1]
+    return self._executions[-1]
+
+  @property
+  def lastFinishedExecution(self):
+    if not self.executing:
+      return self._latestExecution
+    else:
+      if len(self._executions) < 2:
+        return None
+      return self._executions[-2]
 
   @property
   def executing(self):
-    lastExecution = self.latestExecution
     try:
-      return not lastExecution.finished
+      return not self._latestExecution.finished
     except AttributeError:
       return False
 
   @property
+  def currentExecution(self):
+    return self._executions[-1]
+
+  @property
   def lastExecutionTime(self):
     try:
-      return self.latestExecution.endTime
+      return self.lastFinishedExecution.endTime
     except AttributeError:
       return None
 

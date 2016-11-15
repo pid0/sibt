@@ -120,7 +120,7 @@ def test_shouldProvideVariousOtherOptionsForControllingRuleExecutions(fixture):
 
   rule = fixture.conf.ruleWithSchedAndSyncer("a-rule").withSchedOpts(
       Stderr="Yes",
-      ExecOnFailure='echo an-error >&1; echo "$rule" >{0}'.format(
+      ExecOnFailure='echo an-error >&1; echo "$SIBT_RULE" >{0}'.format(
         testFile)).write()
   
   fixture.replaceSibtSyncCallsWith(fixture.writeBashScript(script.format(

@@ -109,9 +109,9 @@ def test_shouldExecuteExecBeforeAndExecOnSuccessIfEverythingIsOk(fixture):
   assert "ExecOnSuccess" in fixture.optionNames
 
   fixture.expectCalls(
-      call("before", environmentVars=dict(rule="foo")),
+      call("before", environmentVars=dict(SIBT_RULE="foo")),
       call("execute"),
-      call("success", environmentVars=dict(rule="foo")))
+      call("success", environmentVars=dict(SIBT_RULE="foo")))
 
   assert fixture.execute(AllExecs, ruleName="foo") == True
   fixture.logger.decoded.shouldBeEmpty()

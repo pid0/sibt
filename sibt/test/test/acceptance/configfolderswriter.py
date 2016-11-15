@@ -23,8 +23,10 @@ class ConfigFoldersWriter(object):
     return str(ret)
 
   def createReadonlyFolders(self):
-    for folder in [self.paths.readonlySchedulersDir, 
-        self.paths.readonlySynchronizersDir]:
+    for folder in [
+        self.paths.readonlySchedulersDir, 
+        self.paths.readonlySynchronizersDir,
+        self.paths.readonlyIncludesDir]:
       os.makedirs(folder)
 
   def deleteConfigAndVarFolders(self):

@@ -48,4 +48,4 @@ class IniFileSyntaxRuleConfigPrinter(object):
         value = value - (number * unit)
         ret += "{0} {1}{2} ".format(number, unitName, "s" if number > 1 else "")
 
-    return ret
+    return ret if len(ret) > 0 else "0 seconds"

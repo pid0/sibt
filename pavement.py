@@ -16,23 +16,36 @@ options(setup=dict(
     name="sibt",
     author="Patrick Plagwitz",
     author_email="patrick_plagwitz@web.de",
-    #license="GNU General Public License v3 (GPLv3)",
+    license="GNU General Public License v3 (GPLv3)",
     description="Configurable command line interface to backup tools",
 
-    version="0.1",
+    version="0.2.0",
 
     packages=find_packages("sibt/src"),
     package_dir={"sibt": "sibt/src/sibt", "test": "sibt/test/test"},
+
 #    entry_points={
 #        "console_scripts": ["sibt = sibt.main:main"]
 #    },
+
     scripts=["sibt/sibt"],
 
     data_files=[
-        (ReadonlyConfigDir + "schedulers", ["sibt/schedulers/anacron"]),
-        (ReadonlyConfigDir + "synchronizers", 
-            ["sibt/synchronizers/rdiff-backup"]),
-        (ReadonlyConfigDir + "runners", ["sibt/runners/bash-runner"])
+        (ReadonlyConfigDir + "schedulers", [
+          "sibt/schedulers/anacron",
+          "sibt/schedulers/simple"]),
+
+        (ReadonlyConfigDir + "synchronizers", [
+          "sibt/synchronizers/null",
+          "sibt/synchronizers/rdiff-backup",
+          "sibt/synchronizers/rsync",
+          "sibt/synchronizers/tar"]),
+
+        (ReadonlyConfigDir + "runners", [
+          "sibt/runners/bash-runner"]),
+
+        (ReadonlyConfigDir + "include", [
+          "sibt/include/TarFullSystemBackup.inc"])
     ]
     ))
     # test_requires = "pytest"

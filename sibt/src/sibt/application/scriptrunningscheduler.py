@@ -17,7 +17,7 @@ class ScriptRunningScheduler(object):
     if optionName in scheduling.options:
       script = scheduling.options[optionName]
       exitCode = execEnv.logSubProcess(script, shell=True,
-          environmentVars=dict(rule=scheduling.ruleName))
+          environmentVars=dict(SIBT_RULE=scheduling.ruleName))
       if exitCode != 0:
         execEnv.logger.log("{0} failed ({1})", optionName, exitCode)
         return False

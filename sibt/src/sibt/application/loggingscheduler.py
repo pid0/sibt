@@ -69,7 +69,7 @@ class LoggingScheduler(object):
           scheduling.ruleName).encode(), severity="err", ignore=True)
         message = traceback.format_exc() if isinstance(ex, Exception) else \
             str(ex)
-        logger.write(message.encode(), severity="err", ignore=True)
+        logger.write((message + "\n").encode(), severity="err", ignore=True)
         raise
 
       if not succeeded:

@@ -10,7 +10,7 @@ def openLog(sibtPaths=CurrentUserPaths, sibtSysPaths=SystemPaths):
   if sibtPaths is CurrentUserPaths:
     sibtPaths = Paths(UserBasePaths.forCurrentUser())
   if sibtSysPaths is SystemPaths:
-    sysPaths = Paths(UserBasePaths(0))
+    sibtSysPaths = Paths(UserBasePaths(0))
 
   if sibtPaths is not None:
     createNotExistingDirs(sibtPaths)

@@ -23,6 +23,13 @@ class UnstablePhaseException(Exception):
 class LockException(Exception):
   pass
 
+class RuleExecutingException(Exception):
+  def __init__(self, rule):
+    self.rule = rule
+
+  def __str__(self):
+    return "Rule ‘{0}’ is currently executing.".format(self.rule.name)
+
 class UnsupportedProtocolException(Exception):
   def __init__(self, ruleName, optionName, protocol, supportedProtocols=[],
       explanation=""):

@@ -60,7 +60,7 @@ class TimeCol(object):
 class LastTime(TimeCol):
   header = "Last Execution"
   def extractTime(self, rule):
-    return getOrNone(lambda: rule.latestExecution.endTime)
+    return getOrNone(lambda: rule.lastExecutionTime)
 
 class LastStatus(object):
   def __init__(self, timeFormatter):
@@ -70,8 +70,8 @@ class LastStatus(object):
   def formatCell(self, rule):
     if rule.executing:
       return "Executing since {0}".format(
-          self.timeFormatter.format(rule.latestExecution.startTime))
-    succeeded = getOrNone(lambda: rule.latestExecution.succeeded)
+          self.timeFormatter.format(rule.currentExecution.startTime))
+    succeeded = getOrNone(lambda: rule.lastFinishedExecution.succeeded)
     return { True: "Succeeded", False: "Failed", None: None }[succeeded]
 
 class NextTime(TimeCol):

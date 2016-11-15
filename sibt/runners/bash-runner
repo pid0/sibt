@@ -59,10 +59,13 @@ get-file-type() {
   execute-at-port "$1" cmd
 }
 
-args-to-array() {
+eval-args-into-array() {
   declare -n destArray=$1
 
   destArray=("${@:2:$#}")
+}
+args-to-array() {
+  eval eval-args-into-array "$1" "${2//$'\n'/ }"
 }
 
 get-var() {
@@ -135,7 +138,7 @@ try-to-echo() {
 }
 assert-each-is-absolute() {
   declare -a paths
-  eval args-to-array paths "$1"
+  args-to-array paths "$1"
 
   for path in "${paths[@]:+${paths[@]}}"; do
     if [ "${path:0:1}" != / ]; then
@@ -175,7 +178,7 @@ get-normalized-exclude-dirs() {
   declare -n destArray="$1"
 
   declare -a optionWords=()
-  eval args-to-array optionWords "$ExcludedDirs"
+  args-to-array optionWords "$ExcludedDirs"
 
   for optionWord in "${optionWords[@]:+${optionWords[@]}}"; do 
     local normalizedExcludePath="$(echo "$optionWord" | \
