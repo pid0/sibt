@@ -64,22 +64,25 @@ class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest,
 
     oneDay = 86400
 
-    firstFile.write("")
+    firstFile.write("1")
     fixture.sync(withTime(0))
+    firstFile.write("2")
+    fixture.changeMTime(firstFile, 0)
+    fixture.sync(withTime(1))
     firstFile.remove()
 
     secondFile.write("foo")
     fixture.sync(withTime(1 * oneDay))
 
-    latestTime = 2 * oneDay + 1
+    latestTime = 2 * oneDay + 2
     secondFile.write("quux")
+    fixture.changeMTime(secondFile, 0)
     thirdFile.write("")
     fixture.sync(withTime(latestTime,
         andAlso={"RemoveOlderThan": timedelta(days=2)}))
 
     assert len(fixture.versionsOf("first", 1, withTime(latestTime))) == 0
-    assert len(fixture.versionsOf("second", 1, 
-      withTime(latestTime))) == 2
+    assert len(fixture.versionsOf("second", 1, withTime(latestTime))) == 2
     assert len(fixture.versionsOf("third", 1, withTime(latestTime))) == 1
 
   def test_shouldAcknowledgeWritingToPort2(self, fixture):

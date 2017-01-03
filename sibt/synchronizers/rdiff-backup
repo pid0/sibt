@@ -50,7 +50,7 @@ sync() {
     "$(loc-syntax-of Loc1)" "$(loc-syntax-of Loc2)"
 
   if [ -n "${RemoveOlderThan:+a}" ]; then
-    run-rdiff-backup "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
+    run-rdiff-backup --force "${AdditionalArgs[@]:+${AdditionalArgs[@]}}" \
       --remove-older-than "$RemoveOlderThan"s "$(loc-syntax-of Loc2)"
   fi
 
