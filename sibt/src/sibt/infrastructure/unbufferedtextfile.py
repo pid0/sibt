@@ -5,3 +5,6 @@ class UnbufferedTextFile(object):
   def write(self, string):
     self.wrappedFile.write(string)
     self.wrappedFile.flush()
+
+  def flush(self):
+    self.wrappedFile.flush()
