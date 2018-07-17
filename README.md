@@ -1,9 +1,8 @@
-Archlinux AUR
-------------
-There is a PKGBUILD available here:
+sibt provides a common interface for backup tools like rsync, rdiff-backup, tar, or duplicity while performing many sanity checks and replicating infrastructure and locking to prevent data loss from misconfiguration. It is written using a test-first approach and benefits from an extensive test suite.
 
-Alternatively, it is easy to just clone and the git repo and run [setuptools]. The master branch is considered 'stable' at all times.
-
+Documentation
+==============
+See []().
 
 License
 ==============
