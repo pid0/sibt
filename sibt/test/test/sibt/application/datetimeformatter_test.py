@@ -34,6 +34,9 @@ def test_shouldWriteMinutesAndSecondsUntilDateTimeIfCloseEnough(fixture):
   time = datetime(1990, 1, 1, 1, 35, 10, 0, timezone.utc)
   fixture.formattedString(time, now=now).shouldInclude("25m ago")
 
+  time = datetime(1990, 1, 1, 2, 59, 40, 0, timezone.utc)
+  fixture.formattedString(time, now=now).shouldInclude("In 1h")
+
 def test_shouldWriteYesterdayOrTomorrowOrToday(fixture):
   now = datetime(1990, 1, 10, 23, 0, 0, 0, timezone.utc)
 

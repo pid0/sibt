@@ -38,7 +38,7 @@ class CachingIniFileListReader(object):
 
   def _parseFileWithParser(self, filePath, parser):
     try:
-      with open(filePath, "r") as file:
+      with open(filePath, "r", errors="surrogateescape") as file:
         parser.read_file(itertools.chain(["[{0}]\n".format(DefaultSec)], file), 
             source=filePath)
     except configparser.Error as ex:
@@ -53,7 +53,7 @@ class CachingIniFileListReader(object):
     return path
 
   def _pathsImportedFrom(self, iniFilePath):
-    with open(iniFilePath, "r") as iniFile:
+    with open(iniFilePath, "r", errors="surrogateescape") as iniFile:
       lines = [line.strip() for line in iniFile.readlines()]
       importedNames = [" ".join(line.split(" ")[1:]) for line in lines if 
           line.startswith("#import")]

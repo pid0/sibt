@@ -22,3 +22,6 @@ class Version(CaseClassEqualityHashCode):
 
   def __repr__(self):
     return "Version{0}".format((self.rule, self.time.strftime(TimeFormat)))
+
+  def __lt__(self, other):
+    return self.time < other.time

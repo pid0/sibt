@@ -36,6 +36,10 @@ class DateTimeFormatter(object):
     hours, remainder = divmod(difference, timedelta(hours=1))
     minutes = round(remainder / timedelta(minutes=1))
 
+    if minutes == 60:
+      minutes = 0
+      hours = 1
+
     formatString = "{0}{1}m ago" if timeIsInThePast else "In {0}{1}m" 
     return formatString.format("{0}h".format(hours) if hours > 0 else "", 
         minutes)

@@ -1,5 +1,5 @@
 import pytest
-from test.acceptance.sibtspec import SibtSpecFixture
+from test.acceptance.sibtspec import SibtSpecFixture, decode
 from py import path
 from test.common import relativeToProjectRoot
 from test.common.assertutil import strToTest, iterToTest
@@ -98,7 +98,7 @@ class ForkExecSubProcess(object):
 
 def readStandardStream(inFile, outFile):
   for readBytes in iter(inFile.read, b""):
-    outFile.write(readBytes.decode())
+    outFile.write(decode(readBytes))
 
 class ProcessSpecFixture(SibtSpecFixture):
   def __init__(self, tmpdir, capfd):

@@ -8,10 +8,11 @@ def _equivalenceClassOf(classes, protocol):
     return [protocol]
   return foundClasses[0]
 
+_SshBasedProtocols = ["scp", "ssh", "sftp"]
 _EquivalenceClassesIfRelative = [
-    ["scp", "ssh"]]
+    [*_SshBasedProtocols]]
 _EquivalenceClassesIfAbsolute = [
-    ["scp", "ssh", "ftp"]]
+    [*_SshBasedProtocols, "ftp"]]
 
 class RemoteLocation(object):
   def __init__(self, protocol, login, host, port, path):

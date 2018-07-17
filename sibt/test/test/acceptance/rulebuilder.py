@@ -1,6 +1,7 @@
 from test.acceptance.configobjectbuilder import ConfigObjectBuilder
 from py.path import local
 from collections import namedtuple
+import sys
 
 RuleFormat = """
     [Rule]
@@ -93,7 +94,9 @@ class RuleBuilder(ConfigObjectBuilder):
         ruleOpts=iniFileFormatted(self.ruleOpts))
 
     path = self.readonlyRuleFilePath if toReadonlyDir else self.ruleFilePath
-    path.write(fileContents)
+    with open(str(path), "wb") as file:
+      file.write(fileContents.encode(sys.getdefaultencoding(),
+        "surrogateescape"))
 
     if "instanceFiles" in self.kwParams:
       for instanceFile in self.instanceFiles:

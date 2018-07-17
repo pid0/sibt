@@ -276,7 +276,7 @@ class SSHTestServerSetup(object):
     self.knownHostsFile = knownHostsFile
     self.clientIdFile = clientIdFile
     self.port = port
-    self.remoteShellCommand = "ssh -o UserKnownHostsFile={0} -i {1}".format(
+    self.remoteShellCommand = "ssh -oUserKnownHostsFile={0} -i {1}".format(
         self.knownHostsFile, self.clientIdFile)
 
   @classmethod
@@ -288,8 +288,10 @@ class SSHTestServerSetup(object):
     serverKey = paramiko.rsakey.RSAKey.generate(2048)
 
     hostKeys = paramiko.hostkeys.HostKeys()
-    hostKeys.add("localhost", "ssh-rsa", serverKey)
-    knownHostsFile = str(folder / "known_hosts")
+    hostKeys.add("[localhost]:{}".format(port), "ssh-rsa", serverKey)
+    mockSSHFolder = folder / ".ssh"
+    mockSSHFolder.mkdir()
+    knownHostsFile = str(mockSSHFolder / "known_hosts")
     hostKeys.save(knownHostsFile)
 
     logFile = open(str(folder / "log"), "w")

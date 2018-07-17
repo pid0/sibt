@@ -4,6 +4,9 @@ from sibt.infrastructure.exceptions import ExternalFailureException
 ChunkSize = 2048
 Nop = lambda *args: None
 
+def decode(bytesObj):
+  return bytesObj.decode(errors="surrogateescape")
+
 def spawnProcess(program, arguments, afterForking, **kwargs):
   ret = subprocess.Popen([program] + list(arguments), **kwargs)
   afterForking()
@@ -83,13 +86,13 @@ class CoprocessRunner(object):
           delimPosition = output.find(self.delimiter)
           if delimPosition != -1:
             self.buffer = output[delimPosition+1:]
-            return output[:delimPosition].decode()
+            return decode(output[:delimPosition])
           elif self.eof:
             self.finished = True
             if output == b"":
               raise StopIteration()
             else:
-              return output.decode()
+              return decode(output)
           else:
             self._readChunk()
       except StopIteration as ex:

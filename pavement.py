@@ -52,7 +52,7 @@ options(setup=dict(
 install_distutils_tasks()
 
 def runPyTest(testFiles):
-  pytest.main(["--color=yes"] + testFiles)
+  pytest.main(["--color=yes", "-v"] + testFiles)
 
 def prependToPythonPath(newPath):
   envVarName = "PYTHONPATH"

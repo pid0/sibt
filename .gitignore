@@ -3,7 +3,7 @@ __pycache__/
 .nfs*
 .sw?
 *~
-/Session.vim
+/Session*.vim
 /setup.py
 /paver-minilib.zip
 /sibt.egg-info
@@ -14,3 +14,4 @@ __pycache__/
 
 /TODO*
 /*-notes
+/.pytest_cache/

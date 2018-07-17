@@ -1,12 +1,12 @@
 import pytest
 from test.integration.synchronizers.synchronizertest import \
-    SynchronizerTestFixture, IncrementalSynchronizerTest
+    RunnableFileSynchronizerTestFixture, IncrementalSynchronizerTest
 import tarfile
 from test.common.builders import localLocation
 from test.common.assertutil import iterableContainsInAnyOrder
 import os
 
-class Fixture(SynchronizerTestFixture):
+class Fixture(RunnableFileSynchronizerTestFixture):
   def __init__(self, tmpdir):
     super().__init__(tmpdir, localLocation, localLocation, localLocation)
     self.load("pytar")

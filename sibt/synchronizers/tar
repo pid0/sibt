@@ -4,6 +4,8 @@ NumberOfVersions=3
 ExcludedDirs=
 Compression=lzop
 
+declare -a CommonTarOpts=(--acls --xattrs)
+
 available-options() {
   echo 'p NumberOfVersions'
   echo 's ExcludedDirs'
@@ -72,6 +74,7 @@ sync() {
     --"$Compression" \
     --no-wildcards \
     --anchored \
+    "${CommonTarOpts[@]}" \
     --create --file "$newArchive" .
 
   ignore-signals
@@ -142,10 +145,6 @@ list-files() {
   locNumber=$2
   timestamp=$3
   recursively=$4
-
-  if [ "$locNumber" = 2 ]; then
-    return
-  fi
 
   action=direct
   if [ "$recursively" = 1 ]; then
@@ -265,6 +264,7 @@ restore() {
     --"$Compression" \
     --same-owner \
     --same-permissions \
+    "${CommonTarOpts[@]}" \
     --extract --file "$(-archive-path $2)" "$3"
 }
 

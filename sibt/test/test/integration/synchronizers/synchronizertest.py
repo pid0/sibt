@@ -19,7 +19,17 @@ def sshLocationFromPath(path):
   return remoteLocation(protocol="ssh", login="", host="localhost",
       port=str(sshserver.Port), path=path)
 
-class SynchronizerTestFixture(object):
+def remoteLocationFromPath(protocol, port):
+  def ret(path):
+    return remoteLocation(protocol=protocol, login="",
+        host="localhost", port=str(port), path=path)
+  return ret
+
+class SynchronizerTestFixture:
+  def protocolsOfPort(self, portNumber):
+    return iterToTest(self.syncer.ports[portNumber - 1].supportedProtocols)
+
+class RunnableFileSynchronizerTestFixture(SynchronizerTestFixture):
   def __init__(self, tmpdir, location1FromPathFunc=localLocation, 
       location2FromPathFunc=localLocation,
       restoreLocFromPathFunc=localLocation):
@@ -86,7 +96,7 @@ class SynchronizerTestFixture(object):
   def changeMTime(self, path, newModiticationTime):
     os.utime(str(path), (0, newModiticationTime))
 
-class SSHSupportingSyncerFixture(SynchronizerTestFixture):
+class SSHSupportingSyncerFixture(RunnableFileSynchronizerTestFixture):
   def __init__(self, tmpdir, sshServerSetup, location1FromPathFunc, 
       location2FromPathFunc, restoreLocFromPathFunc):
     super().__init__(tmpdir, location1FromPathFunc, location2FromPathFunc,
@@ -139,8 +149,6 @@ class ListingSynchronizerTest(object):
 
     assert fixture.listPort1Files(".", version, recursively=False) == \
         ["[folder],/"]
-
-    assert fixture.listPort2Files(".", version, recursively=False) == []
 
   def test_shouldBeAbleToGiveARecursiveFileListing(self, fixture):
     if self.canWriteToSymlinkedLoc:
@@ -226,7 +234,8 @@ class RestoringSynchronizerTest(object):
 
       (fixture.tmpdir / testFileName).write("bar")
       checkRestoredFile(fixture.tmpdir, testFileName) 
-      checkRestoredFile(fixture.tmpdir / r"new-\2&\Lfile", "") 
+      sedReactiveFileName = r"new-\2&\Lfile"
+      checkRestoredFile(fixture.tmpdir / sedReactiveFileName, "") 
       checkRestoredFile(existingFile, "") 
 
       with pytest.raises(ExternalFailureException):
@@ -508,9 +517,8 @@ class IncrementalSynchronizerTest(SynchronizerTest):
           oldFile.remove()))
 
     assert len(fixture.versionsOf("usr", 1)) == 2
-    assert fixture.versionsOf("usr", 2) == []
     assert fixture.versionsOf("not-there", 1) == []
-    assert len(fixture.versionsOf("usr/newfile", "1")) == 1
+    assert len(fixture.versionsOf("usr/newfile", 1)) == 1
 
     iterToTest(fixture.listPort1Files(".", oldVersion)).shouldContainInAnyOrder(
         "samefile", "file", "usr/", "usr/oldfile")
@@ -529,14 +537,37 @@ class IncrementalSynchronizerTest(SynchronizerTest):
     assert os.listdir(str(folder)) == ["newfile"]
     assert set(os.listdir(str(fixture.loc1))) == { "usr", "samefile", "file" }
 
-class UnidirectionalAugmentedPortSyncerTest(SynchronizerTest):
+  def test_shouldMindTheVersionWhenTestingTheToBeRestoredFileType(
+      self, fixture):
+    testFile = fixture.loc1 / "file"
+    destFile = fixture.tmpdir / "dest"
+
+    testFile.write("old")
+    destFile.write("original")
+
+    oldVersion, newVersion = self.getTwoVersions(fixture,
+        doBetweenSyncs=lambda: (
+          testFile.remove(),
+          testFile.mkdir()))
+
+    fixture.restorePort1File("file", oldVersion, destFile)
+    assert destFile.read() == "old"
+
+class UnidirectionalSyncerTest(object):
+  def test_shouldWriteToPort2(self, fixture):
+    assert fixture.syncer.ports[1].isWrittenTo
+
+  def test_shouldNotHaveAnyVersionsForFilesInLoc2(self, fixture):
+    testFile = fixture.loc1.join("file")
+    testFile.write("")
+
+    fixture.sync()
+    assert len(fixture.versionsOf(".", 2)) == 0
+
+class UnidirectionalAugmentedPortSyncerTest(UnidirectionalSyncerTest):
   def test_shouldSupportAnSSHLocationAtOneOfTheTwoPorts(self, fixture):
     assert "RemoteShellCommand" in fixture.optionNames
 
     iterToTest(fixture.syncer.ports).shouldContainMatching(
         lambda port: "ssh" in port.supportedProtocols,
         lambda port: "ssh" in port.supportedProtocols)
-
-  def test_shouldWriteToPort2(self, fixture):
-    assert fixture.syncer.ports[1].isWrittenTo
-

@@ -1,9 +1,9 @@
 import pytest
 from datetime import datetime
 from test.integration.synchronizers.synchronizertest import \
-    SynchronizerTestFixture 
+    RunnableFileSynchronizerTestFixture 
 
-class Fixture(SynchronizerTestFixture):
+class Fixture(RunnableFileSynchronizerTestFixture):
   def __init__(self, tmpdir):
     super().__init__(tmpdir)
     self.load("null")

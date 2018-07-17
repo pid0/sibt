@@ -187,11 +187,131 @@ get-normalized-exclude-dirs() {
   done
 }
 
+to-literal-sed-regex() {
+  local ret=
+  for((i = 0; i < "${#1}"; ++i)); do
+    local char="${1:$i:1}"
+    [ "$char" = $'\n' ] && char='\n'
+    ret+="[${char}]"
+  done
+
+  echo "$ret"
+}
+
+to-children-of() {
+  local prefix="$1"
+  if [ -z "$prefix" ]; then
+    cat
+    return
+  fi
+  [ "${prefix: -1}" != / ] && prefix+=/
+
+  local prefixRegex="$(to-literal-sed-regex "$prefix")"
+  local prefixRegexWithoutSlash="${prefixRegex:0:-3}"
+
+  sed --zero-terminated -r -n -e '
+  s/^'"$prefixRegex"'//
+  T notAChild
+  /^$/ {
+    d
+  }
+  p
+
+  :notAChild
+  /^'"$prefixRegexWithoutSlash"'$/ {
+    s,^.*/,,
+    p
+  }'
+}
+
+remove-non-top-level-paths() {
+  sed --zero-terminated -r -e '
+  \,/.+$, {
+    d
+  }'
+}
+
+filter-file-type() {
+  local regex="$(to-literal-sed-regex "$1")"
+  local match="$(sed -r -n --zero-terminated '/^'"$regex"'\/?$/p')"
+
+  case "$match" in
+    '')
+      echo missing;;
+    */)
+      echo directory;;
+    *)
+      echo non-directory;;
+  esac
+}
+
 ignore-signals() {
   trap '' INT TERM
 }
 restore-signals() {
   trap - INT TERM
+}
+
+rdiff-backup-like-restore() {
+  writeFunc="$1"
+  getRepoFileType="$2"
+  shift 2
+
+  relativePath="$1"
+  locNumber=$2
+  timestamp="${3%,*}"
+
+  if [ $locNumber = 2 ]; then
+    return
+  fi
+
+  srcFileType=$("$getRepoFileType" "$relativePath" $timestamp)
+  srcFileName="$(basename -- "$relativePath")"
+
+  restoringToSourceTree=0
+  if [ -z "$4" ]; then
+    restoringToSourceTree=1
+    destPath="$Loc1Path"
+    [ "$relativePath" != . ] && destPath="$Loc1Path"/"$relativePath"
+    destPort=Loc1
+  else
+    destPath="$RestorePath"
+    destPort=Restore
+  fi
+  destFileType=$(get-file-type "$destPort" "$destPath" follow-links)
+
+  fileInDest="$destPath"/"$srcFileName"
+  fileInDestType=$(get-file-type "$destPort" "$fileInDest")
+
+  if [ $restoringToSourceTree = 0 ]; then
+    if [ $destFileType = non-directory ]; then
+
+      if [ $srcFileType = directory ]; then
+        print-error "source is a directory; destination must be a directory, \
+too"
+        return 1
+      fi
+
+    elif [ $destFileType = directory ]; then
+      destPath="$fileInDest"
+
+      if [ $srcFileType = directory ] && \
+          [ $fileInDestType = non-directory ]; then
+        print-error "destination contains non-directory ‘$srcFileName’; "\
+"could not make way for source"
+        return 1
+      fi
+
+      if [ $srcFileType != directory ] && [ $fileInDestType = directory ]; then
+        print-error "destination contains directory ‘$srcFileName’; "\
+"could not make way for source"
+        return 1
+      fi
+
+    fi
+  fi
+
+  "$writeFunc" "$relativePath" "$destPath" "$destPort" "$timestamp"
 }
 
 #####

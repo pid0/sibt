@@ -1,7 +1,7 @@
 #!bash-runner
 
 AdditionalSyncOpts=
-RemoteShellCommand=
+RemoteShellCommand=ssh
 ListFilesExactly=0
 
 available-options() {
@@ -36,6 +36,10 @@ loc-syntax-of() {
 }
 
 run-rdiff-backup() {
+  [ "$(get-var Loc1 Protocol)" = file ] && \
+    [ "$(get-var Loc2 Protocol)" = file ] && \
+    RemoteShellCommand=
+
   local remoteSchemaArg=\
 "${RemoteShellCommand:+${RemoteShellCommand} -C %s rdiff-backup --server}"
 
@@ -54,8 +58,14 @@ sync() {
       --remove-older-than "$RemoveOlderThan"s "$(loc-syntax-of Loc2)"
   fi
 
-  declare -a incrementsChmod=(chmod -R g+rX,o+rX "$Loc2Path")
+  incrementsFolder="$Loc2Path"/rdiff-backup-data
+  restoreLogPath="$incrementsFolder"/restore.log
+  declare -a incrementsChmod=(chmod -R g+rX,o+rX "$incrementsFolder")
   execute-at-port Loc2 incrementsChmod
+  declare -a createRestoreLog=(touch -a "$restoreLogPath")
+  execute-at-port Loc2 createRestoreLog
+  declare -a chmodRestoreLog=(chmod g+w,o+w "$restoreLogPath")
+  execute-at-port Loc2 chmodRestoreLog
 }
 
 versions-of() {
@@ -71,64 +81,19 @@ versions-of() {
     { grep -v missing || true; } | cut -d ' ' -f 1
 }
 
-restore() {
-  relativePath="$1"
-  locNumber=$2
-  timestamp="${3%,*}"
-
-  if [ $locNumber = 2 ]; then
-    return
-  fi
-
-  srcFileType=$(-get-repo-file-type "$relativePath" $timestamp)
-  srcPath="$Loc2Path"/"$relativePath"
-  srcFileName="$(basename "$srcPath")"
-
-  restoringToSourceTree=0
-  if [ -z "$4" ]; then
-    restoringToSourceTree=1
-    destPath="$Loc1Path"/"$relativePath"
-    destPort=Loc1
-  else
-    destPath="$RestorePath"
-    destPort=Restore
-  fi
-  destFileType=$(get-file-type "$destPort" "$destPath" follow-links)
-
-  fileInDest="$destPath"/"$srcFileName"
-  fileInDestType=$(get-file-type "$destPort" "$fileInDest")
-
-  if [ $restoringToSourceTree = 0 ]; then
-    if [ $destFileType = non-directory ]; then
-
-      if [ $srcFileType = directory ]; then
-        print-error "source is a directory; destination must be a directory, \
-too"
-        return 1
-      fi
-
-    elif [ $destFileType = directory ]; then
-      destPath="$fileInDest"
-
-      if [ $srcFileType = directory ] && \
-          [ $fileInDestType = non-directory ]; then
-        print-error "destination contains non-directory ‘$srcFileName’; "\
-"could not make way for source"
-        return 1
-      fi
-
-      if [ $srcFileType != directory ] && [ $fileInDestType = directory ]; then
-        print-error "destination contains directory ‘$srcFileName’; "\
-"could not make way for source"
-        return 1
-      fi
-
-    fi
-  fi
+-call-restore() {
+  local relativePath="$1"
+  local destPath="$2"
+  local destPort="$3"
+  local timestamp="$4"
 
   run-rdiff-backup --force --restore-as-of $timestamp \
-    "$(loc-syntax-of Loc2 "$srcPath")" \
+    "$(loc-syntax-of Loc2 "$Loc2Path"/"$relativePath")" \
     "$(loc-syntax-of "$destPort" "$destPath")"
+}
+
+restore() {
+  rdiff-backup-like-restore -call-restore -get-repo-file-type "$@"
 }
 
 -parse-repo-file-type() {
@@ -170,20 +135,15 @@ too"
 
 -remove-prefix() {
   while read -r -d $'\0' word; do
-    echo -n "${word:${#1}:${#word}}"
+    echo -n "${word:${#1}}"
     echo -n -e '\0'
   done
 }
 
 list-files() {
   relativePath="$1"
-  locNumber=$2
   timestamp="${3%,*}"
   recursively=$4
-
-  if [ $locNumber = 2 ]; then
-    return
-  fi
 
   typeOfFile=$(-get-repo-file-type "$relativePath" $timestamp)
   if [ $typeOfFile != directory ]; then
@@ -192,6 +152,7 @@ list-files() {
     return
   fi
 
+  #TODO refactor
   filterDirectChildren='\,^[^/]+/[^/]+/,!p'
   prependPeriodSlash='s,^,./,'
 

@@ -34,6 +34,9 @@ from test.common.fusefs import fuseIsAvailable, nonEmptyFSMountedAt
 Utc0 = "1970-01-01T00:00:00"
 TestPort = 5326
 
+def decode(bytesObj):
+  return bytesObj.decode(sys.getdefaultencoding(), errors="surrogateescape")
+
 @contextmanager
 def environmentVariables(**envVars):
   originalValues = dict(os.environ)
@@ -117,6 +120,7 @@ class SibtSpecFixture(object):
   def shouldHaveExitedWithStatus(self, expectedStatus):
     if self.result.exitStatus != expectedStatus and expectedStatus == 0:
       print(self.result.stderr.string)
+    #print(self.result.exitStatus)
     assert self.result.exitStatus == expectedStatus
 
   def setNormalUserId(self):
@@ -133,12 +137,12 @@ class SibtSpecFixture(object):
   def runSibtWithRealStreamsAndExec(self, *arguments):
     exitStatus = 1
     try:
-      exitStatus = self._runSibt(FileObjOutput(sys.stdout),
-          FileObjOutput(sys.stderr), CoprocessRunner(), arguments)
+      exitStatus = self._runSibt(FileObjOutput(sys.stdout.buffer),
+          FileObjOutput(sys.stderr.buffer), CoprocessRunner(), arguments)
     except:
       self.result = RunResult(strToTest(""), strToTest(""), exitStatus)
       raise
-    stdout, stderr = self.capfd.readouterr()
+    stdout, stderr = map(decode, self.capfd.readouterr())
     self.result = RunResult(strToTest(stdout), strToTest(stderr), exitStatus)
 
   def runSibtCheckingExecs(self, *arguments):
@@ -185,8 +189,8 @@ class SibtSpecFixture(object):
     return exitStatus
 
 @pytest.fixture
-def fixture(tmpdir, capfd):
-  return SibtSpecFixture(tmpdir, capfd)
+def fixture(tmpdir, capfdbinary):
+  return SibtSpecFixture(tmpdir, capfdbinary)
 
 def test_shouldInvokeTheCorrectConfiguredSchedulersAndSynchronizers(fixture):
   sched = fixture.conf.aSched().withScheduleFuncCode("""
@@ -917,7 +921,7 @@ def test_shouldGetANullSeparatedFileListingWithACallSimilarToRestore(fixture):
     echo 100000000
   elif [[ $1 = list-files && $2 = container/folder && $3 = 2 && \
       $4 = 50,325 ]]; then
-    echo -n -e 'some\n-file'
+    echo -n -e 'some\xfc\n-file'
     echo -n -e '\0'
     echo -n 'and-a-dir/'
     echo -n -e '\0'
@@ -929,12 +933,15 @@ def test_shouldGetANullSeparatedFileListingWithACallSimilarToRestore(fixture):
   fixture.runSibtWithRealStreamsAndExec("list-files",
     folder, "1970")
   fixture.stderr.shouldBeEmpty()
-  fixture.stdout.shouldContainLinePatterns("some\\n-file",
+  fixture.stdout.shouldContainLinePatterns(
+      "some" + decode(b"\xfc") + "\\n-file",
       "and-a-dir/")
 
   fixture.runSibtWithRealStreamsAndExec("list-files", "--null", folder,
       "1970")
-  fixture.stdout.shouldInclude("some\n-file\0", "and-a-dir/\0")
+  fixture.stdout.shouldInclude(
+      "some" + decode(b"\xfc") + "\n-file\0",
+      "and-a-dir/\0")
 
 def test_shouldHaveAnOptionForARecursiveFileListing(fixture):
   syncer = fixture.conf.syncerHavingAnyVersions().write()
@@ -1377,3 +1384,16 @@ def test_shouldIncludeTheAssertionThatALocMustBeAMountPointAmongItsSanityChecks(
     fixture.runSibt("check", ruleName)
     fixture.stdout.shouldInclude(ruleName, "Loc1", "mount point").but.\
         shouldNotInclude("Loc2")
+
+def test_shouldNeverTextDecodeAnyFileNames(fixture):
+  dataDir = b"/mnt/f\xfcr Daten".decode(errors="surrogateescape")
+  syncer = fixture.conf.aSyncer().allowingSetupCalls().allowing(
+      execmock.call(lambda args: args[0] == "versions-of" and
+        ("Loc1Path={}".format(dataDir)) in args, ["0"])).write()
+  fixture.conf.ruleWithSched().withSynchronizer(syncer).withLoc1(dataDir).\
+      write()
+
+  fixture.runSibtCheckingExecs("--utc", "versions-of", dataDir +
+      b"/file \xfc".decode(errors="surrogateescape"))
+  fixture.shouldHaveExitedWithStatus(0)
+  fixture.stdout.shouldInclude("1970")

@@ -14,8 +14,8 @@ class SchedulerUsageSpecFixture(SibtSpecFixture):
   pass
 
 @pytest.fixture
-def fixture(tmpdir, capfd):
-  return SchedulerUsageSpecFixture(tmpdir, capfd)
+def fixture(tmpdir, capfdbinary):
+  return SchedulerUsageSpecFixture(tmpdir, capfdbinary)
 
 def test_shouldInitSchedulersCorrectlyIncludingSibtInvocationWithGlobalOpts(
     fixture):

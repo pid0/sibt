@@ -32,10 +32,14 @@ class SynchronizerOptions(collections.UserDict):
   def loc(self, i):
     return self.locs[i - 1]
 
+  def __setitem__(self, key, value):
+    super().__setitem__(key, value)
+    self.options[key] = value
+
   def __eq__(self, other):
     if not (hasattr(other, "options") and hasattr(other, "locOptions")):
       return False
-    return other.options == self.options and other.locOptions == self.locOptions
+    return dict(self) == dict(other)
 
   def __repr__(self):
     return "SynchronizerOptions{0}".format((self.options, self.locOptions))

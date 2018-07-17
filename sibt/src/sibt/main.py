@@ -32,7 +32,7 @@ import functools
 from sibt.application.dryscheduler import DryScheduler
 from sibt.configuration.optionvaluesparser import parseLocation
 from sibt.domain.ruleset import RuleSet
-from sibt.infrastructure.unbufferedtextfile import UnbufferedTextFile
+from sibt.infrastructure.unbufferedfile import UnbufferedFile
 from sibt.application.loggingscheduler import LoggingScheduler
 from sibt.application.defaultimplscheduler import DefaultImplScheduler
 from sibt.application.scriptrunningscheduler import ScriptRunningScheduler
@@ -302,7 +302,9 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
         if len(stringsToVersions) == 0:
           errorLogger.log("no backups found")
           return 1
-        for versionString in stringsToVersions.keys():
+        sortedVersions = list(stringsToVersions.items())
+        sortedVersions.sort(key=lambda item: item[1], reverse=True)
+        for versionString, _ in sortedVersions:
           stdout.println(versionString)
 
       if args.action == "restore" or args.action == "list-files":
@@ -474,8 +476,8 @@ def terminalWidth():
   return shutil.get_terminal_size().columns
 
 def main():
-  sys.stderr = UnbufferedTextFile(sys.stderr)
-  exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout), 
+  sys.stderr = UnbufferedFile(sys.stderr.buffer)
+  exitStatus = run(sys.argv[1:], FileObjOutput(sys.stdout.buffer), 
       FileObjOutput(sys.stderr),
       CoprocessRunner(beforeSubprocessRun, afterSubprocessRun), 
       Paths(UserBasePaths.forCurrentUser()),

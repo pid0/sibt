@@ -5,6 +5,11 @@ def test_shouldImplementEquals():
   assert SyncerOpts({"A": 2}, ["/tmp"]) == SyncerOpts({"A": 2}, ["/tmp"])
   assert SyncerOpts({"A": 2}, ["/tmp"]) != {"A": 2, "Loc1": "/tmp"}
 
+  opts = SyncerOpts(dict(A=1), [])
+  opts["B"] = 2
+  opts = opts.withNewLocs(["/mnt"])
+  assert opts == SyncerOpts(dict(A=1, B=2), ["/mnt"])
+
 def test_shouldProvideAccessToLocOptionsThroughDictLikeInterface():
   opts = SyncerOpts({"Opt": False}, ["/mnt", "/tmp"])
 

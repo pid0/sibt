@@ -11,16 +11,15 @@ from test.common import execmock
 from sibt.infrastructure import types
 from sibt.application.sshfsautomountingsynchronizer import \
     SSHFSAutoMountingSynchronizer, isExtensible
+from test.integration.synchronizers.synchronizertest import \
+    SynchronizerTestFixture
 
-class Fixture(object):
+class Fixture(SynchronizerTestFixture):
   def init(self, ports, availableOptions=[]):
     wrapped = mockSyncer(availableOptions=availableOptions, ports=ports)
     self.wrapped = wrapped
     self.processRunner = LoggingProcessRunner()
     self.syncer = SSHFSAutoMountingSynchronizer(wrapped, self.processRunner)
-
-  def protocolsOfPort(self, portNumber):
-    return iterToTest(self.syncer.ports[portNumber - 1].supportedProtocols)
 
   def call(self, funcName, testOptions, inputOptions):
     returnValue = object()

@@ -67,6 +67,9 @@ info-of-port() {
   local excludeAnchor="$5"
 
   declare -a remoteShellArgs=()
+  if [ -n "$remotePort" ]; then
+    RemoteShellCommand="${RemoteShellCommand:-ssh}"
+  fi
   if [ -n "$RemoteShellCommand" ]; then
     remoteShellArgs=(--rsh "$(rsh-command-with-socket-port $remotePort)")
   fi
@@ -180,13 +183,8 @@ restore() {
 
 list-files() {
   relativePath="$1"
-  portNumber="$2"
   recursively=$4
   path="$Loc2Path"/"$relativePath"
-
-  if [ $portNumber = 2 ]; then
-    return
-  fi
 
   fileType="$(get-file-type Loc2 "$path")"
 

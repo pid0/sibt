@@ -94,6 +94,7 @@ class Test_RemoteLocationTest(LocationTest):
         self.assertLocIsWithin(loc2, loc1)
 
     shouldTreatEqually("ssh", "scp", False)
+    shouldTreatEqually("ssh", "sftp", False)
     shouldTreatEqually("ftp", "ssh", True)
 
 class Test_LocalLocationTest(LocationTest):

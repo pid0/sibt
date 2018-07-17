@@ -10,12 +10,13 @@ class BashFuncTestFixture(object):
     self.libraryFilePath = libraryFilePath
     self.libraryArguments = libraryArguments
   
-  def compute(self, code):
+  def compute(self, code, input=None):
     with subprocess.Popen(["bash", "-c", 
       "source '{0}' {1}\n".format(self.libraryFilePath, 
         self.libraryArguments) + code], 
-      stderr=subprocess.PIPE, stdout=subprocess.PIPE) as process:
-      stdout, stderr = process.communicate()
+      stderr=subprocess.PIPE, stdout=subprocess.PIPE,
+      stdin=subprocess.PIPE) as process:
+      stdout, stderr = process.communicate(input)
 
     sys.stderr.write(stderr.decode())
     if process.returncode != 0:

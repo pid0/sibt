@@ -37,7 +37,6 @@ class Test_RsyncTest(MirrorSynchronizerTest,
     fixture.sync()
 
     assert fixture.versionsOf("does-not-exist", 1) == []
-    assert fixture.versionsOf("file", 2) == []
 
     iterToTest(fixture.versionsOf("file", 1)).shouldContainMatching(
         lambda version: version.year > 1970)

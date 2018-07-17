@@ -4,14 +4,14 @@ import tarfile
 
 from test.integration.synchronizers.synchronizertest import \
     ListingSynchronizerTest, SynchronizerTest, \
-    SynchronizerTestFixture, IncrementalSynchronizerTest, \
-    ExcludingSynchronizerTest
+    RunnableFileSynchronizerTestFixture, IncrementalSynchronizerTest, \
+    ExcludingSynchronizerTest, UnidirectionalSyncerTest
 from test.integration.bashfunctestfixture import \
     BashFuncTestFixture, BashFuncFailedException
 from test.common.builders import localLocation, writeFileTree
 from test.common import relativeToProjectRoot
 
-class Fixture(SynchronizerTestFixture):
+class Fixture(RunnableFileSynchronizerTestFixture):
   def __init__(self, tmpdir):
     super().__init__(tmpdir, localLocation, localLocation, localLocation)
     self.load("tar")
@@ -27,7 +27,8 @@ def archiveFileHasContents(archivePath, predicate, expectedContents):
     with tar.extractfile(member) as archivedFile:
       return archivedFile.read().decode() == expectedContents
 
-class Test_TarTest(IncrementalSynchronizerTest, ExcludingSynchronizerTest):
+class Test_TarTest(UnidirectionalSyncerTest, IncrementalSynchronizerTest, 
+    ExcludingSynchronizerTest):
   @property
   def supportsRecursiveCopying(self):
     return False

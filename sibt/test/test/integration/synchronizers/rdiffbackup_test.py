@@ -19,6 +19,8 @@ class Fixture(SSHSupportingSyncerFixture):
         location2FromPathFunc, restoreLocFromPathFunc)
     self.load("rdiff-backup")
 
+    self.metadata = self.loc2 / "rdiff-backup-data"
+
   def optsWith(self, options):
     ret = super().optsWith(options)
     if "ListFilesExactly" not in ret:
@@ -118,6 +120,15 @@ class Test_RdiffBackupTest(MirrorSynchronizerTest, IncrementalSynchronizerTest,
     permissions = stat.filemode(os.lstat(
       str(fixture.loc2 / "rdiff-backup-data")).st_mode)
     assert permissions.endswith("r-xr-x")
+
+  def test_shouldMakeSureThereIsAWorldWritableRestoreLog(self, fixture):
+    (fixture.loc1 / "file").write("")
+    fixture.sync()
+
+    restoreLog = fixture.metadata / "restore.log"
+    assert os.path.isfile(str(restoreLog))
+    permissions = stat.filemode(os.lstat(str(restoreLog)).st_mode)
+    assert permissions.endswith("rw-rw-")
 
 @pytest.fixture
 def funcFixture():

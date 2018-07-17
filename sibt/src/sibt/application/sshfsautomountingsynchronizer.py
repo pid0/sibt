@@ -11,6 +11,8 @@ from sibt.infrastructure.location import LocalLocation
 AvailableOptions = [
     OptionInfo("RemoteShellCommand", types.String)]
 
+_FileMountPoint = object()
+
 def isExtensible(syncer):
   def protocolsSuitable(protocols):
     return "ssh" not in protocols and "file" in protocols
@@ -30,7 +32,7 @@ class SSHFSAutoMountingSynchronizer(object):
 
   def _forEachMountPoint(self, func, remoteLocs, mountPoints):
     for mountPoint, loc in zip(mountPoints, remoteLocs):
-      if mountPoint is None:
+      if mountPoint is _FileMountPoint:
         continue
       func(mountPoint, loc)
 
@@ -48,8 +50,8 @@ class SSHFSAutoMountingSynchronizer(object):
     os.rmdir(os.path.dirname(mountPoint))
 
   def _replaceWithMountPoints(self, options, mountPoints):
-    newLocs = [LocalLocation(mountPoint) if mountPoint is not None else loc for 
-        mountPoint, loc in zip(mountPoints, options.locOptions)]
+    newLocs = [LocalLocation(mountPoint) if mountPoint is not _FileMountPoint
+        else loc for mountPoint, loc in zip(mountPoints, options.locOptions)]
     return options.withNewLocs(newLocs)
 
   def _makeMountPoints(self, options):
@@ -61,7 +63,7 @@ class SSHFSAutoMountingSynchronizer(object):
         os.mkdir(mountPoint)
         ret.append(mountPoint)
       else:
-        ret.append(None)
+        ret.append(_FileMountPoint)
 
     return ret
 

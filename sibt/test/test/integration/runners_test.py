@@ -101,6 +101,61 @@ class Test_BashRunnerTest(RunnerTest):
     assert not startsWithPath("foobar", "foo")
     assert startsWithPath("foo", "foo")
 
+  def test_shouldBeAbleToExtractTheChildPathsOfFilesInACommonFolder(
+      self, bashFuncFixture):
+    def toChildren(folderPath, paths):
+      return bashFuncFixture.compute("to-children-of '{0}'".format(folderPath),
+          input=paths)
+
+    assert toChildren("folder",
+        b"top\0"
+        b"anothertoplevelfile\0"
+        b"folder/\0"
+        b"folder/file1\0"
+        b"folder2/file2\0"
+        b"folder/deeper/file3\0") == b"file1\0deeper/file3\0"
+
+    assert toChildren("sub/actually-a-file",
+        b"sub/actually-a-file\0") == b"actually-a-file\0"
+
+    assert toChildren(".*",
+        b".*/file1\0"
+        b"sub/file2\0") == b"file1\0"
+
+    assert toChildren("",
+        b"file\0") == b"file\0"
+
+    assert toChildren("\n\t",
+        b"\n\t/foo\0") == b"foo\0"
+
+  def test_shouldBeAbleToFilterPathsWithMoreThanOneComponent(
+      self, bashFuncFixture):
+    def removeNonTopLevelPaths(paths):
+      return bashFuncFixture.compute("remove-non-top-level-paths", input=paths)
+
+    assert removeNonTopLevelPaths(
+        b"home/\0"
+        b"home/user/file\0"
+        b"file\0"
+        b"usr/local/\0") == b"home/\0file\0"
+
+  def test_shouldBeAbleToFilterTheTypeOfAFileFromAFileListing(
+      self, bashFuncFixture):
+    listing = (
+        b"paris/latin-quarter/\0"
+        b"paris/latin-quarter/cecile\0"
+        b"leonore\n[\0"
+        b"paris/latin-quarter/valentine\0")
+
+    def filterFileType(filePath):
+      return bashFuncFixture.compute("filter-file-type '{0}'".format(filePath),
+          input=listing)
+    
+    assert filterFileType("sylvia") == b"missing\n"
+    assert filterFileType("paris/latin-quarter/valentine") == b"non-directory\n"
+    assert filterFileType("paris/latin-quarter") == b"directory\n"
+    assert filterFileType("leonore\n[") == b"non-directory\n"
+
 class Test_PythonRunnerTest(RunnerTest):
   @property
   def runnerName(self):

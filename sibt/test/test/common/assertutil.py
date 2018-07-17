@@ -66,6 +66,9 @@ class TestIterable(object):
     for predicate in predicates:
       assert any(predicate(item) for item in self.list), repr(self.list)
     return self
+  def shouldInclude(self, *items):
+    for item in items:
+      assert item in self.list
 
   def shouldBe(self, expected):
     assert self.iterable == expected
