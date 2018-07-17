@@ -1,3 +1,19 @@
+# This file is part of sibt (simple backup tool), a program that integrates existing backup tools.
+# Copyright 2018 Patrick Plagwitz
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 from sibt.infrastructure.dirtreenormalizer import DirTreeNormalizer
 from sibt.application.inifilesyntaxruleconfigprinter import \
     IniFileSyntaxRuleConfigPrinter
@@ -52,6 +68,14 @@ from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
 import subprocess
 import threading
+
+InfoMessage = """
+sibt version 0.2.1
+sibt (simple backup tool)  Copyright (C) 2018  Patrick Plagwitz
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions. See the GNU General Public License v3 for details."""\
+    [1:]
 
 class FatalSignalException(BaseException):
   def __init__(self, signalNumber, childExitStatus):
@@ -149,6 +173,10 @@ def run(cmdLineArgs, stdout, stderr, processRunner, paths, sysPaths,
     makeErrorLogger = lambda prefix: PrefixingErrorLogger(stderr, prefix,
         1 if args.options["verbose"] else 0)
     errorLogger = makeErrorLogger("sibt")
+
+    if args.options["version"]:
+      stdout.println(InfoMessage)
+      return 0
 
     overridePaths(paths, args)
     createNotExistingDirs(paths)

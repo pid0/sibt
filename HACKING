@@ -38,3 +38,8 @@ Since output is informational and supposed to be read by the user, this should b
 UtilLinuxSysLogger:
 There is a race condition in the tests: A datagram might arrive too late, depending on how fast it goes through the kernel. 
 The packets list should be thread-safe enough in any case.
+
+Release
+=============
+Places to update copyright year: main.py --version output, and every file.
+Places to update version number: --version output, pavement.py <- automate this.
