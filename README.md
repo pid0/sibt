@@ -2,7 +2,7 @@ sibt provides a common interface for backup tools like rsync, rdiff-backup, tar,
 
 Documentation
 ==============
-See []().
+See the [website](https://pid0.github.io/sibt-doc/index.html).
 
 License
 ==============
